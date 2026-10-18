@@ -140,10 +140,11 @@ sleep 3; pgrep -x toastsaver >/dev/null || fail "saver with clock did not run"
 pkill -x toastsaver
 echo "settings window and clock: ok"
 
-cp /tmp/s1.png /src/tests/wayland-toasters.png
-cp /tmp/pipes.png /src/tests/wayland-pipes.png
 toastsaver-idle --check
 '
+# Screenshots for humans to look at; copied by root, and not part of the pass/fail.
+cp /tmp/s1.png /src/tests/wayland-toasters.png 2>/dev/null || true
+cp /tmp/pipes.png /src/tests/wayland-pipes.png 2>/dev/null || true
 if [ -n "$DEB" ]; then
     echo "--- apt remove, then purge"
     apt-get remove -y -qq toastsaver >/dev/null
