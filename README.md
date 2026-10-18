@@ -169,10 +169,14 @@ docker run --rm -v "$PWD":/src debian:trixie sh /src/tests/pi-os-test.sh
 
 Trixie uses labwc. Bookworm uses sway.
 
+## Tested on
+
+- **Raspberry Pi 4 (4 GB), 64-bit Raspberry Pi OS**: installed from a USB stick with `deploy.sh` and working.
+- Debian ARM64 containers on every change: trixie with labwc and bookworm with sway (see Tests above).
+
 ## Known limits
 
 - Works on Wayland only. Tested with labwc (Raspberry Pi OS's default) and sway; Wayfire should work but is untested. It does not work on X11.
-- So far tested in containers, not yet on real Raspberry Pi hardware.
 - It is not a lock screen. It does not ask for a password.
 - It only uses the first monitor.
 - The 3D pipes run best on a Raspberry Pi 4 or 5.
