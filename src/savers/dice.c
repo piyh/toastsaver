@@ -876,9 +876,7 @@ static void new_roll(Dice *d) {
         memset(e, 0, sizeof *e);
         int row = i / cols, col = i % cols, m = row == rows - 1 ? n - row * cols : cols;
         e->kind = set[i + 1];
-        int s = SIDES[e->kind], r = irand(100);
-        e->value = 1 + irand(s);
-        if (e->kind == D20) e->value = r < 11 ? 20 : (r < 19 ? 1 : 2 + irand(18));
+        e->value = 1 + irand(SIDES[e->kind]);   /* fair dice: a natural 20 or 1 is 1 in 20 */
         e->tx = (x0 + x1) * 0.5f + (col - (m - 1) * 0.5f) * px + frand(-3, 3);
         e->ty = (y0 + y1) * 0.5f + (row - (rows - 1) * 0.5f) * py + frand(-3, 3);
         e->sx = d->fromLeft ? -R * 1.4f - frand(0, 16) : d->W + R * 1.4f + frand(0, 16);
