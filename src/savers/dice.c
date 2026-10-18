@@ -20,6 +20,7 @@ enum { P_SPARK, P_CONFETTI, P_DUST, P_RAIN, P_CHALK };
 #define POPS 8
 #define NB 5
 #define WOMP_COL 0xD4DCEA
+#define FINE 2   /* the dice get a pixel grid this much finer than the tray, so their numbers have room */
 
 static const int SIDES[KINDS] = { 4, 6, 8, 10, 12, 20 };
 static const char *const NAMES[KINDS] = { "D4", "D6", "D8", "D10", "D12", "D20" };
@@ -453,7 +454,9 @@ typedef struct {
     PolyMesh mesh[KINDS];
     Canvas under, top;
     unsigned char *mark;
-    SDL_Texture *felt, *underTex, *topTex;
+    Canvas fine;                  /* the dice themselves, at FINE times the resolution */
+    unsigned char *fineMark;
+    SDL_Texture *felt, *underTex, *topTex, *fineTex;
 } Dice;
 
 /* ---------- drawing helpers ---------- */
@@ -586,7 +589,7 @@ static void face_number(Dice *d, const Die *e, float ox, float oy, Vec3 right, V
             if (!mask[j * mw + i] && ((i > 0 && mask[j * mw + i - 1] == 2) || (i < mw - 1 && mask[j * mw + i + 1] == 2) ||
                                       (j > 0 && mask[(j - 1) * mw + i] == 2) || (j < mh - 1 && mask[(j + 1) * mw + i] == 2)))
                 mask[j * mw + i] = 1;
-    float ax, ay, bx, by, R = (float)d->R;
+    float ax, ay, bx, by, R = (float)(d->R * FINE);
     to_screen(e, R, v_scale(right, px), &ax, &ay);
     to_screen(e, R, v_scale(up, -px), &bx, &by);
     if (ax > 0 && by > 0 && fabsf(ay) < 0.1f * ax && fabsf(bx) < 0.1f * by) {
@@ -598,16 +601,16 @@ static void face_number(Dice *d, const Die *e, float ox, float oy, Vec3 right, V
         for (int j = 0; j < mh; j++)
             for (int i = 0; i < mw; i++)
                 if (mask[j * mw + i])
-                    fill_rect(&d->top, x0 + i * sc, y0 + j * sc, x0 + i * sc + sc - 1, y0 + j * sc + sc - 1,
+                    fill_rect(&d->fine, x0 + i * sc, y0 + j * sc, x0 + i * sc + sc - 1, y0 + j * sc + sc - 1,
                               rgb(mask[j * mw + i] == 2 ? ink : rim));
         return;
     }
-    paint_on_face(&d->top, mask, mw, mh, ox, oy, ax, ay, bx, by, rim, ink);
+    paint_on_face(&d->fine, mask, mw, mh, ox, oy, ax, ay, bx, by, rim, ink);
 }
 
 /* A pip: a disc on the face at (u, v) in the face's own units, with a dark rim. */
 static void face_pip(Dice *d, const Die *e, float ox, float oy, const PolyFace *fc, float u, float v, uint32_t face, float a) {
-    float R = (float)d->R, Ax, Ay, Bx, By;
+    float R = (float)(d->R * FINE), Ax, Ay, Bx, By;
     to_screen(e, R, v_scale(fc->right, fc->ri), &Ax, &Ay);
     to_screen(e, R, v_scale(fc->up, -fc->ri), &Bx, &By);
     float det = Ax * By - Ay * Bx;
@@ -617,15 +620,18 @@ static void face_pip(Dice *d, const Die *e, float ox, float oy, const PolyFace *
         for (int x = (int)floorf(pcx - ext); x <= (int)ceilf(pcx + ext); x++) {
             float dx = x + 0.5f - pcx, dy = y + 0.5f - pcy;
             float lu = (dx * By - dy * Bx) / det, lv = (Ax * dy - Ay * dx) / det, q = lu * lu + lv * lv;
-            if (q < 0.19f * 0.19f) put(&d->top, x, y, rgb(mixc(face, 0xFFFFFF, a)));
-            else if (q < 0.26f * 0.26f) put(&d->top, x, y, rgb(mixc(face, shade(face, 0.45f), a)));
+            if (q < 0.19f * 0.19f) put(&d->fine, x, y, rgb(mixc(face, 0xFFFFFF, a)));
+            else if (q < 0.26f * 0.26f) put(&d->fine, x, y, rgb(mixc(face, shade(face, 0.45f), a)));
         }
 }
 
+/* Draws a die centred on tray position (cx, cy) into the FINE layer. */
 static void draw_3d_die(Dice *d, const Die *e, float cx, float cy) {
     const PolyMesh *m = &d->mesh[e->kind];
-    float R = (float)d->R;
-    Vec3 center = vec3(cx, cy, e->z);
+    float R = (float)(d->R * FINE), z = e->z * FINE;
+    cx *= FINE;
+    cy *= FINE;
+    Vec3 center = vec3(cx, cy, z);
 
     /* Transform vertices */
     float sx[MAX_POLY_VERTS], sy[MAX_POLY_VERTS], depth[MAX_POLY_VERTS];
@@ -633,7 +639,7 @@ static void draw_3d_die(Dice *d, const Die *e, float cx, float cy) {
         Vec3 vrot = mat3_mul_v(e->orient, m->verts[i]);
         Vec3 pw = v_add(center, v_scale(vrot, R));
         sx[i] = pw.x;
-        sy[i] = cy - e->z * 0.85f + (vrot.y * CAM_S - vrot.z * CAM_C) * R;
+        sy[i] = cy - z * 0.85f + (vrot.y * CAM_S - vrot.z * CAM_C) * R;
         depth[i] = pw.y * 0.85f + pw.z;
     }
 
@@ -672,7 +678,7 @@ static void draw_3d_die(Dice *d, const Die *e, float cx, float cy) {
         float k = v_dot(mat3_mul_v(e->orient, m->faces[f].normal), up);
         if (k > bf) { bf = k; topf = f; }
     }
-    float ocx = cx, ocy = cy - e->z * 0.85f;
+    float ocx = cx, ocy = cy - z * 0.85f;
 
     Vec3 light = v_norm(vec3(-0.5f, -0.6f, 0.8f));
     uint32_t base = BODY[e->kind];
@@ -691,13 +697,13 @@ static void draw_3d_die(Dice *d, const Die *e, float cx, float cy) {
             fx[i] = sx[fc->idx[i]];
             fy[i] = sy[fc->idx[i]];
         }
-        fill_poly(&d->top, fx, fy, fc->nverts, rgb(col));
+        fill_poly(&d->fine, fx, fy, fc->nverts, rgb(col));
 
         /* Crisp bevelled edge outlines between faces */
         uint32_t edge_col = diff > 0 ? lit(col, 1.25f) : shade(col, 0.75f);
         for (int i = 0; i < fc->nverts; i++) {
             int j = (i + 1) % fc->nverts;
-            draw_line(&d->top, (int)fx[i], (int)fy[i], (int)fx[j], (int)fy[j], rgb(edge_col));
+            draw_line(&d->fine, (int)fx[i], (int)fy[i], (int)fx[j], (int)fy[j], rgb(edge_col));
         }
 
         /* Print the face: pips on the d6, a number by each corner on the d4 (the top
@@ -1196,18 +1202,18 @@ static void cloud(Canvas *c, float x, float y, float s) {
     }
 }
 
-static void outline_top(Dice *d) {
-    Canvas *c = &d->top;
+/* A dark outline around everything drawn on a layer (mark is scratch, one byte per pixel). */
+static void outline_layer(Canvas *c, unsigned char *mark) {
     int W = c->w, H = c->h;
     uint32_t *px = c->px;
     for (int y = 0; y < H; y++)
         for (int x = 0; x < W; x++) {
             int i = y * W + x;
-            d->mark[i] = !px[i] && ((x > 0 && px[i - 1]) || (x < W - 1 && px[i + 1]) ||
-                                    (y > 0 && px[i - W]) || (y < H - 1 && px[i + W]));
+            mark[i] = !px[i] && ((x > 0 && px[i - 1]) || (x < W - 1 && px[i + 1]) ||
+                                 (y > 0 && px[i - W]) || (y < H - 1 && px[i + W]));
         }
     for (int i = 0; i < W * H; i++)
-        if (d->mark[i]) px[i] = rgb(0x1A1410);
+        if (mark[i]) px[i] = rgb(0x1A1410);
 }
 
 static void frect(SDL_Renderer *r, float x, float y, float w, float h, SDL_Color c) {
@@ -1234,6 +1240,7 @@ static void draw(void *p, SDL_Renderer *r) {
     Canvas *un = &d->under, *top = &d->top;
     memset(un->px, 0, sizeof(uint32_t) * un->w * un->h);
     memset(top->px, 0, sizeof(uint32_t) * top->w * top->h);
+    memset(d->fine.px, 0, sizeof(uint32_t) * d->fine.w * d->fine.h);
     int active = d->state != GAP;
     float fade = d->state == EXIT ? clampf(1 - d->stateT / 0.5f, 0, 1) : (d->state == GAP ? 0 : 1);
 
@@ -1337,11 +1344,14 @@ static void draw(void *p, SDL_Renderer *r) {
         if (sc == 2) glyphs(top, q->txt, (int)(q->x - w / 2.0f), (int)(y + bob) + 1, sc, rgb(0xC08A20));
         glyphs(top, q->txt, (int)(q->x - w / 2.0f), (int)(y + bob), sc, rgb(q->col));
     }
-    outline_top(d);
+    outline_layer(top, d->mark);
+    for (int k = 0; k < FINE; k++) outline_layer(&d->fine, d->fineMark);   /* same weight as the tray's */
 
     SDL_UpdateTexture(d->underTex, NULL, un->px, un->w * 4);
     SDL_UpdateTexture(d->topTex, NULL, top->px, top->w * 4);
+    SDL_UpdateTexture(d->fineTex, NULL, d->fine.px, d->fine.w * 4);
     SDL_RenderCopy(r, d->underTex, NULL, &full);
+    SDL_RenderCopy(r, d->fineTex, NULL, &full);
     SDL_RenderCopy(r, d->topTex, NULL, &full);
 
     for (int i = 0; i < PARTS; i++) {
@@ -1403,10 +1413,13 @@ static void *create(SDL_Renderer *r, int w, int h) {
     d->under = canvas_new(d->W, d->H);
     d->top = canvas_new(d->W, d->H);
     d->mark = calloc((size_t)d->W * d->H, 1);
+    d->fine = canvas_new(d->W * FINE, d->H * FINE);
+    d->fineMark = calloc((size_t)d->fine.w * d->fine.h, 1);
+    d->fineTex = SDL_CreateTexture(r, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, d->fine.w, d->fine.h);
     d->underTex = SDL_CreateTexture(r, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, d->W, d->H);
     d->topTex = SDL_CreateTexture(r, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, d->W, d->H);
-    SDL_Texture *ts[2] = { d->underTex, d->topTex };
-    for (int i = 0; i < 2; i++) {
+    SDL_Texture *ts[3] = { d->underTex, d->topTex, d->fineTex };
+    for (int i = 0; i < 3; i++) {
         SDL_SetTextureBlendMode(ts[i], SDL_BLENDMODE_BLEND);
         SDL_SetTextureScaleMode(ts[i], SDL_ScaleModeNearest);
     }
@@ -1419,6 +1432,9 @@ static void destroy(void *p) {
     SDL_DestroyTexture(d->felt);
     SDL_DestroyTexture(d->underTex);
     SDL_DestroyTexture(d->topTex);
+    SDL_DestroyTexture(d->fineTex);
+    free(d->fine.px);
+    free(d->fineMark);
     free(d->under.px);
     free(d->top.px);
     free(d->mark);
