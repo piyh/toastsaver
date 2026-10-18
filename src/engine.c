@@ -9,7 +9,7 @@
 
 /* ---------- settings ---------- */
 
-Config g_config = { 1, "toasters", "HELLO", 5, 30, 0, 0 };
+Config g_config = { 1, "toasters", "HELLO", 5, 30, 0, 0, "" };
 
 const char *config_path(void) {
     static char path[1024];
@@ -43,7 +43,7 @@ static void read_value(const char *line, char *out, size_t size) {
 
 /* Applies one KEY=value line. Returns 0 if the key isn't one of ours. */
 int config_apply(const char *line) {
-    char v[64];
+    char v[256];
     if (!strchr(line, '=') || line[0] == '#') return 0;
     read_value(line, v, sizeof v);
     if (!strncmp(line, "ENABLED=", 8)) g_config.enabled = atoi(v) != 0;
@@ -53,6 +53,7 @@ int config_apply(const char *line) {
     else if (!strncmp(line, "SCREEN_OFF_MINUTES=", 19)) g_config.screenOffMinutes = atoi(v) > 0 ? atoi(v) : 0;
     else if (!strncmp(line, "CLOCK=", 6)) g_config.clock = atoi(v) != 0;
     else if (!strncmp(line, "CLOCK_24H=", 10)) g_config.clock24 = atoi(v) != 0;
+    else if (!strncmp(line, "RANDOM_SAVERS=", 14)) snprintf(g_config.randomSavers, sizeof g_config.randomSavers, "%s", v);
     else return 0;
     return 1;
 }
@@ -66,9 +67,10 @@ void config_load(void) {
 }
 
 /* Every setting we own, with the comment written next to it in a new file. */
-#define NKEYS 7
+#define NKEYS 8
 static const char *const KEYS[NKEYS] = {
-    "ENABLED=", "SAVER=", "NAME=", "IDLE_MINUTES=", "SCREEN_OFF_MINUTES=", "CLOCK=", "CLOCK_24H=" };
+    "ENABLED=", "SAVER=", "NAME=", "IDLE_MINUTES=", "SCREEN_OFF_MINUTES=", "CLOCK=", "CLOCK_24H=",
+    "RANDOM_SAVERS=" };
 static const char *const HELP[NKEYS] = {
     "# 0 = turn the screensaver off",
     "# toasters rainbow pipes books aquarium birds starfield mystify matrix lava name random",
@@ -76,7 +78,8 @@ static const char *const HELP[NKEYS] = {
     "# minutes of no input before the screensaver appears",
     "# minutes before the display turns off (0 = never)",
     "# 1 = show a clock over the screensaver",
-    "# 1 = 24-hour clock" };
+    "# 1 = 24-hour clock",
+    "# savers SAVER=random picks from, comma-separated (empty = all)" };
 
 static void format_key(int k, char *out, size_t n) {
     switch (k) {
@@ -86,12 +89,13 @@ static void format_key(int k, char *out, size_t n) {
     case 3: snprintf(out, n, "IDLE_MINUTES=%d", g_config.idleMinutes); break;
     case 4: snprintf(out, n, "SCREEN_OFF_MINUTES=%d", g_config.screenOffMinutes); break;
     case 5: snprintf(out, n, "CLOCK=%d", g_config.clock); break;
-    default: snprintf(out, n, "CLOCK_24H=%d", g_config.clock24); break;
+    case 6: snprintf(out, n, "CLOCK_24H=%d", g_config.clock24); break;
+    default: snprintf(out, n, "RANDOM_SAVERS=%s", g_config.randomSavers); break;
     }
 }
 
 static void write_key(FILE *out, int k, const char *comment) {
-    char kv[96];
+    char kv[300];
     format_key(k, kv, sizeof kv);
     int pad = 24 - (int)strlen(kv);
     if (comment) fprintf(out, "%s%*s%s%s", kv, pad > 1 ? pad : 1, "", comment, strchr(comment, '\n') ? "" : "\n");
@@ -121,6 +125,43 @@ int config_save(void) {
     if (in) fclose(in);
     if (fclose(out) != 0) return -1;
     return rename(tmp, path);
+}
+
+/* ---------- the SURPRISE mix (RANDOM_SAVERS) ---------- */
+
+/* Is `id` one of the comma- or space-separated words in RANDOM_SAVERS? */
+static int mix_lists(const char *id) {
+    size_t n = strlen(id);
+    for (const char *s = g_config.randomSavers; *s; ) {
+        while (*s == ',' || *s == ' ') s++;
+        size_t len = strcspn(s, ", ");
+        if (len == n && !strncmp(s, id, n)) return 1;
+        s += len;
+    }
+    return 0;
+}
+
+/* An empty list, or one with no saver we know, means every saver is in. */
+int saver_in_mix(const Saver *sv) {
+    for (int i = 0; i < SAVER_COUNT; i++)
+        if (mix_lists(SAVERS[i]->id)) return mix_lists(sv->id);
+    return 1;
+}
+
+int saver_set_in_mix(const Saver *sv, int on) {
+    char list[sizeof g_config.randomSavers] = "";
+    size_t len = 0;
+    int count = 0;
+    for (int i = 0; i < SAVER_COUNT; i++) {
+        if (!(SAVERS[i] == sv ? on : saver_in_mix(SAVERS[i]))) continue;
+        len += (size_t)snprintf(list + len, sizeof list - len, "%s%s", count ? "," : "", SAVERS[i]->id);
+        if (len >= sizeof list) return 0;
+        count++;
+    }
+    if (count == 0) return 0;
+    /* Everything on is written as empty, so savers added later join the mix too. */
+    snprintf(g_config.randomSavers, sizeof g_config.randomSavers, "%s", count == SAVER_COUNT ? "" : list);
+    return 1;
 }
 
 /* ---------- random ---------- */

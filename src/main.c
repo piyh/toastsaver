@@ -24,8 +24,21 @@ const Saver *saver_find(const char *id) {
     return NULL;
 }
 
+/* "random" picks from the SURPRISE mix, never the same one twice in a row if it can help it. */
+static const Saver *pick_random(void) {
+    static const Saver *last;
+    int inMix = 0, n = 0;
+    for (int i = 0; i < SAVER_COUNT; i++) inMix += saver_in_mix(SAVERS[i]);
+    const Saver *avoid = inMix > 1 ? last : NULL;
+    for (int i = 0; i < SAVER_COUNT; i++) n += saver_in_mix(SAVERS[i]) && SAVERS[i] != avoid;
+    int k = irand(n);
+    for (int i = 0; i < SAVER_COUNT; i++)
+        if (saver_in_mix(SAVERS[i]) && SAVERS[i] != avoid && k-- == 0) return last = SAVERS[i];
+    return last = SAVERS[irand(SAVER_COUNT)];
+}
+
 const Saver *saver_resolve(const char *id) {
-    if (!strcmp(id, "random")) return SAVERS[irand(SAVER_COUNT)];
+    if (!strcmp(id, "random")) return pick_random();
     const Saver *s = saver_find(id);
     return s ? s : &saver_toasters;
 }
@@ -169,8 +182,9 @@ static int snapshot(const char *path, const char *what, int w, int h, float seco
         picker_draw(p, r);
         picker_destroy(p);
     } else {
-        const Saver *sv = saver_find(what);
+        const Saver *sv = strcmp(what, "random") ? saver_find(what) : saver_resolve(what);
         if (!sv) { fprintf(stderr, "unknown saver: %s\n", what); return 2; }
+        if (!strcmp(what, "random")) printf("random: %s\n", sv->id);
         void *st = sv->create(r, w, h);
         clock_reset(w, h);
         for (float t = 0; t < seconds; t += dt) { sv->step(st, dt); clock_step(dt); }
@@ -234,7 +248,8 @@ static void usage(void) {
            "  toastsaver --windowed ...   use a window instead of fullscreen\n\n"
            "Savers: random", VERSION, config_path());
     for (int i = 0; i < SAVER_COUNT; i++) printf(", %s", SAVERS[i]->id);
-    printf("\n");
+    printf("\n\nrandom picks a different saver each time from RANDOM_SAVERS, e.g.\n"
+           "  toastsaver --set RANDOM_SAVERS=toasters,pipes,lava   (empty = all savers)\n");
 }
 
 int main(int argc, char **argv) {

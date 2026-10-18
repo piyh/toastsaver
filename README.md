@@ -12,7 +12,7 @@ curl -fsSL https://piyh.github.io/toastsaver/setup.sh | sh
 
 ## What's inside
 
-Eight screensavers, plus a SURPRISE tile that picks a random one each time. All of the artwork is original and drawn by the program itself.
+Eight screensavers, plus a SURPRISE ME button that picks a random one each time from the ones you put in the mix. All of the artwork is original and drawn by the program itself.
 
 <table>
   <tr>
@@ -102,11 +102,11 @@ Open **Screensavers** from the app menu. To put an icon on the desktop too, run 
 - **Tap a tile** to choose it. Your choice is saved right away. There is no Save button.
 - **Tap the chosen tile again**, or the big green **TRY IT!** button, to watch it.
 - **Move the mouse, touch the screen, or press any key** to go back to the picker.
-- **SURPRISE** picks a random saver each time.
+- **SURPRISE ME!** (under the tiles) shows a different saver each time. While it is on, the tiles show which savers are **in the mix**: tap a tile to put it in (green check) or take it out (dimmed). At least one always stays in. Tap **SURPRISE ME!** again to turn it off and choose a single tile.
 - **NAME**: when it is chosen, type your name on the keyboard.
 - The **big red X** closes the picker.
 
-On a keyboard, use the arrow keys to move, **Enter** to try, and **Esc** to close.
+On a keyboard, use the arrow keys to move, **Enter** to try, **Tab** to turn SURPRISE ME on or off, **Space** to put the highlighted saver in or out of the mix, and **Esc** to close.
 
 ### Screensaver Settings (for grown-ups)
 
@@ -115,7 +115,7 @@ Open **Screensaver Settings** from the app menu. Changes are saved right away, a
 ![Screensaver Settings](docs/settings.png)
 
 - **Screensaver**: turn it on or off.
-- **Chosen**: the current screensaver. **Change** opens the picker.
+- **Chosen**: the current screensaver, or **SURPRISE**. **Change** opens the picker, where you also pick the surprise mix.
 - **Start after**: how long the computer waits before showing the screensaver.
 - **Screen off after**: when the display turns off, or **NEVER**. It is always later than the screensaver.
 - **Show clock**: puts the time over any screensaver. It drifts to a new spot about once a minute, so it never sits in one place.
@@ -148,6 +148,7 @@ Settings live in `~/.config/toastsaver.conf`. The picker and Screensaver Setting
 ```sh
 ENABLED=1               # 0 = turn the screensaver off
 SAVER=toasters          # toasters pipes starfield mystify matrix aquarium lava name random
+RANDOM_SAVERS=          # savers SAVER=random picks from, e.g. toasters,pipes,lava (empty = all)
 NAME='HELLO'            # letters, digits, space and ! ? - . *  (* draws a heart)
 IDLE_MINUTES=5          # minutes of no input before the screensaver appears
 SCREEN_OFF_MINUTES=30   # minutes before the display turns off (0 = never)

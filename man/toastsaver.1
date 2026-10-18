@@ -38,6 +38,9 @@ if it is installed.
 .PP
 .B toastsaver-picker
 opens a fullscreen picker with big tiles, designed for children.
+Its SURPRISE ME button sets the saver to
+.BR random ;
+while it is on, tapping a tile puts that saver in or out of the surprise mix.
 .B toastsaver-settings
 opens a settings window for on/off, timings and the clock.
 .SH OPTIONS
@@ -63,11 +66,16 @@ and
 .SH SAVERS
 toasters, rainbow, pipes, books, aquarium, birds, starfield, mystify, matrix, lava,
 name, and random.
+.B random
+picks a different saver each time, only from those listed in RANDOM_SAVERS
+(every saver when it is empty), and not the same one twice in a row.
 .SH FILES
 .TP
 .I ~/.config/toastsaver.conf
 Settings, in shell syntax: ENABLED, SAVER, NAME, IDLE_MINUTES,
-SCREEN_OFF_MINUTES, CLOCK and CLOCK_24H. Created on first change.
+SCREEN_OFF_MINUTES, CLOCK, CLOCK_24H and RANDOM_SAVERS (a comma-separated
+list of savers for SAVER=random; empty means all, unknown names are ignored).
+Created on first change.
 .SH NOTES
 Needs a Wayland compositor that supports idle notification, such as labwc,
 Wayfire, sway or Hyprland. It is not a lock screen.
