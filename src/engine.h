@@ -26,6 +26,7 @@ typedef struct {
     int screenOffMinutes;    /* SCREEN_OFF_MINUTES: display off after (0 = never) */
     int clock;               /* CLOCK: 1 shows a drifting clock over any saver */
     int clock24;             /* CLOCK_24H: 1 for 24-hour time */
+    char randomSavers[256];  /* RANDOM_SAVERS: ids SURPRISE picks from ("" = every saver) */
 } Config;
 
 extern Config g_config;
@@ -105,6 +106,8 @@ extern const Saver *const SAVERS[];
 extern const int SAVER_COUNT;
 const Saver *saver_find(const char *id);   /* NULL if unknown */
 const Saver *saver_resolve(const char *id); /* handles "random"; falls back to toasters */
+int saver_in_mix(const Saver *sv);          /* can SURPRISE ("random") pick it? */
+int saver_set_in_mix(const Saver *sv, int on); /* 0 (and no change) if that would empty the mix */
 
 /* ---------- runners ---------- */
 
