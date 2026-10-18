@@ -515,11 +515,16 @@ static int glyphs_w(const char *s, int sc) { int n = (int)strlen(s); return n ? 
 
 /* ---------- 3D die rendering ---------- */
 
-/* Screen y = y - 0.85 z, so faces whose normal points along (0, 0.85, 1) face the
-   viewer. Dice come to rest with the rolled face pointing at REST: mostly up, tipped
+/* The dice are seen by a camera looking down at about 50 degrees: a die's own depth
+   shrinks by CAM_S and its height by CAM_C on screen (the felt positions and the bounce
+   keep their old 1 : 0.85 slant), so faces whose normal points along (0, 0.85, 1) face
+   the viewer. Dice come to rest with the rolled face pointing at REST: mostly up, tipped
    a little toward the viewer so the top reads clearly, turned so its number is upright.
    Numbers and pips are printed on the faces themselves: each face maps a little bitmap
    through its own tilted axes, so they foreshorten and tumble with the die. */
+#define CAM_S 0.762f   /* sin and cos of the camera's 49.6 degree look-down (tan = 1 / 0.85) */
+#define CAM_C 0.648f
+
 static Vec3 rest_dir(void) { return v_norm(vec3(0, 0.38f, 1.0f)); }
 
 static const float PIPS[7][6][2] = {
@@ -536,7 +541,7 @@ static const float PIPS[7][6][2] = {
 static void to_screen(const Die *e, float R, Vec3 v, float *x, float *y) {
     Vec3 w = mat3_mul_v(e->orient, v);
     *x = w.x * R;
-    *y = (w.y - 0.85f * w.z) * R;
+    *y = (w.y * CAM_S - w.z * CAM_C) * R;
 }
 
 /* Paints a mask (0 nothing, 1 rim, 2 ink) centred on (ox, oy). One mask pixel steps by
@@ -628,7 +633,7 @@ static void draw_3d_die(Dice *d, const Die *e, float cx, float cy) {
         Vec3 vrot = mat3_mul_v(e->orient, m->verts[i]);
         Vec3 pw = v_add(center, v_scale(vrot, R));
         sx[i] = pw.x;
-        sy[i] = pw.y - pw.z * 0.85f;
+        sy[i] = cy - e->z * 0.85f + (vrot.y * CAM_S - vrot.z * CAM_C) * R;
         depth[i] = pw.y * 0.85f + pw.z;
     }
 
