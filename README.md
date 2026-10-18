@@ -24,20 +24,20 @@ Twelve screensavers, plus a SURPRISE ME button that picks a random one each time
     <td align="center"><img src="docs/books.png" width="400"><br><b>BOOKS</b></td>
   </tr>
   <tr>
+    <td align="center"><img src="docs/dice.png" width="400"><br><b>DICE</b></td>
     <td align="center"><img src="docs/aquarium.png" width="400"><br><b>FISH</b></td>
+  </tr>
+  <tr>
     <td align="center"><img src="docs/birds.png" width="400"><br><b>BIRDS</b></td>
-  </tr>
-  <tr>
     <td align="center"><img src="docs/starfield.png" width="400"><br><b>STARS</b></td>
+  </tr>
+  <tr>
     <td align="center"><img src="docs/mystify.png" width="400"><br><b>MYSTIFY</b></td>
-  </tr>
-  <tr>
     <td align="center"><img src="docs/matrix.png" width="400"><br><b>MATRIX</b></td>
-    <td align="center"><img src="docs/lava.png" width="400"><br><b>LAVA</b></td>
   </tr>
   <tr>
+    <td align="center"><img src="docs/lava.png" width="400"><br><b>LAVA</b></td>
     <td align="center"><img src="docs/name.png" width="400"><br><b>NAME</b></td>
-    <td></td>
   </tr>
 </table>
 
@@ -45,7 +45,7 @@ Twelve screensavers, plus a SURPRISE ME button that picks a random one each time
 - **RAINBOW**: the Waffle Cat flies across the night sky on a wavy rainbow. Every so often it shimmers, goes *poof*, rainbow lines zoom across the screen, and it pops back out at the end of the rainbow. (Invented by a six-year-old.)
 - **PIPES**: shiny 3D pipes grow through a grid, then fade and start again.
 - **BOOKS**: a cozy lamplit bookshelf. Books slide out, float to the middle, open to a little animated picture, and fly back to their spot.
-- **DICE**: a d4, d6, d8, d10, d12 and d20 tumble across a felt tray and a chalkboard adds up the roll. A natural 20 gets a gold glow and a tiny "CRIT!"; a 1 gets a little rain cloud.
+- **DICE**: 3D dice (d4, d6, d8, d10, d12 and d20) tumble onto a felt tray one at a time. Then each number flies up to a chalkboard, slowly enough for a kid to add them up first. A natural 20 on the d20 gets gold rays, confetti and "CRIT!"; a natural 1 gets a grumpy rain cloud.
 - **FISH**: clownfish, a blue tang, a pufferfish, seaweed and a bubbling treasure chest.
 - **BIRDS**: a sunny summer sky with bluebirds, cardinals, finches and robins flying over a flower meadow. (Also requested by a six-year-old.)
 - **STARS**: a warp-speed starfield.

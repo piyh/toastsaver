@@ -54,11 +54,6 @@ Canvas make_toaster_hat(int frame, int hat) {
     fill_rect(&c, ox + 19, oy - 2, ox + 24, oy - 1, rgb(0xD9A55B));
     fill_rect(&c, ox + 28, oy + 6, ox + 28, oy + 16, rgb(0x5A606C));
     fill_rect(&c, ox + 29, oy + 9, ox + 33, oy + 11, rgb(0x3A3F4A));
-    fill_ellipse(&c, ox + 9.5f, oy + 13.5f, 2.2f, 2.2f, rgb(0xD8433B));
-    put(&c, ox + 9, oy + 12, rgb(0xFFB3AA));
-    fill_rect(&c, ox + 15, oy + 13, ox + 15, oy + 13, rgb(0x3A3F4A));
-    fill_rect(&c, ox + 16, oy + 14, ox + 19, oy + 14, rgb(0x3A3F4A));
-    fill_rect(&c, ox + 20, oy + 13, ox + 20, oy + 13, rgb(0x3A3F4A));
     fill_rect(&c, ox + 3, oy + 22, ox + 6, oy + 23, rgb(0x3A3F4A));
     fill_rect(&c, ox + 25, oy + 22, ox + 28, oy + 23, rgb(0x3A3F4A));
     if (hat) {

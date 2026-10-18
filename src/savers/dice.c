@@ -1,8 +1,9 @@
-/* DICE: a felt dice tray. A d4, d6, d8, d10, d12 and d20, each in its own bright
-   colour, tumble in from the side, bounce, spin and settle. Every result flies up to
-   a little chalkboard that adds them up. Top rolls get sparkles and a happy hop (a
-   natural 20 gets a gold glow and a tiny "CRIT!"); a 1 gets a sad droop and a little
-   rain cloud. Everything is pixel art drawn at a low resolution and scaled up. */
+/* DICE: a felt dice tray with true 3D polyhedral dice (d4, d6, d8, d10, d12, d20).
+   The dice tumble and bounce in 3D across the felt one at a time, each landing
+   cleanly to show its roll. Then, with deliberate pauses so a six-year-old has time
+   to calculate and frontrun the math, each result flies up to the chalkboard.
+   Only a natural 20 on a d20 triggers the gold glow, rays, confetti and "CRIT!",
+   and only a natural 1 on a d20 gets the grumpy cloud and "WOMP". */
 #include "../engine.h"
 #include <math.h>
 #include <stdlib.h>
@@ -10,8 +11,8 @@
 #include <string.h>
 
 enum { D4, D6, D8, D10, D12, D20, KINDS };
-enum { ROLL, SUM, EXIT, GAP };
-enum { CALM, MAXED, CRIT, ONE, FAIL };
+enum { ROLL, TALLY_WAIT, TALLY_FLY, SUM_HOLD, EXIT, GAP };
+enum { CALM, CRIT, FAIL };
 enum { P_SPARK, P_CONFETTI, P_DUST, P_RAIN, P_CHALK };
 
 #define MAXDICE 6
@@ -24,22 +25,374 @@ static const int SIDES[KINDS] = { 4, 6, 8, 10, 12, 20 };
 static const char *const NAMES[KINDS] = { "D4", "D6", "D8", "D10", "D12", "D20" };
 static const uint32_t BODY[KINDS] = { 0xF0464E, 0xFF9230, 0xFFD23C, 0x26C6BE, 0x4F86F7, 0xA862F0 };
 static const uint32_t CONFETTI[6] = { 0xFF5A6E, 0xFFD23C, 0x5BD46B, 0x4DA6FF, 0xC98BFF, 0xFFFFFF };
-static const float BOUNCE[NB] = { 0.26f, 0.52f, 0.71f, 0.84f, 0.93f };
+static const float BOUNCE[NB] = { 0.28f, 0.52f, 0.70f, 0.83f, 0.93f };
 
-/* The handfuls we roll, picked at random (the first one is always the first roll). */
+/* Handfuls of dice, prominently featuring d4 and varying sets. */
 static const int SETS[][MAXDICE + 1] = {
-    { 3, D6, D8, D20 }, { 1, D20 }, { 2, D6, D6 }, { 3, D6, D6, D6 },
-    { 6, D4, D6, D8, D10, D12, D20 }, { 2, D8, D12 }, { 2, D10, D10 }, { 1, D20 },
-    { 2, D4, D4 }, { 2, D20, D20 }, { 1, D12 }, { 3, D4, D6, D8 }, { 2, D6, D20 },
-    { 1, D10 }, { 4, D6, D6, D6, D6 }, { 1, D20 }, { 2, D8, D8 }, { 3, D10, D12, D20 },
+    { 2, D4, D6 }, { 1, D20 }, { 2, D6, D6 }, { 3, D4, D6, D8 },
+    { 1, D4 }, { 2, D4, D4 }, { 2, D8, D12 }, { 1, D12 },
+    { 2, D10, D10 }, { 1, D20 }, { 2, D6, D20 }, { 1, D10 },
+    { 3, D6, D6, D6 }, { 3, D6, D8, D20 }, { 2, D20, D20 },
+    { 6, D4, D6, D8, D10, D12, D20 }
 };
 #define NSETS ((int)(sizeof SETS / sizeof SETS[0]))
 
+/* ---------- 3D vector, quaternion and matrix math ---------- */
+
+typedef struct { float x, y, z; } Vec3;
+typedef struct { float w, x, y, z; } Quat;
+typedef struct { float m[3][3]; } Mat3;
+
+static Vec3 vec3(float x, float y, float z) { return (Vec3){ x, y, z }; }
+static Vec3 v_add(Vec3 a, Vec3 b) { return (Vec3){ a.x + b.x, a.y + b.y, a.z + b.z }; }
+static Vec3 v_sub(Vec3 a, Vec3 b) { return (Vec3){ a.x - b.x, a.y - b.y, a.z - b.z }; }
+static Vec3 v_scale(Vec3 a, float s) { return (Vec3){ a.x * s, a.y * s, a.z * s }; }
+static float v_dot(Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+static Vec3 v_cross(Vec3 a, Vec3 b) {
+    return (Vec3){
+        a.y * b.z - a.z * b.y,
+        a.z * b.x - a.x * b.z,
+        a.x * b.y - a.y * b.x
+    };
+}
+static float v_len(Vec3 a) { return sqrtf(a.x * a.x + a.y * a.y + a.z * a.z); }
+static Vec3 v_norm(Vec3 a) {
+    float l = v_len(a);
+    return l > 1e-5f ? v_scale(a, 1.0f / l) : a;
+}
+
+static Quat quat_ident(void) { return (Quat){ 1, 0, 0, 0 }; }
+
+static Quat quat_axis_angle(Vec3 axis, float angle) {
+    axis = v_norm(axis);
+    float half = angle * 0.5f;
+    float s = sinf(half);
+    return (Quat){ cosf(half), axis.x * s, axis.y * s, axis.z * s };
+}
+
+static Quat quat_mul(Quat a, Quat b) {
+    return (Quat){
+        a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+        a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+        a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+        a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w
+    };
+}
+
+static Quat quat_norm(Quat q) {
+    float l = sqrtf(q.w*q.w + q.x*q.x + q.y*q.y + q.z*q.z);
+    return l > 1e-5f ? (Quat){ q.w/l, q.x/l, q.y/l, q.z/l } : quat_ident();
+}
+
+static Quat quat_slerp(Quat a, Quat b, float t) {
+    float dot = a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z;
+    if (dot < 0) { b = (Quat){ -b.w, -b.x, -b.y, -b.z }; dot = -dot; }
+    if (dot > 0.9995f) {
+        return quat_norm((Quat){
+            a.w + t * (b.w - a.w),
+            a.x + t * (b.x - a.x),
+            a.y + t * (b.y - a.y),
+            a.z + t * (b.z - a.z)
+        });
+    }
+    float theta = acosf(dot < -1 ? -1 : (dot > 1 ? 1 : dot));
+    float s1 = sinf((1 - t) * theta) / sinf(theta);
+    float s2 = sinf(t * theta) / sinf(theta);
+    return (Quat){
+        s1 * a.w + s2 * b.w,
+        s1 * a.x + s2 * b.x,
+        s1 * a.y + s2 * b.y,
+        s1 * a.z + s2 * b.z
+    };
+}
+
+static Mat3 quat_to_mat3(Quat q) {
+    float w = q.w, x = q.x, y = q.y, z = q.z;
+    return (Mat3){{
+        { 1 - 2*(y*y + z*z),     2*(x*y - w*z),     2*(x*z + w*y) },
+        {     2*(x*y + w*z), 1 - 2*(x*x + z*z),     2*(y*z - w*x) },
+        {     2*(x*z - w*y),     2*(y*z + w*x), 1 - 2*(x*x + y*y) }
+    }};
+}
+
+static Vec3 mat3_mul_v(Mat3 m, Vec3 v) {
+    return (Vec3){
+        m.m[0][0] * v.x + m.m[0][1] * v.y + m.m[0][2] * v.z,
+        m.m[1][0] * v.x + m.m[1][1] * v.y + m.m[1][2] * v.z,
+        m.m[2][0] * v.x + m.m[2][1] * v.y + m.m[2][2] * v.z
+    };
+}
+
+/* Aligns model vector src with world target vector. */
+static Quat orient_face_to(Vec3 src, Vec3 target) {
+    src = v_norm(src);
+    target = v_norm(target);
+    float dot = v_dot(src, target);
+    if (dot > 0.9999f) return quat_ident();
+    if (dot < -0.9999f) {
+        Vec3 perp = fabsf(src.x) < 0.8f ? vec3(1, 0, 0) : vec3(0, 1, 0);
+        Vec3 ax = v_norm(v_cross(src, perp));
+        return quat_axis_angle(ax, PI_F);
+    }
+    Vec3 ax = v_cross(src, target);
+    float angle = acosf(dot < -1 ? -1 : (dot > 1 ? 1 : dot));
+    return quat_axis_angle(ax, angle);
+}
+
+/* ---------- polyhedral 3D mesh definitions ---------- */
+
+#define MAX_POLY_VERTS 24
+#define MAX_POLY_FACES 20
+#define MAX_FACE_VERTS 5
+
 typedef struct {
-    int kind, value, shown, rollN, axis, react, settled, tallied, counted;
-    float sx, sy, tx, ty, t0, dur, z0, spin, u;
-    float x, y, z, ang, lsx, lsy, gsx, gsy, tint, impact, impactT, st;
+    int nverts;
+    int idx[MAX_FACE_VERTS];
+    int value;
+    Vec3 normal;
+} PolyFace;
+
+typedef struct {
+    int nverts;
+    int nfaces;
+    Vec3 verts[MAX_POLY_VERTS];
+    PolyFace faces[MAX_POLY_FACES];
+} PolyMesh;
+
+static void init_poly_mesh(PolyMesh *m) {
+    for (int f = 0; f < m->nfaces; f++) {
+        PolyFace *fc = &m->faces[f];
+        Vec3 v0 = m->verts[fc->idx[0]];
+        Vec3 v1 = m->verts[fc->idx[1]];
+        Vec3 v2 = m->verts[fc->idx[2]];
+        Vec3 n = v_norm(v_cross(v_sub(v1, v0), v_sub(v2, v0)));
+        Vec3 c = vec3(0, 0, 0);
+        for (int i = 0; i < fc->nverts; i++) c = v_add(c, m->verts[fc->idx[i]]);
+        c = v_scale(c, 1.0f / fc->nverts);
+        if (v_dot(n, c) < 0) {
+            for (int i = 0; i < fc->nverts / 2; i++) {
+                int tmp = fc->idx[i];
+                fc->idx[i] = fc->idx[fc->nverts - 1 - i];
+                fc->idx[fc->nverts - 1 - i] = tmp;
+            }
+            n = v_scale(n, -1.0f);
+        }
+        fc->normal = n;
+    }
+}
+
+static PolyMesh build_d4(void) {
+    PolyMesh m = {0};
+    m.nverts = 4;
+    m.verts[0] = v_norm(vec3( 1,  1,  1));
+    m.verts[1] = v_norm(vec3(-1, -1,  1));
+    m.verts[2] = v_norm(vec3(-1,  1, -1));
+    m.verts[3] = v_norm(vec3( 1, -1, -1));
+    m.nfaces = 4;
+    int faces[4][3] = { {0, 1, 2}, {0, 3, 1}, {0, 2, 3}, {1, 3, 2} };
+    for (int i = 0; i < 4; i++) {
+        m.faces[i].nverts = 3;
+        m.faces[i].value = i + 1;
+        for (int j = 0; j < 3; j++) m.faces[i].idx[j] = faces[i][j];
+    }
+    init_poly_mesh(&m);
+    return m;
+}
+
+static PolyMesh build_d6(void) {
+    PolyMesh m = {0};
+    m.nverts = 8;
+    for (int i = 0; i < 8; i++) {
+        m.verts[i] = v_norm(vec3(
+            (i & 1) ? 1.0f : -1.0f,
+            (i & 2) ? 1.0f : -1.0f,
+            (i & 4) ? 1.0f : -1.0f
+        ));
+    }
+    m.nfaces = 6;
+    /* Opposite faces sum to 7 */
+    int fidx[6][4] = {
+        { 4, 5, 7, 6 }, // 1: +Z
+        { 6, 7, 3, 2 }, // 2: +Y
+        { 5, 1, 3, 7 }, // 3: +X
+        { 0, 4, 6, 2 }, // 4: -X
+        { 0, 1, 5, 4 }, // 5: -Y
+        { 0, 2, 3, 1 }, // 6: -Z
+    };
+    for (int i = 0; i < 6; i++) {
+        m.faces[i].nverts = 4;
+        m.faces[i].value = i + 1;
+        for (int j = 0; j < 4; j++) m.faces[i].idx[j] = fidx[i][j];
+    }
+    init_poly_mesh(&m);
+    return m;
+}
+
+static PolyMesh build_d8(void) {
+    PolyMesh m = {0};
+    m.nverts = 6;
+    m.verts[0] = vec3( 1,  0,  0);
+    m.verts[1] = vec3(-1,  0,  0);
+    m.verts[2] = vec3( 0,  1,  0);
+    m.verts[3] = vec3( 0, -1,  0);
+    m.verts[4] = vec3( 0,  0,  1);
+    m.verts[5] = vec3( 0,  0, -1);
+    m.nfaces = 8;
+    int fidx[8][3] = {
+        {4, 0, 2}, {4, 2, 1}, {4, 1, 3}, {4, 3, 0},
+        {5, 1, 2}, {5, 2, 0}, {5, 0, 3}, {5, 3, 1}
+    };
+    for (int i = 0; i < 8; i++) {
+        m.faces[i].nverts = 3;
+        m.faces[i].value = i + 1;
+        for (int j = 0; j < 3; j++) m.faces[i].idx[j] = fidx[i][j];
+    }
+    init_poly_mesh(&m);
+    return m;
+}
+
+static PolyMesh build_d10(void) {
+    /* Pentagonal trapezohedron: two apexes and a zig-zag ring. The ring height is
+       chosen so every kite is flat. */
+    PolyMesh m = {0};
+    const float A = 1.05f, rr = 0.95f, c36 = cosf(PI_F / 5), h = A * (1 - c36) / (1 + c36);
+    m.nverts = 12;
+    m.verts[0] = vec3(0, 0, A);
+    m.verts[1] = vec3(0, 0, -A);
+    for (int k = 0; k < 5; k++) {
+        float a = k * 2.0f * PI_F / 5.0f, b = a + PI_F / 5.0f;
+        m.verts[2 + k] = vec3(rr * cosf(a), rr * sinf(a), h);    /* upper ring */
+        m.verts[7 + k] = vec3(rr * cosf(b), rr * sinf(b), -h);   /* lower ring */
+    }
+    m.nfaces = 10;
+    for (int k = 0; k < 5; k++) {
+        int k1 = (k + 1) % 5;
+        PolyFace *top = &m.faces[k * 2], *bot = &m.faces[k * 2 + 1];
+        *top = (PolyFace){ 4, { 0, 2 + k, 7 + k, 2 + k1 }, 2 * k + 1, {0} };
+        *bot = (PolyFace){ 4, { 1, 7 + k, 2 + k1, 7 + k1 }, 2 * k + 2, {0} };
+    }
+    init_poly_mesh(&m);
+    return m;
+}
+
+static PolyMesh build_d12(void) {
+    PolyMesh m = {0};
+    m.nverts = 20;
+    float phi = 1.6180339887f, ip = 1.0f / phi;
+    int v = 0;
+    for (int x = -1; x <= 1; x += 2)
+        for (int y = -1; y <= 1; y += 2)
+            for (int z = -1; z <= 1; z += 2)
+                m.verts[v++] = vec3((float)x, (float)y, (float)z);
+    for (int s1 = -1; s1 <= 1; s1 += 2)
+        for (int s2 = -1; s2 <= 1; s2 += 2) {
+            m.verts[v++] = vec3(0, (float)s1 * ip, (float)s2 * phi);
+            m.verts[v++] = vec3((float)s1 * ip, (float)s2 * phi, 0);
+            m.verts[v++] = vec3((float)s1 * phi, 0, (float)s2 * ip);
+        }
+    for (int i = 0; i < 20; i++) m.verts[i] = v_norm(m.verts[i]);
+
+    Vec3 fnorm[12] = {
+        /* face centres point at the vertices of the dual icosahedron */
+        vec3(0,  phi,  1), vec3(0,  phi, -1), vec3(0, -phi,  1), vec3(0, -phi, -1),
+        vec3( 1, 0,  phi), vec3(-1, 0,  phi), vec3( 1, 0, -phi), vec3(-1, 0, -phi),
+        vec3( phi,  1, 0), vec3( phi, -1, 0), vec3(-phi,  1, 0), vec3(-phi, -1, 0)
+    };
+    for (int i = 0; i < 12; i++) fnorm[i] = v_norm(fnorm[i]);
+
+    m.nfaces = 12;
+    for (int f = 0; f < 12; f++) {
+        Vec3 fn = fnorm[f];
+        int cverts[5];
+        float cdots[5] = {-99,-99,-99,-99,-99};
+        for (int i = 0; i < 20; i++) {
+            float d = v_dot(m.verts[i], fn);
+            for (int j = 0; j < 5; j++) {
+                if (d > cdots[j]) {
+                    for (int k = 4; k > j; k--) {
+                        cdots[k] = cdots[k-1];
+                        cverts[k] = cverts[k-1];
+                    }
+                    cdots[j] = d;
+                    cverts[j] = i;
+                    break;
+                }
+            }
+        }
+        Vec3 ref = v_norm(v_sub(m.verts[cverts[0]], v_scale(fn, v_dot(m.verts[cverts[0]], fn))));
+        Vec3 ref2 = v_cross(fn, ref);
+        float angles[5];
+        for (int i = 0; i < 5; i++) {
+            Vec3 p = m.verts[cverts[i]];
+            angles[i] = atan2f(v_dot(p, ref2), v_dot(p, ref));
+        }
+        for (int i = 0; i < 5; i++)
+            for (int j = i + 1; j < 5; j++)
+                if (angles[j] < angles[i]) {
+                    float ta = angles[i]; angles[i] = angles[j]; angles[j] = ta;
+                    int tv = cverts[i]; cverts[i] = cverts[j]; cverts[j] = tv;
+                }
+        m.faces[f].nverts = 5;
+        m.faces[f].value = f + 1;
+        for (int i = 0; i < 5; i++) m.faces[f].idx[i] = cverts[i];
+    }
+    init_poly_mesh(&m);
+    return m;
+}
+
+static PolyMesh build_d20(void) {
+    PolyMesh m = {0};
+    m.nverts = 12;
+    float phi = 1.6180339887f;
+    float f = 1.0f / sqrtf(1.0f + phi * phi);
+    float pf = phi * f;
+    m.verts[0]  = vec3(-f,  0,  pf);
+    m.verts[1]  = vec3( f,  0,  pf);
+    m.verts[2]  = vec3(-f,  0, -pf);
+    m.verts[3]  = vec3( f,  0, -pf);
+    m.verts[4]  = vec3( 0,  pf,  f);
+    m.verts[5]  = vec3( 0,  pf, -f);
+    m.verts[6]  = vec3( 0, -pf,  f);
+    m.verts[7]  = vec3( 0, -pf, -f);
+    m.verts[8]  = vec3( pf,  f,  0);
+    m.verts[9]  = vec3(-pf,  f,  0);
+    m.verts[10] = vec3( pf, -f,  0);
+    m.verts[11] = vec3(-pf, -f,  0);
+    for (int i = 0; i < 12; i++) m.verts[i] = v_norm(m.verts[i]);
+
+    m.nfaces = 20;
+    int fidx[20][3] = {
+        {0, 4, 1}, {0, 9, 4}, {0, 11, 9}, {0, 6, 11}, {0, 1, 6},
+        {1, 4, 8}, {4, 9, 5}, {9, 11, 2}, {11, 6, 7}, {6, 1, 10},
+        {3, 2, 5}, {3, 5, 8}, {3, 8, 10}, {3, 10, 7}, {3, 7, 2},
+        {2, 5, 9}, {5, 8, 4}, {8, 10, 1}, {10, 7, 6}, {7, 2, 11}
+    };
+    int fvals[20] = {
+        20, 2, 3, 4, 5,
+        6, 7, 8, 9, 10,
+        1, 19, 18, 17, 16,
+        15, 14, 13, 12, 11
+    };
+    for (int i = 0; i < 20; i++) {
+        m.faces[i].nverts = 3;
+        m.faces[i].value = fvals[i];
+        for (int j = 0; j < 3; j++) m.faces[i].idx[j] = fidx[i][j];
+    }
+    init_poly_mesh(&m);
+    return m;
+}
+
+/* ---------- die and particle state ---------- */
+
+typedef struct {
+    int kind, value, react, settled, tallied, counted;
+    float sx, sy, tx, ty, t0, dur, z0, u;
+    float x, y, z, tint, impact, impactT, st;
     uint32_t tintCol;
+    Quat q_tumble, q_target, q_snap;
+    Vec3 tumble_axis;
+    float tumble_speed;
+    Mat3 orient;
 } Die;
 
 typedef struct { float x, y, vx, vy, life, max, ph; int kind; uint32_t col; } Part;
@@ -47,22 +400,23 @@ typedef struct { float x0, y0, t; int value, on; } Fly;
 typedef struct { char txt[8]; float x, y, t, max; int sc; uint32_t col; } Pop;
 
 typedef struct {
-    int w, h, S, W, H, R, F, SP, small;   /* small: a picker tile, so a simpler board */
+    int w, h, S, W, H, R, F, small;
     int bx, by, bw, bh;
-    float t, stateT, tick, hold;
+    float t, stateT, tick, hold, tallyWait;
     int state, n, rows, set, fromLeft, total, shown, hasCrit;
+    int nextTally;
     char expr[48];
     Die die[MAXDICE];
     Fly fly[MAXDICE];
     Pop pop[POPS];
     Part parts[PARTS];
-    Canvas sprite[KINDS][21];
+    PolyMesh mesh[KINDS];
     Canvas under, top;
     unsigned char *mark;
     SDL_Texture *felt, *underTex, *topTex;
 } Dice;
 
-/* ---------- little helpers ---------- */
+/* ---------- drawing helpers ---------- */
 
 static float clampf(float v, float a, float b) { return v < a ? a : (v > b ? b : v); }
 static float lerp(float a, float b, float t) { return a + (b - a) * t; }
@@ -70,7 +424,9 @@ static float ease(float k) { k = clampf(k, 0, 1); return k * k * (3 - 2 * k); }
 
 static uint32_t shade(uint32_t hex, float f) {
     int r = (int)(((hex >> 16) & 255) * f), g = (int)(((hex >> 8) & 255) * f), b = (int)((hex & 255) * f);
-    r = r > 255 ? 255 : r; g = g > 255 ? 255 : g; b = b > 255 ? 255 : b;
+    r = r > 255 ? 255 : (r < 0 ? 0 : r);
+    g = g > 255 ? 255 : (g < 0 ? 0 : g);
+    b = b > 255 ? 255 : (b < 0 ? 0 : b);
     return (uint32_t)(r << 16 | g << 8 | b);
 }
 
@@ -81,11 +437,8 @@ static uint32_t mixc(uint32_t a, uint32_t b, float t) {
     return (uint32_t)(r << 16 | g << 8 | bl);
 }
 
-/* f > 1 lightens towards white, f < 1 darkens. */
 static uint32_t lit(uint32_t hex, float f) { return f >= 1 ? mixc(hex, 0xFFFFFF, f - 1) : shade(hex, f); }
-
 static uint32_t rgba(uint32_t hex, int a) { return (hex << 8) | (uint32_t)(a < 0 ? 0 : (a > 255 ? 255 : a)); }
-
 static void hline(Canvas *c, int x0, int x1, int y, uint32_t hex) { fill_rect(c, x0, y, x1, y, rgb(hex)); }
 
 static void mul_px(Canvas *c, int x, int y, float f) {
@@ -93,11 +446,22 @@ static void mul_px(Canvas *c, int x, int y, float f) {
     if (p) put(c, x, y, rgb(shade(p >> 8, f)));
 }
 
-/* The font has no + or =, so those two live here. */
+static void draw_line(Canvas *c, int x0, int y0, int x1, int y1, uint32_t col) {
+    int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
+    while (1) {
+        put(c, x0, y0, col);
+        if (x0 == x1 && y0 == y1) break;
+        int e2 = 2 * err;
+        if (e2 >= dy) { err += dy; x0 += sx; }
+        if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+}
+
 static const char *const PLUS[FONT_H] = { ".....", "..#..", "..#..", "#####", "..#..", "..#..", "....." };
 static const char *const EQUALS[FONT_H] = { ".....", ".....", "#####", ".....", "#####", ".....", "....." };
 
-/* 5x7 text straight onto a canvas, sc canvas pixels per font dot. */
 static void glyphs(Canvas *c, const char *s, int x, int y, int sc, uint32_t col) {
     for (; *s; s++, x += (FONT_W + 1) * sc) {
         const char *const *g = *s == '+' ? PLUS : (*s == '=' ? EQUALS : font_glyph(*s));
@@ -109,33 +473,12 @@ static void glyphs(Canvas *c, const char *s, int x, int y, int sc, uint32_t col)
 
 static int glyphs_w(const char *s, int sc) { int n = (int)strlen(s); return n ? n * (FONT_W + 1) * sc - sc : 0; }
 
-/* ---------- the dice (one upright sprite per face) ---------- */
-
-static const float LX = -0.6f, LY = -0.8f;   /* light from the top left */
-
-static void facet(Canvas *c, float x0, float y0, float x1, float y1, float x2, float y2, float x3, float y3,
-                  int n, float cx, float cy, uint32_t base, float k) {
-    float xs[4] = { x0, x1, x2, x3 }, ys[4] = { y0, y1, y2, y3 };
-    float mx = 0, my = 0;
-    for (int i = 0; i < n; i++) { mx += xs[i]; my += ys[i]; }
-    mx = mx / n - cx; my = my / n - cy;
-    float l = sqrtf(mx * mx + my * my);
-    float d = l > 0.01f ? (mx * LX + my * LY) / l : 0;
-    fill_poly(c, xs, ys, n, rgb(lit(base, 1 + k * d)));
-}
-
-static void pip(Canvas *c, float x, float y, float r, uint32_t base, uint32_t ink) {
-    fill_ellipse(c, x, y, r + 1, r + 1, rgb(shade(base, 0.45f)));
-    fill_ellipse(c, x, y, r, r, rgb(ink));
-    put(c, (int)(x - r * 0.4f), (int)(y - r * 0.4f), rgb(lit(ink, 1.6f)));
-}
-
 static void number(Canvas *c, int v, float cx, float cy, int sc, uint32_t base, uint32_t ink) {
     char s[4];
     snprintf(s, sizeof s, "%d", v);
     int w = glyphs_w(s, sc), x = (int)floorf(cx - w / 2.0f + 0.5f), y = (int)floorf(cy - FONT_H * sc / 2.0f + 0.5f);
-    uint32_t dark = rgb(shade(base, 0.32f));
-    int bar = v == 6 || v == 9, by = y + FONT_H * sc + 1;   /* 6 and 9 get a little bar underneath */
+    uint32_t dark = rgb(shade(base, 0.28f));
+    int bar = v == 6 || v == 9, by = y + FONT_H * sc + 1;
     for (int dy = -1; dy <= 1; dy++)
         for (int dx = -1; dx <= 1; dx++) {
             glyphs(c, s, x + dx, y + dy, sc, dark);
@@ -146,113 +489,145 @@ static void number(Canvas *c, int v, float cx, float cy, int sc, uint32_t base, 
     if (bar) fill_rect(c, x, by, x + w - 1, by, rgb(ink));
 }
 
-static Canvas make_die(int kind, int v, float R, int SP, uint32_t ink) {
-    Canvas c = canvas_new(SP, SP);
-    uint32_t base = BODY[kind];
-    float cx = SP / 2.0f, cy = SP / 2.0f, ox[8], oy[8], k = 0.64f, fy = 0;
-    int n = 0, sc = R >= 15 ? 2 : 1;
-    switch (kind) {
-    case D4:
-        n = 3; cy += R * 0.22f; k = 0.6f;
-        for (int i = 0; i < 3; i++) { float a = (-90 + 120 * i) * PI_F / 180; ox[i] = cosf(a) * R * 1.3f; oy[i] = sinf(a) * R * 1.3f; }
-        fy = R * 0.06f;
-        break;
-    case D6: {
-        float s = R * 0.9f, ch = R * 0.26f;
-        float px[8] = { -s + ch, s - ch, s, s, s - ch, -s + ch, -s, -s };
-        float py[8] = { -s, -s, -s + ch, s - ch, s, s, s - ch, -s + ch };
-        n = 8; k = 0.74f;
-        for (int i = 0; i < 8; i++) { ox[i] = px[i]; oy[i] = py[i]; }
-        break;
-    }
-    case D8:
-        n = 4; k = 0.6f;
-        ox[0] = 0; oy[0] = -R * 1.22f; ox[1] = R * 1.02f; oy[1] = 0; ox[2] = 0; oy[2] = R * 1.22f; ox[3] = -R * 1.02f; oy[3] = 0;
-        break;
-    case D10: {                                        /* a kite face with a side facet each way */
-        static const float P[6][2] = { { 0, -1.24f }, { 1.08f, -0.02f }, { 0.86f, 0.52f }, { 0, 1.0f }, { -0.86f, 0.52f }, { -1.08f, -0.02f } };
-        n = 6; cy -= R * 0.04f;
-        for (int i = 0; i < 6; i++) { ox[i] = P[i][0] * R; oy[i] = P[i][1] * R; }
-        break;
-    }
-    case D12:
-        n = 5; k = 0.64f; cy += R * 0.06f;
-        for (int i = 0; i < 5; i++) { float a = (-90 + 72 * i) * PI_F / 180; ox[i] = cosf(a) * R * 1.14f; oy[i] = sinf(a) * R * 1.14f; }
-        fy = R * 0.04f;
-        break;
-    default:
-        n = 6;
-        for (int i = 0; i < 6; i++) { float a = (-90 + 60 * i) * PI_F / 180; ox[i] = cosf(a) * R * 1.16f; oy[i] = sinf(a) * R * 1.16f; }
-        break;
-    }
-    for (int i = 0; i < n; i++) { ox[i] += cx; oy[i] += cy; }
-    fill_poly(&c, ox, oy, n, rgb(base));
-
-    if (kind == D10) {
-        float kx[4] = { ox[0], cx + R * 0.64f, ox[0], cx - R * 0.64f }, ky[4] = { oy[0], cy + R * 0.2f, cy + R * 0.74f, cy + R * 0.2f };
-        for (int sd = 0; sd < 2; sd++) {
-            int a = sd ? 1 : 5, b = sd ? 2 : 4, kk = sd ? 1 : 3;
-            facet(&c, ox[0], oy[0], ox[a], oy[a], kx[kk], ky[kk], 0, 0, 3, cx, cy, base, 0.4f);
-            float xs[5] = { ox[a], ox[b], ox[3], kx[2], kx[kk] }, ys[5] = { oy[a], oy[b], oy[3], ky[2], ky[kk] };
-            float mx = (xs[0] + xs[1] + xs[2]) / 3 - cx, my = (ys[0] + ys[1] + ys[2]) / 3 - cy, l = sqrtf(mx * mx + my * my);
-            fill_poly(&c, xs, ys, 5, rgb(lit(base, 0.88f + 0.4f * (mx * LX + my * LY) / l)));
-        }
-        fill_poly(&c, kx, ky, 4, rgb(lit(base, 1.06f)));
-        for (int s = 0; s <= 24; s++) {                /* lit upper-left edge of the face */
-            put(&c, (int)lerp(kx[0], kx[3], s / 24.0f), (int)lerp(ky[0], ky[3], s / 24.0f), rgb(lit(base, 1.3f)));
-        }
-        fy = R * 0.2f;
-    } else if (kind == D20) {
-        /* a triangle face in the middle with nine more around it */
-        float f = 0.74f, ax[3], ay[3];
-        for (int i = 0; i < 3; i++) { ax[i] = cx + (ox[i * 2] - cx) * f; ay[i] = cy + (oy[i * 2] - cy) * f; }
-        for (int i = 0; i < 3; i++) {
-            int v0 = i * 2, v1 = i * 2 + 1, v2 = (i * 2 + 2) % 6, a = i, b = (i + 1) % 3;
-            facet(&c, ax[a], ay[a], ox[v1], oy[v1], ax[b], ay[b], 0, 0, 3, cx, cy, base, 0.22f);
-            facet(&c, ox[v0], oy[v0], ox[v1], oy[v1], ax[a], ay[a], 0, 0, 3, cx, cy, shade(base, 0.86f), 0.42f);
-            facet(&c, ox[v1], oy[v1], ox[v2], oy[v2], ax[b], ay[b], 0, 0, 3, cx, cy, shade(base, 0.86f), 0.42f);
-        }
-        fill_poly(&c, ax, ay, 3, rgb(lit(base, 1.08f)));
-        for (int i = 0; i < 3; i++) {                  /* bright edges around the face */
-            int j = (i + 1) % 3;
-            for (int s = 0; s <= 20; s++) {
-                float px = lerp(ax[i], ax[j], s / 20.0f), py = lerp(ay[i], ay[j], s / 20.0f);
-                if (py < cy + R * 0.2f) put(&c, (int)px, (int)py, rgb(lit(base, 1.35f)));
-            }
-        }
-        fy = R * 0.16f;
-    } else {
-        float ix[8], iy[8], fcx = cx, fcy = cy + fy;
-        for (int i = 0; i < n; i++) { ix[i] = fcx + (ox[i] - cx) * k; iy[i] = fcy + (oy[i] - cy) * k; }
-        for (int i = 0; i < n; i++) {
-            int j = (i + 1) % n;
-            facet(&c, ox[i], oy[i], ox[j], oy[j], ix[j], iy[j], ix[i], iy[i], 4, cx, cy, base, 0.42f);
-        }
-        fill_poly(&c, ix, iy, n, rgb(lit(base, 1.06f)));
-        for (int i = 0; i < n; i++) {                  /* a lit rim on the top-left edges of the face */
-            int j = (i + 1) % n;
-            float nx = (iy[j] - iy[i]), ny = -(ix[j] - ix[i]);
-            if (nx * LX + ny * LY >= 0) continue;
-            for (int s = 0; s <= 24; s++)
-                put(&c, (int)lerp(ix[i], ix[j], s / 24.0f), (int)lerp(iy[i], iy[j], s / 24.0f), rgb(lit(base, 1.3f)));
-        }
-    }
-
-    if (kind == D6) {
-        static const float P[7][6][2] = {
-            {{0}}, {{0, 0}}, {{-1, -1}, {1, 1}}, {{-1, -1}, {0, 0}, {1, 1}},
-            {{-1, -1}, {1, -1}, {-1, 1}, {1, 1}}, {{-1, -1}, {1, -1}, {0, 0}, {-1, 1}, {1, 1}},
-            {{-1, -1}, {1, -1}, {-1, 0}, {1, 0}, {-1, 1}, {1, 1}},
-        };
-        float sp = R * 0.38f, pr = R * 0.12f > 1.2f ? R * 0.12f : 1.2f;
-        for (int i = 0; i < v; i++) pip(&c, cx + P[v][i][0] * sp, cy + P[v][i][1] * sp, pr, base, ink);
-    } else {
-        number(&c, v, cx, cy + fy, sc, base, ink);
-    }
-    return c;
+static void draw_pip(Canvas *c, float cx, float cy, float r, uint32_t base, uint32_t ink) {
+    fill_ellipse(c, cx, cy, r + 0.8f, r + 0.8f, rgb(shade(base, 0.45f)));
+    fill_ellipse(c, cx, cy, r, r, rgb(ink));
+    put(c, (int)(cx - r * 0.35f), (int)(cy - r * 0.35f), rgb(lit(ink, 1.4f)));
 }
 
-/* ---------- the tray and the chalkboard (built once) ---------- */
+/* ---------- 3D die rendering ---------- */
+
+/* Screen y = y - 0.85 z, so faces whose normal points along (0, 0.85, 1) face the
+   viewer. Dice come to rest with the rolled face pointing at REST: mostly up, tipped
+   a little toward the viewer so the top reads clearly. The label always goes on the
+   face (or, for the d4, the corner) that points most along REST, so what you see
+   while tumbling is a fair peek and what you see at rest is exactly the roll. */
+static Vec3 rest_dir(void) { return v_norm(vec3(0, 0.38f, 1.0f)); }
+
+static const float PIPS[7][6][2] = {
+    {{0}},
+    {{0, 0}},
+    {{-0.55f, -0.55f}, {0.55f, 0.55f}},
+    {{-0.55f, -0.55f}, {0, 0}, {0.55f, 0.55f}},
+    {{-0.55f, -0.55f}, {0.55f, -0.55f}, {-0.55f, 0.55f}, {0.55f, 0.55f}},
+    {{-0.55f, -0.55f}, {0.55f, -0.55f}, {0, 0}, {-0.55f, 0.55f}, {0.55f, 0.55f}},
+    {{-0.55f, -0.55f}, {0.55f, -0.55f}, {-0.55f, 0}, {0.55f, 0}, {-0.55f, 0.55f}, {0.55f, 0.55f}},
+};
+
+static void draw_3d_die(Dice *d, const Die *e, float cx, float cy) {
+    const PolyMesh *m = &d->mesh[e->kind];
+    float R = (float)d->R;
+    Vec3 center = vec3(cx, cy, e->z);
+
+    /* Transform vertices */
+    float sx[MAX_POLY_VERTS], sy[MAX_POLY_VERTS], depth[MAX_POLY_VERTS];
+    for (int i = 0; i < m->nverts; i++) {
+        Vec3 vrot = mat3_mul_v(e->orient, m->verts[i]);
+        Vec3 pw = v_add(center, v_scale(vrot, R));
+        sx[i] = pw.x;
+        sy[i] = pw.y - pw.z * 0.85f;
+        depth[i] = pw.y * 0.85f + pw.z;
+    }
+
+    /* Sort visible faces by depth back to front */
+    typedef struct { int f; float d; float view; } VisFace;
+    VisFace vis[MAX_POLY_FACES];
+    int nvis = 0;
+    for (int f = 0; f < m->nfaces; f++) {
+        const PolyFace *fc = &m->faces[f];
+        float fx[MAX_FACE_VERTS], fy[MAX_FACE_VERTS];
+        for (int i = 0; i < fc->nverts; i++) {
+            fx[i] = sx[fc->idx[i]];
+            fy[i] = sy[fc->idx[i]];
+        }
+        float a2d = 0;
+        for (int i = 0; i < fc->nverts; i++) {
+            int j = (i + 1) % fc->nverts;
+            a2d += fx[i] * fy[j] - fx[j] * fy[i];
+        }
+        if (a2d <= 0.1f) continue; /* faces turned away from the viewer wind clockwise on screen */
+
+        float davg = 0;
+        for (int i = 0; i < fc->nverts; i++) davg += depth[fc->idx[i]];
+        davg /= fc->nverts;
+        vis[nvis++] = (VisFace){ f, davg, a2d / (R * R) };
+    }
+    for (int i = 0; i < nvis; i++)
+        for (int j = i + 1; j < nvis; j++)
+            if (vis[j].d < vis[i].d) { VisFace t = vis[i]; vis[i] = vis[j]; vis[j] = t; }
+
+    /* Which face (or d4 corner) points most along REST: that's the number to show. */
+    Vec3 up = rest_dir();
+    int topf = 0, topv = 0;
+    float bf = -2, bv = -2;
+    for (int f = 0; f < m->nfaces; f++) {
+        float k = v_dot(mat3_mul_v(e->orient, m->faces[f].normal), up);
+        if (k > bf) { bf = k; topf = f; }
+    }
+    for (int i = 0; i < m->nverts; i++) {
+        float k = v_dot(mat3_mul_v(e->orient, v_norm(m->verts[i])), up);
+        if (k > bv) { bv = k; topv = i; }
+    }
+
+    Vec3 light = v_norm(vec3(-0.5f, -0.6f, 0.8f));
+    uint32_t base = BODY[e->kind];
+
+    for (int vi = 0; vi < nvis; vi++) {
+        int f = vis[vi].f;
+        const PolyFace *fc = &m->faces[f];
+        Vec3 nrot = mat3_mul_v(e->orient, fc->normal);
+        float diff = v_dot(nrot, light);
+        float lfactor = 0.68f + 0.36f * diff;
+        uint32_t col = lit(base, lfactor);
+        if (e->tint > 0.01f) col = mixc(col, e->tintCol, e->tint);
+
+        float fx[MAX_FACE_VERTS], fy[MAX_FACE_VERTS];
+        for (int i = 0; i < fc->nverts; i++) {
+            fx[i] = sx[fc->idx[i]];
+            fy[i] = sy[fc->idx[i]];
+        }
+        fill_poly(&d->top, fx, fy, fc->nverts, rgb(col));
+
+        /* Crisp bevelled edge outlines between faces */
+        uint32_t edge_col = diff > 0 ? lit(col, 1.25f) : shade(col, 0.75f);
+        for (int i = 0; i < fc->nverts; i++) {
+            int j = (i + 1) % fc->nverts;
+            draw_line(&d->top, (int)fx[i], (int)fy[i], (int)fx[j], (int)fy[j], rgb(edge_col));
+        }
+
+        /* Pips on d6 */
+        if (e->kind == D6 && fc->nverts == 4) {
+            if (vis[vi].view > 0.12f) {
+                int val = fc->value;
+                float pr = R * 0.13f;
+                if (pr < 1.0f) pr = 1.0f;
+                for (int p = 0; p < val; p++) {
+                    float u = PIPS[val][p][0], v = PIPS[val][p][1];
+                    float px = 0.25f * ((1 - u) * (1 - v) * fx[0] + (1 + u) * (1 - v) * fx[1] +
+                                        (1 + u) * (1 + v) * fx[2] + (1 - u) * (1 + v) * fx[3]);
+                    float py = 0.25f * ((1 - u) * (1 - v) * fy[0] + (1 + u) * (1 - v) * fy[1] +
+                                        (1 + u) * (1 + v) * fy[2] + (1 - u) * (1 + v) * fy[3]);
+                    draw_pip(&d->top, px, py, pr, base, 0xFFFFFF);
+                }
+            }
+        } else if (e->kind != D4 && f == topf) {
+            float mcx = 0, mcy = 0;
+            for (int i = 0; i < fc->nverts; i++) { mcx += fx[i]; mcy += fy[i]; }
+            mcx /= fc->nverts; mcy /= fc->nverts;
+            int sc = (R >= 16 && fc->value < 10) ? 2 : 1;
+            uint32_t ink = (e->kind == D20 && fc->value == 20 && e->settled) ? 0xFFE04A : 0xFFFFFF;
+            number(&d->top, fc->value, mcx, mcy, sc, col, ink);
+        }
+    }
+    /* A d4 is read at its top corner. That corner points at the viewer, so one number
+       sits right on it (drawing it on each face around the corner reads as "44"). */
+    if (e->kind == D4) {
+        float px = lerp(cx, sx[topv], 0.55f), py = lerp(cy - e->z * 0.85f, sy[topv], 0.55f);
+        number(&d->top, topv + 1, px, py, R >= 16 ? 2 : 1, base, 0xFFFFFF);
+    }
+}
+
+/* ---------- tray and chalkboard ---------- */
 
 static void wood(Canvas *c, int x0, int y0, int x1, int y1, uint32_t base, int vertical) {
     fill_rect(c, x0, y0, x1, y1, rgb(base));
@@ -270,7 +645,6 @@ static void wood(Canvas *c, int x0, int y0, int x1, int y1, uint32_t base, int v
 
 static void build_tray(Dice *d, Canvas *c) {
     int W = d->W, H = d->H, F = d->F;
-    /* felt: speckled green, brighter in the middle */
     for (int y = 0; y < H; y++)
         for (int x = 0; x < W; x++) {
             float dx = (x - W * 0.5f) / (W * 0.62f), dy = (y - H * 0.52f) / (H * 0.7f);
@@ -282,13 +656,11 @@ static void build_tray(Dice *d, Canvas *c) {
             if ((x + y) % 2 == 0 && irand(5) == 0) col = shade(col, 0.95f);
             put(c, x, y, rgb(col));
         }
-    /* stitching just inside the rim */
     int s0 = F + 3;
     for (int x = s0; x <= W - 1 - s0; x++)
         if ((x - s0) % 4 < 2) { put(c, x, s0, rgb(0x5EAE76)); put(c, x, H - 1 - s0, rgb(0x4E9A66)); }
     for (int y = s0; y <= H - 1 - s0; y++)
         if ((y - s0) % 4 < 2) { put(c, s0, y, rgb(0x5EAE76)); put(c, W - 1 - s0, y, rgb(0x4E9A66)); }
-    /* the rim casts a soft shadow onto the felt */
     static const float sh[4] = { 0.55f, 0.7f, 0.83f, 0.93f };
     for (int i = 0; i < 4; i++) {
         for (int x = F; x < W - F; x++) mul_px(c, x, F + i, sh[i]);
@@ -296,69 +668,48 @@ static void build_tray(Dice *d, Canvas *c) {
     }
     for (int x = F; x < W - F; x++) mul_px(c, x, H - F - 1, 0.82f);
     for (int y = F; y < H - F; y++) mul_px(c, W - F - 1, y, 0.82f);
-    /* wooden rim */
     wood(c, 0, 0, W - 1, F - 1, 0x9A6236, 0);
-    wood(c, 0, H - F, W - 1, H - 1, 0x84522C, 0);
-    wood(c, 0, F, F - 1, H - F - 1, 0x905A31, 1);
-    wood(c, W - F, F, W - 1, H - F - 1, 0x7E4E2A, 1);
-    for (int i = 0; i < F; i++) {                      /* mitred corners */
-        put(c, i, i, rgb(0x5E3A1E)); put(c, W - 1 - i, i, rgb(0x5E3A1E));
-        put(c, i, H - 1 - i, rgb(0x5E3A1E)); put(c, W - 1 - i, H - 1 - i, rgb(0x5E3A1E));
-    }
-    hline(c, 0, W - 1, 0, 0x3A2212);
-    hline(c, 1, W - 2, 1, 0xD6A068);
-    hline(c, F - 1, W - F, F - 1, 0x4A2C16);
-    hline(c, F, W - F - 1, H - F, 0xC08A54);
-    hline(c, 0, W - 1, H - 1, 0x2E1A0C);
-    fill_rect(c, 0, 0, 0, H - 1, rgb(0x3A2212));
-    fill_rect(c, 1, 1, 1, H - 2, rgb(0xC9925A));
-    fill_rect(c, W - 1, 0, W - 1, H - 1, rgb(0x2E1A0C));
-    fill_rect(c, F - 1, F, F - 1, H - F, rgb(0x4A2C16));
-    fill_rect(c, W - F, F, W - F, H - F, rgb(0xB07A46));
-    /* brass corner caps */
-    int cs = F + 2;
-    int cx[4] = { 0, W - cs, 0, W - cs }, cy[4] = { 0, 0, H - cs, H - cs };
-    for (int i = 0; i < 4; i++) {
-        fill_rect(c, cx[i], cy[i], cx[i] + cs - 1, cy[i] + cs - 1, rgb(0xC9A040));
-        hline(c, cx[i], cx[i] + cs - 1, cy[i], 0xF2D68A);
-        fill_rect(c, cx[i], cy[i], cx[i], cy[i] + cs - 1, rgb(0xE8C870));
-        hline(c, cx[i], cx[i] + cs - 1, cy[i] + cs - 1, 0x7A5A1C);
-        fill_rect(c, cx[i] + cs - 1, cy[i], cx[i] + cs - 1, cy[i] + cs - 1, rgb(0x8A6820));
-        int rx = cx[i] + cs / 2, ry = cy[i] + cs / 2;
-        put(c, rx, ry, rgb(0x6E5016)); put(c, rx - 1, ry - 1, rgb(0xFFF0B8));
-    }
+    wood(c, 0, H - F, W - 1, H - 1, 0x9A6236, 0);
+    wood(c, 0, F, F - 1, H - F - 1, 0x9A6236, 1);
+    wood(c, W - F, F, W - 1, H - F - 1, 0x9A6236, 1);
+    hline(c, F, W - F - 1, F - 1, 0xC6864C);
+    hline(c, F, W - F - 1, H - F, 0x56341C);
+    for (int y = F; y < H - F; y++) { put(c, F - 1, y, rgb(0xC6864C)); put(c, W - F, y, rgb(0x56341C)); }
 
-    /* the chalkboard, hanging over the top rim */
-    int bx = d->bx, by = d->by, bw = d->bw, bh = d->bh;
-    for (int y = by + 2; y < by + bh + 3; y++)
-        for (int x = bx + 3; x < bx + bw + 3; x++) mul_px(c, x, y, 0.7f);
-    wood(c, bx, by, bx + bw - 1, by + bh - 1, 0xB27A44, 0);
-    hline(c, bx, bx + bw - 1, by, 0xE8B57A);
-    fill_rect(c, bx, by, bx, by + bh - 1, rgb(0xD9A46A));
-    hline(c, bx, bx + bw - 1, by + bh - 1, 0x5E3A1E);
-    fill_rect(c, bx + bw - 1, by, bx + bw - 1, by + bh - 1, rgb(0x6E4422));
-    int ix0 = bx + 3, iy0 = by + 3, ix1 = bx + bw - 4, iy1 = by + bh - 4;
+    int bx = d->bx, by = d->by, bw = d->bw, bh = d->bh, fr = d->small ? 2 : 3;
+    wood(c, bx, by, bx + bw - 1, by + bh - 1, 0x6E4220, 0);
+    int ix0 = bx + fr, iy0 = by + fr, ix1 = bx + bw - 1 - fr, iy1 = by + bh - 1 - fr;
     for (int y = iy0; y <= iy1; y++)
         for (int x = ix0; x <= ix1; x++) {
-            uint32_t col = 0x2C3A34;
-            float sm = sinf(x * 0.21f + y * 0.13f) + sinf(x * 0.07f - y * 0.3f);
-            if (sm > 1.3f) col = 0x34443D;                 /* old chalk smudges */
-            if (irand(9) == 0) col = shade(col, 1.08f);
+            float g = 1.0f + 0.1f * sinf(x * 0.15f + y * 0.08f);
+            uint32_t col = shade(0x283630, g);
+            if (irand(12) == 0) col = lit(col, 1.15f);
             put(c, x, y, rgb(col));
         }
-    hline(c, ix0, ix1, iy0, 0x1C2622);
+    fill_rect(c, ix0, iy0, ix1, iy0, rgb(0x1C2622));
     fill_rect(c, ix0, iy0, ix0, iy1, rgb(0x1C2622));
-    if (!d->small) {                                   /* a stub of chalk */
+    if (!d->small) {
         fill_rect(c, ix1 - 8, iy1 - 1, ix1 - 3, iy1, rgb(0xF2F0E6));
         hline(c, ix1 - 8, ix1 - 3, iy1, 0xC8C6BC);
     }
-    for (int i = 0; i < 2; i++) {                      /* little nails */
+    for (int i = 0; i < 2; i++) {
         int nx = i ? bx + bw - 3 : bx + 2, ny = by + 1;
         put(c, nx, ny, rgb(0xE0E4EA)); put(c, nx, ny + 1, rgb(0x707882));
     }
 }
 
-/* ---------- rolling ---------- */
+/* ---------- roll sequencing and physics ---------- */
+
+static Quat compute_target_orientation(const PolyMesh *m, int kind, int value) {
+    Vec3 n = vec3(0, 0, 1);
+    if (kind == D4) n = v_norm(m->verts[value - 1]);     /* d4: the rolled corner points up */
+    else
+        for (int f = 0; f < m->nfaces; f++)
+            if (m->faces[f].value == value) { n = m->faces[f].normal; break; }
+    Vec3 up = rest_dir();
+    Quat spin = quat_axis_angle(up, frand(0, 2 * PI_F));  /* so two 8s don't look identical */
+    return quat_norm(quat_mul(spin, orient_face_to(n, up)));
+}
 
 static void new_roll(Dice *d) {
     d->set = d->t < 0.5f ? 0 : 1 + irand(NSETS - 1);
@@ -367,6 +718,7 @@ static void new_roll(Dice *d) {
     d->n = n;
     d->fromLeft = irand(2);
     d->total = d->shown = d->hasCrit = 0;
+    d->nextTally = 0;
     d->expr[0] = 0;
     if (n == 1) snprintf(d->expr, sizeof d->expr, "%s", NAMES[set[1]]);
     memset(d->fly, 0, sizeof d->fly);
@@ -376,12 +728,15 @@ static void new_roll(Dice *d) {
     int cols = n;
     while (cols > 1 && cols * px > x1 - x0) cols--;
     int rows = (n + cols - 1) / cols;
-    cols = (n + rows - 1) / rows;                       /* even rows: 3 + 3, not 4 + 2 */
+    cols = (n + rows - 1) / rows;
     d->rows = rows;
     if (rows > 1 || d->small) y1 = d->H - d->F - (d->small ? 3 : 6);
     if (rows * py > y1 - y0) py = (y1 - y0) / rows;
     if (cols * px > x1 - x0) px = (x1 - x0) / cols;
     float dir = d->fromLeft ? 1.0f : -1.0f;
+
+    /* Pacing: roll 1 die at a time so each roll has its own individual spotlight */
+    float roll_interval = 2.2f;
     for (int i = 0; i < n; i++) {
         Die *e = &d->die[i];
         memset(e, 0, sizeof *e);
@@ -389,22 +744,29 @@ static void new_roll(Dice *d) {
         e->kind = set[i + 1];
         int s = SIDES[e->kind], r = irand(100);
         e->value = 1 + irand(s);
-        if (e->kind == D20) e->value = r < 11 ? 20 : (r < 19 ? 1 : 2 + irand(18));  /* a little extra drama */
+        if (e->kind == D20) e->value = r < 11 ? 20 : (r < 19 ? 1 : 2 + irand(18));
         e->tx = (x0 + x1) * 0.5f + (col - (m - 1) * 0.5f) * px + frand(-3, 3);
         e->ty = (y0 + y1) * 0.5f + (row - (rows - 1) * 0.5f) * py + frand(-3, 3);
-        e->sx = d->fromLeft ? -R * 1.2f - frand(0, 16) : d->W + R * 1.2f + frand(0, 16);
+        e->sx = d->fromLeft ? -R * 1.4f - frand(0, 16) : d->W + R * 1.4f + frand(0, 16);
         e->sy = e->ty + frand(-14, 14);
-        int order = d->fromLeft ? n - 1 - i : i;             /* the far ones go first */
-        e->t0 = order * 0.14f + frand(0, 0.08f);
-        e->dur = frand(1.6f, 2.0f);
-        e->z0 = d->H * frand(0.26f, 0.38f);
-        e->spin = -dir * frand(2.5f, 4.5f) * PI_F;
-        e->rollN = 4 + irand(4);
-        e->axis = irand(2);
+
+        /* Slots stay left to right (that's the tally order); the slot farthest from the
+           entry side fills first so a new die never flies through a settled one. */
+        int along = d->fromLeft ? m - 1 - col : col;
+        e->t0 = (row * cols + along) * roll_interval;
+        e->dur = 1.7f;
+        e->z0 = d->H * frand(0.28f, 0.40f);
         e->x = e->sx; e->y = e->sy; e->z = e->z0;
-        e->lsx = e->lsy = e->gsx = e->gsy = 1;
-        e->shown = 1 + irand(s);
         e->u = -1;
+
+        /* Tumbling physics setup */
+        e->tumble_speed = frand(18.0f, 26.0f);
+        float tdx = e->tx - e->sx, tdy = e->ty - e->sy;
+        Vec3 roll_ax = v_norm(vec3(-tdy, tdx, 0));
+        e->tumble_axis = v_norm(v_add(roll_ax, vec3(frand(-0.35f, 0.35f), frand(-0.35f, 0.35f), -dir * frand(0.4f, 0.8f))));
+        e->q_tumble = quat_axis_angle(vec3(frand(-1, 1), frand(-1, 1), frand(-1, 1)), frand(0, 6.28f));
+        e->q_target = compute_target_orientation(&d->mesh[e->kind], e->kind, e->value);
+        e->orient = quat_to_mat3(e->q_tumble);
     }
     d->state = ROLL;
     d->stateT = 0;
@@ -437,53 +799,49 @@ static void burst(Dice *d, float x, float y, int n, float speed) {
     }
 }
 
+/* Settle reactions: keep celebrations and failures rare and special.
+   Only a natural 20 on a d20 gets CRIT!, and only a 1 on a d20 gets WOMP. */
 static void settle(Dice *d, Die *e) {
-    int s = SIDES[e->kind];
-    float x = e->x, y = e->y - d->R;
     e->settled = 1;
     e->st = 0;
-    if (e->value == s && e->kind == D20) {
+    float x = e->x, y = e->y - d->R;
+    if (e->kind == D20 && e->value == 20) {
         e->react = CRIT;
         d->hasCrit = 1;
         burst(d, x, y, 34, 0.55f);
         for (int i = 0; i < 36; i++)
             add_part(d, x + frand(-1, 1) * d->R, y, frand(-1, 1) * d->H * 0.3f, -d->H * frand(0.5f, 0.9f),
                      P_CONFETTI, CONFETTI[irand(6)], frand(1.6f, 2.4f));
-        add_pop(d, "CRIT!", x, y - d->R * 0.6f, 2, 0xFFD84A, 2.6f);
-    } else if (e->value == s) {
-        e->react = MAXED;
-        burst(d, x, y, 16, 0.4f);
-        add_pop(d, "MAX!", x, y - d->R * 0.5f, 1, 0xFFE27A, 1.6f);
-    } else if (e->value == 1 && e->kind == D20) {
+        add_pop(d, "CRIT!", x, y - d->R * 1.6f, 2, 0xFFD84A, 2.6f);
+    } else if (e->kind == D20 && e->value == 1) {
         e->react = FAIL;
-        add_pop(d, "WOMP", x, y - d->R * 1.35f, 1, WOMP_COL, 2.2f);   /* sits on top of the cloud */
-    } else if (e->value == 1) {
-        e->react = ONE;
+        add_pop(d, "WOMP", x, y - d->R * 2.35f, 1, WOMP_COL, 2.2f);
     } else {
         e->react = CALM;
     }
 }
 
-/* Where the next tally lands on the chalkboard. */
 static void board_target(const Dice *d, float *x, float *y) {
     *x = d->bx + d->bw * 0.5f;
     *y = d->by + d->bh * 0.62f;
 }
 
-static void update_die(Dice *d, Die *e, int idx, float T, float dt) {
+static void update_die(Dice *d, Die *e, float T, float dt) {
     int R = d->R;
-    float u = clampf((T - e->t0) / e->dur, 0, 1);
     if (T < e->t0) return;
+    float u = clampf((T - e->t0) / e->dur, 0, 1);
     float prev = e->u;
     e->u = u;
+
     float g = 1 - powf(1 - u, 2.2f);
     e->x = lerp(e->sx, e->tx, g);
     e->y = lerp(e->sy, e->ty, g);
+
     if (u < BOUNCE[0]) {
         float s = u / BOUNCE[0];
         e->z = e->z0 * (1 - s * s);
     } else {
-        float hh = e->z0 * 0.3f;
+        float hh = e->z0 * 0.32f;
         e->z = 0;
         for (int k = 0; k < NB - 1; k++, hh *= 0.4f)
             if (u < BOUNCE[k + 1]) {
@@ -492,70 +850,57 @@ static void update_die(Dice *d, Die *e, int idx, float T, float dt) {
                 break;
             }
     }
+
     for (int k = 0; k < NB; k++)
         if (prev < BOUNCE[k] && u >= BOUNCE[k]) {
             e->impact = 1 - k * 0.2f;
             e->impactT = T;
-            for (int i = 0; i < 5 - k; i++)            /* a puff of felt fluff */
+            for (int i = 0; i < 4 - k; i++)
                 add_part(d, e->x + frand(-1, 1) * R * 0.8f, e->y + R * 0.7f, frand(-1, 1) * d->H * 0.12f,
                          -frand(0.02f, 0.12f) * d->H, P_DUST, 0x8FCB9E, frand(0.3f, 0.6f));
+            e->tumble_axis = v_norm(v_add(e->tumble_axis, vec3(frand(-0.4f, 0.4f), frand(-0.4f, 0.4f), frand(-0.4f, 0.4f))));
         }
-    e->ang = e->spin * powf(1 - u, 3);
-    float roll = e->rollN * PI_F * (1 - powf(1 - u, 2.5f));
-    int k = (int)floorf(roll / PI_F + 0.5f), s = SIDES[e->kind];
-    if (k >= e->rollN) e->shown = e->value;
-    else e->shown = 1 + (int)((unsigned)(idx * 7919 + k * 104729 + d->set * 31 + e->value * 13) % (unsigned)s);
-    float sq = 0.55f + 0.45f * fabsf(cosf(roll));
-    e->lsx = e->axis ? 1 : sq;
-    e->lsy = e->axis ? sq : 1;
-    float imp = e->impact * expf(-(T - e->impactT) * 12);
-    e->gsx = 1 + 0.16f * imp;
-    e->gsy = 1 - 0.2f * imp;
-    e->tint = 0;
 
+    /* 3D rotation update */
+    if (u < 0.76f) {
+        float spd = e->tumble_speed * (1.0f - u * 0.7f);
+        Quat dq = quat_axis_angle(e->tumble_axis, spd * dt);
+        e->q_tumble = quat_norm(quat_mul(dq, e->q_tumble));
+        e->q_snap = e->q_tumble;
+        e->orient = quat_to_mat3(e->q_tumble);
+    } else if (u < 1.0f) {
+        float blend = ease((u - 0.76f) / 0.24f);
+        Quat q = quat_slerp(e->q_snap, e->q_target, blend);
+        e->orient = quat_to_mat3(q);
+    } else {
+        e->orient = quat_to_mat3(e->q_target);
+    }
+
+    e->tint = 0;
     if (u >= 1 && !e->settled) settle(d, e);
     if (!e->settled) return;
+
     e->st += dt;
     float st = e->st;
-    switch (e->react) {
-    case CRIT:
-    case MAXED: {
-        int hops = e->react == CRIT ? 2 : 1;
-        for (int h = 0; h < hops; h++) {
+
+    if (e->react == CRIT) {
+        for (int h = 0; h < 2; h++) {
             float s = (st - 0.05f - h * 0.42f) / 0.38f;
             if (s > 0 && s < 1) {
-                e->z = R * (h ? 0.4f : 0.65f) * 4 * s * (1 - s);
-                e->ang = 0.2f * sinf(s * 2 * PI_F);
-                e->gsy = 1 + 0.08f * sinf(s * PI_F);
-                e->gsx = 1 - 0.05f * sinf(s * PI_F);
+                e->z = R * (h ? 0.35f : 0.60f) * 4 * s * (1 - s);
+                Quat hop_tilt = quat_axis_angle(vec3(0, 1, 0), 0.15f * sinf(s * 2 * PI_F));
+                e->orient = quat_to_mat3(quat_mul(hop_tilt, e->q_target));
             }
         }
-        e->tintCol = 0xFFFFFF;                         /* a bright flash as it lands */
-        e->tint = 0.7f * expf(-st * 5);
-        if (e->react == CRIT) e->tint += 0.12f * (0.5f + 0.5f * sinf(st * 5));
-        break;
-    }
-    case ONE:
-    case FAIL: {
+        e->tintCol = 0xFFFFFF;
+        e->tint = 0.7f * expf(-st * 5) + 0.12f * (0.5f + 0.5f * sinf(st * 5));
+    } else if (e->react == FAIL) {
         float dr = ease(st / 0.6f) * (1 - ease((st - 2.6f) / 0.6f));
-        e->gsy = 1 - 0.1f * dr;
-        e->gsx = 1 + 0.05f * dr;
         e->tintCol = 0x8A929E;
         e->tint = 0.5f * dr;
-        if (e->react == FAIL) e->x += sinf(st * 46) * R * 0.14f * clampf(1 - st / 0.8f, 0, 1);
-        if (st > 0.5f && st < 2.6f && irand(100) < (e->react == FAIL ? 45 : 28))   /* rain from the cloud */
+        e->x += sinf(st * 46) * R * 0.14f * clampf(1 - st / 0.8f, 0, 1);
+        if (st > 0.5f && st < 2.6f && irand(100) < 45)
             add_part(d, e->x + frand(-0.6f, 0.6f) * R, e->y - R * 1.9f, 0, d->H * 0.5f, P_RAIN, 0x9DB8D8, (R * 0.85f) / (d->H * 0.5f));
-        break;
-    }
-    default:
-        e->ang = 0.07f * expf(-st * 6) * sinf(st * 22);
-        break;
-    }
-    float wait = e->react == CRIT ? 1.0f : (e->react == MAXED ? 0.7f : 0.45f);
-    if (!e->tallied && st > wait) {
-        e->tallied = 1;
-        Fly *f = &d->fly[idx];
-        *f = (Fly){ e->x, e->y - R, 0, e->value, 1 };
     }
 }
 
@@ -564,27 +909,51 @@ static void step(void *p, float dt) {
     if (dt > 0.1f) dt = 0.1f;
     d->t += dt;
     d->stateT += dt;
+
     switch (d->state) {
     case ROLL: {
-        int done = 1;
+        int allSettled = 1;
         for (int i = 0; i < d->n; i++) {
-            update_die(d, &d->die[i], i, d->stateT, dt);
-            if (!d->die[i].tallied || d->fly[i].on) done = 0;
+            update_die(d, &d->die[i], d->stateT, dt);
+            if (!d->die[i].settled) allSettled = 0;
         }
-        if (done && d->shown == d->total) {
-            d->state = SUM;
+        /* Pacing: once all dice have settled on the felt, pause so a 6-year-old
+           can look at the numbers and frontrun the calculation before addition starts */
+        if (allSettled) {
+            d->state = TALLY_WAIT;
             d->stateT = 0;
-            d->hold = d->hasCrit ? 3.4f : 2.6f;
-            float x, y;
-            board_target(d, &x, &y);
-            for (int i = 0; i < 8; i++)
-                add_part(d, x + frand(-1, 1) * d->bw * 0.3f, y, frand(-1, 1) * d->H * 0.1f, -d->H * frand(0.05f, 0.2f),
-                         P_SPARK, 0xFFFFFF, frand(0.4f, 0.8f));
+            d->tallyWait = (d->n > 1) ? 2.0f : 1.2f;
+            d->nextTally = 0;
         }
         break;
     }
-    case SUM:
-        for (int i = 0; i < d->n; i++) update_die(d, &d->die[i], i, 1e6f, dt);
+    case TALLY_WAIT:
+        for (int i = 0; i < d->n; i++) update_die(d, &d->die[i], 1e6f, dt);
+        if (d->stateT >= d->tallyWait) {
+            if (d->nextTally < d->n) {
+                int idx = d->nextTally;
+                d->die[idx].tallied = 1;
+                d->fly[idx] = (Fly){ d->die[idx].x, d->die[idx].y - d->R, 0, d->die[idx].value, 1 };
+                d->state = TALLY_FLY;
+                d->stateT = 0;
+            } else {
+                d->state = SUM_HOLD;
+                d->stateT = 0;
+                d->hold = d->hasCrit ? 4.0f : 3.2f;
+                float x, y;
+                board_target(d, &x, &y);
+                for (int i = 0; i < 8; i++)
+                    add_part(d, x + frand(-1, 1) * d->bw * 0.3f, y, frand(-1, 1) * d->H * 0.1f, -d->H * frand(0.05f, 0.2f),
+                             P_SPARK, 0xFFFFFF, frand(0.4f, 0.8f));
+            }
+        }
+        break;
+    case TALLY_FLY:
+        for (int i = 0; i < d->n; i++) update_die(d, &d->die[i], 1e6f, dt);
+        /* Handled in fly animation loop below */
+        break;
+    case SUM_HOLD:
+        for (int i = 0; i < d->n; i++) update_die(d, &d->die[i], 1e6f, dt);
         if (d->stateT > d->hold) { d->state = EXIT; d->stateT = 0; }
         break;
     case EXIT: {
@@ -597,8 +966,8 @@ static void step(void *p, float dt) {
             e->x = e->tx + dir * k * k * (d->W + d->R * 4.0f);
             e->y = e->ty;
             e->z = d->R * 0.5f * fabsf(sinf(k * PI_F * 2)) * (1 - k);
-            e->ang = dir * 2.2f * k * k;
-            e->gsx = e->gsy = e->lsx = e->lsy = 1;
+            Quat roll_q = quat_axis_angle(vec3(0, 0, 1), dir * 2.2f * k * k);
+            e->orient = quat_to_mat3(quat_mul(roll_q, e->q_target));
             e->tint *= 1 - dt * 4;
         }
         if (d->stateT > 0.6f + d->n * 0.07f) { d->state = GAP; d->stateT = 0; }
@@ -609,16 +978,16 @@ static void step(void *p, float dt) {
         break;
     }
 
-    /* tallies flying up to the board */
+    /* Tallies flying to chalkboard (leisurely pace for kids to track) */
     for (int i = 0; i < d->n; i++) {
         Fly *f = &d->fly[i];
         if (!f->on) continue;
-        f->t += dt / 0.65f;
+        f->t += dt / 0.85f;
         if (f->t >= 1) {
             f->on = 0;
             d->total += f->value;
             d->die[i].counted = 1;
-            if (d->n > 1) {                             /* the sum so far, left to right like the dice */
+            if (d->n > 1) {
                 d->expr[0] = 0;
                 for (int j = 0; j < d->n; j++) {
                     if (!d->die[j].counted) continue;
@@ -632,10 +1001,17 @@ static void step(void *p, float dt) {
             for (int k = 0; k < 6; k++)
                 add_part(d, x + frand(-8, 8), y + frand(-4, 4), frand(-1, 1) * d->H * 0.08f, -frand(0, 0.08f) * d->H,
                          P_CHALK, 0xE8E6DC, frand(0.3f, 0.6f));
+
+            /* Generous pause after each tally lands before starting the next */
+            d->nextTally++;
+            d->state = TALLY_WAIT;
+            d->stateT = 0;
+            d->tallyWait = (d->nextTally < d->n) ? 2.2f : 0.6f;
         }
     }
+
     d->tick += dt;
-    while (d->shown < d->total && d->tick > 0.045f) { d->shown++; d->tick -= 0.045f; }
+    while (d->shown < d->total && d->tick > 0.06f) { d->shown++; d->tick -= 0.06f; }
     if (d->shown >= d->total) d->tick = 0;
 
     for (int i = 0; i < POPS; i++) d->pop[i].t += dt;
@@ -660,31 +1036,6 @@ static void step(void *p, float dt) {
 
 /* ---------- drawing ---------- */
 
-/* Copies a die sprite onto the art canvas, rotated and squashed, nearest-neighbour. */
-static void blit_die(Dice *d, const Die *e, float cx, float cy) {
-    int gold = e->settled && (e->react == CRIT || e->react == MAXED) && d->state != EXIT;
-    const Canvas *sp = &d->sprite[e->kind][gold ? 0 : e->shown];
-    Canvas *c = &d->top;
-    float ca = cosf(e->ang), sa = sinf(e->ang), h = sp->w * 0.5f;
-    float rr = h * 1.45f * fmaxf(e->gsx, e->gsy);
-    int x0 = (int)floorf(cx - rr), x1 = (int)ceilf(cx + rr), y0 = (int)floorf(cy - rr), y1 = (int)ceilf(cy + rr);
-    if (x0 < 0) x0 = 0;
-    if (y0 < 0) y0 = 0;
-    if (x1 > c->w - 1) x1 = c->w - 1;
-    if (y1 > c->h - 1) y1 = c->h - 1;
-    for (int y = y0; y <= y1; y++)
-        for (int x = x0; x <= x1; x++) {
-            float qx = (x + 0.5f - cx) / e->gsx, qy = (y + 0.5f - cy) / e->gsy;
-            float u = (ca * qx + sa * qy) / e->lsx + h, v = (-sa * qx + ca * qy) / e->lsy + h;
-            if (u < 0 || v < 0 || u >= sp->w || v >= sp->h) continue;
-            uint32_t px = sp->px[(int)v * sp->w + (int)u];
-            if (!px) continue;
-            if (e->tint > 0.01f) px = rgb(mixc(px >> 8, e->tintCol, e->tint));
-            c->px[y * c->w + x] = px;
-        }
-}
-
-/* A dithered pixel-art halo: solid in the middle, checkered further out. */
 static void glow(Canvas *c, float cx, float cy, float rx, float ry, float a) {
     for (int y = (int)(cy - ry) - 1; y <= (int)(cy + ry) + 1; y++)
         for (int x = (int)(cx - rx) - 1; x <= (int)(cx + rx) + 1; x++) {
@@ -704,7 +1055,7 @@ static void cloud(Canvas *c, float x, float y, float s) {
     fill_ellipse(c, x - 5 * s, y, 4.5f * s, 3.5f * s, rgb(0xA8B0BC));
     fill_ellipse(c, x + 5 * s, y, 4.5f * s, 3.5f * s, rgb(0xA8B0BC));
     fill_ellipse(c, x - 1 * s, y - 3 * s, 4 * s, 2.5f * s, rgb(0xC4CAD4));
-    if (s > 0.7f) {                                    /* a glum little face */
+    if (s > 0.7f) {
         put(c, (int)(x - 2 * s), (int)(y), rgb(0x4A505A));
         put(c, (int)(x + 2 * s), (int)(y), rgb(0x4A505A));
         put(c, (int)x - 1, (int)(y + 2 * s), rgb(0x4A505A));
@@ -713,7 +1064,6 @@ static void cloud(Canvas *c, float x, float y, float s) {
     }
 }
 
-/* Draws the dark outline around everything opaque on the top layer. */
 static void outline_top(Dice *d) {
     Canvas *c = &d->top;
     int W = c->w, H = c->h;
@@ -755,19 +1105,19 @@ static void draw(void *p, SDL_Renderer *r) {
     int active = d->state != GAP;
     float fade = d->state == EXIT ? clampf(1 - d->stateT / 0.5f, 0, 1) : (d->state == GAP ? 0 : 1);
 
-    /* chalk on the board */
+    /* Chalkboard text */
     {
         uint32_t chalk = 0xF2F0E6;
         int a = (int)(225 * fade);
         if (d->expr[0] && a > 0 && !d->small) {
             glyphs(un, d->expr, d->bx + (d->bw - glyphs_w(d->expr, 1)) / 2, d->by + 5, 1, rgba(chalk, a * 4 / 5));
         }
-        if ((d->total > 0 || d->state == SUM) && a > 0) {
+        if ((d->total > 0 || d->state == SUM_HOLD) && a > 0) {
             char s[8];
             snprintf(s, sizeof s, "%d", d->shown);
             int sc = d->small ? 1 : 2, w = glyphs_w(s, sc), x = d->bx + (d->bw - w) / 2, y = d->by + (d->small ? 4 : 15);
-            uint32_t col = d->state == SUM ? mixc(chalk, 0xFFE27A, 0.5f + 0.5f * sinf(d->stateT * 6)) : chalk;
-            if (d->state == SUM || d->state == EXIT) {      /* underline it twice, chalk-style */
+            uint32_t col = d->state == SUM_HOLD ? mixc(chalk, 0xFFE27A, 0.5f + 0.5f * sinf(d->stateT * 6)) : chalk;
+            if (d->state == SUM_HOLD || d->state == EXIT) {
                 int k = (int)((w + 8) * clampf(d->stateT * 3, 0, 1));
                 if (d->state == EXIT) k = w + 8;
                 if (!d->small) fill_rect(un, x - 4, y + 16, x - 4 + k, y + 16, rgba(chalk, a * 3 / 4));
@@ -780,54 +1130,55 @@ static void draw(void *p, SDL_Renderer *r) {
     if (active) {
         int order[MAXDICE];
         for (int i = 0; i < d->n; i++) order[i] = i;
-        for (int i = 1; i < d->n; i++)                 /* back to front */
+        for (int i = 1; i < d->n; i++)
             for (int j = i; j > 0 && d->die[order[j]].y < d->die[order[j - 1]].y; j--) {
                 int t = order[j]; order[j] = order[j - 1]; order[j - 1] = t;
             }
+
         for (int oi = 0; oi < d->n; oi++) {
             Die *e = &d->die[order[oi]];
             if (e->u < 0) continue;
-            /* gold glow (and rays for a natural 20) */
-            if (e->settled && (e->react == CRIT || e->react == MAXED) && d->state != EXIT) {
-                float st = e->st, a = clampf(st * 3, 0, 1) * (e->react == MAXED ? clampf(1 - (st - 1.4f) / 0.6f, 0, 1) : 1);
+
+            /* Natural 20 rays and gold glow */
+            if (e->settled && e->react == CRIT && d->state != EXIT) {
+                float st = e->st, a = clampf(st * 3, 0, 1);
                 if (a > 0.02f) {
                     float gx = e->x, gy = e->y;
-                    if (e->react == CRIT) {
-                        for (int k = 0; k < 10; k++) {
-                            float an = d->t * 0.8f + k * PI_F / 5, an2 = an + 0.13f, L = R * (2.4f + 0.3f * sinf(d->t * 3 + k));
-                            float xs[3] = { gx, gx + cosf(an) * L, gx + cosf(an2) * L };
-                            float ys[3] = { gy, gy + sinf(an) * L * 0.8f, gy + sinf(an2) * L * 0.8f };
-                            fill_poly(un, xs, ys, 3, rgba(k % 2 ? 0xFFD84A : 0xFFF0A0, (int)(215 * a)));
-                        }
+                    for (int k = 0; k < 10; k++) {
+                        float an = d->t * 0.8f + k * PI_F / 5, an2 = an + 0.13f, L = R * (2.4f + 0.3f * sinf(d->t * 3 + k));
+                        float xs[3] = { gx, gx + cosf(an) * L, gx + cosf(an2) * L };
+                        float ys[3] = { gy, gy + sinf(an) * L * 0.8f, gy + sinf(an2) * L * 0.8f };
+                        fill_poly(un, xs, ys, 3, rgba(k % 2 ? 0xFFD84A : 0xFFF0A0, (int)(215 * a)));
                     }
                     float gr = R * (1.45f + 0.08f * sinf(d->t * 5));
                     glow(un, gx, gy, gr * 1.2f, gr, a);
                 }
             }
-            /* the shadow stays on the felt */
+
+            /* Felt shadow */
             float zf = clampf(1 - e->z / (d->H * 0.5f), 0.3f, 1);
             fill_ellipse(un, e->x + 2 + e->z * 0.15f, e->y + R * 0.42f + e->z * 0.1f, R * 0.98f * zf, R * 0.7f * zf,
                          rgba(0x06180C, (int)(110 * zf)));
-            float cy = e->y - e->z;
-            if (e->react >= ONE && e->settled) cy += R * (1 - e->gsy);   /* droop down, not up */
-            blit_die(d, e, e->x, cy);
-            /* the die's name, chalked faintly on the felt */
+
+            /* Render the true 3D die */
+            draw_3d_die(d, e, e->x, e->y);
+
+            /* Chalk label on felt */
             if (e->settled && d->state != EXIT && !d->small && d->rows == 1) {
                 const char *nm = NAMES[e->kind];
                 int a = (int)(140 * clampf(e->st * 3, 0, 1));
                 glyphs(un, nm, (int)(e->tx - glyphs_w(nm, 1) / 2.0f + 0.5f), (int)(e->ty + R * 1.25f + 2), 1, rgba(0xBFE6C8, a));
             }
-            /* a grumpy little cloud for 1s */
-            if (e->settled && (e->react == ONE || e->react == FAIL) && d->state != EXIT) {
-                float st = e->st, s = ease((st - 0.2f) / 0.35f) * (1 - ease((st - 2.7f) / 0.4f));
-                s *= e->react == FAIL ? 1.25f : 1.0f;
-                s *= R / 14.0f;
+
+            /* Natural 1 raincloud */
+            if (e->settled && e->react == FAIL && d->state != EXIT) {
+                float st = e->st, s = ease((st - 0.2f) / 0.35f) * (1 - ease((st - 2.7f) / 0.4f)) * 1.25f * (R / 14.0f);
                 cloud(top, e->x, e->y - R * 2.1f + sinf(d->t * 2.5f) * 1.2f, s);
             }
         }
     }
 
-    /* tallies on their way to the board */
+    /* Flying tallies to chalkboard */
     for (int i = 0; i < d->n; i++) {
         Fly *f = &d->fly[i];
         if (!f->on) continue;
@@ -839,7 +1190,8 @@ static void draw(void *p, SDL_Renderer *r) {
         int sc = f->t < 0.75f ? 2 : 1;
         glyphs(top, s, (int)(x - glyphs_w(s, sc) / 2.0f), (int)(y - FONT_H * sc / 2.0f), sc, rgb(0xFFFFFF));
     }
-    /* CRIT!, MAX! and WOMP */
+
+    /* CRIT! and WOMP popups */
     for (int i = 0; i < POPS; i++) {
         Pop *q = &d->pop[i];
         if (q->t >= q->max) continue;
@@ -847,7 +1199,7 @@ static void draw(void *p, SDL_Renderer *r) {
         if (d->state == EXIT || d->state == GAP) continue;
         float y = q->y - d->R * 0.9f - (q->col == WOMP_COL ? -k * 3 : k * 8);
         float in = clampf(q->t / 0.15f, 0, 1);
-        if (k > 0.85f && (int)(q->t * 16) % 2) continue;  /* blink out */
+        if (k > 0.85f && (int)(q->t * 16) % 2) continue;
         int sc = q->sc, w = glyphs_w(q->txt, sc);
         float bob = (1 - in) * 6 + (q->sc == 2 ? sinf(q->t * 9) * 1.2f : 0);
         if (sc == 2) glyphs(top, q->txt, (int)(q->x - w / 2.0f), (int)(y + bob) + 1, sc, rgb(0xC08A20));
@@ -899,17 +1251,19 @@ static void *create(SDL_Renderer *r, int w, int h) {
     d->R = (int)(d->H * (d->small ? 0.15f : 0.115f) + 0.5f);
     if (d->R < 8) d->R = 8;
     d->F = d->H * 55 / 1000 > 5 ? d->H * 55 / 1000 : 5;
-    d->SP = 2 * (int)ceilf(d->R * 1.6f) + 4;
     d->bw = d->W - 2 * d->F - 16 < 116 ? d->W - 2 * d->F - 16 : 116;
     d->bh = 38;
     if (d->small) { d->bw = 40; d->bh = 15; }
     d->bx = (d->W - d->bw) / 2;
     d->by = d->F / 2 - 1 > 1 ? d->F / 2 - 1 : 1;
 
-    for (int k = 0; k < KINDS; k++) {               /* [0] is the top roll with a gold number */
-        d->sprite[k][0] = make_die(k, SIDES[k], (float)d->R, d->SP, k == D8 ? 0xFFFFFF : 0xFFE04A);  /* gold on yellow won't show */
-        for (int v = 1; v <= SIDES[k]; v++) d->sprite[k][v] = make_die(k, v, (float)d->R, d->SP, 0xFFFFFF);
-    }
+    /* Build the 3D meshes for all 6 dice kinds */
+    d->mesh[D4]  = build_d4();
+    d->mesh[D6]  = build_d6();
+    d->mesh[D8]  = build_d8();
+    d->mesh[D10] = build_d10();
+    d->mesh[D12] = build_d12();
+    d->mesh[D20] = build_d20();
 
     Canvas tray = canvas_new(d->W, d->H);
     build_tray(d, &tray);
@@ -930,8 +1284,6 @@ static void *create(SDL_Renderer *r, int w, int h) {
 
 static void destroy(void *p) {
     Dice *d = p;
-    for (int k = 0; k < KINDS; k++)
-        for (int v = 0; v <= SIDES[k]; v++) free(d->sprite[k][v].px);
     SDL_DestroyTexture(d->felt);
     SDL_DestroyTexture(d->underTex);
     SDL_DestroyTexture(d->topTex);
