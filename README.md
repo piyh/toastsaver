@@ -12,7 +12,7 @@ curl -fsSL https://piyh.github.io/toastsaver/setup.sh | sh
 
 ## What's inside
 
-Eleven screensavers, plus a SURPRISE tile that picks a random one each time. All of the artwork is original and drawn by the program itself.
+Twelve screensavers, plus a SURPRISE tile that picks a random one each time. All of the artwork is original and drawn by the program itself.
 
 <table>
   <tr>
@@ -45,6 +45,7 @@ Eleven screensavers, plus a SURPRISE tile that picks a random one each time. All
 - **RAINBOW**: the Waffle Cat flies across the night sky on a wavy rainbow. Every so often it shimmers, goes *poof*, rainbow lines zoom across the screen, and it pops back out at the end of the rainbow. (Invented by a six-year-old.)
 - **PIPES**: shiny 3D pipes grow through a grid, then fade and start again.
 - **BOOKS**: a cozy lamplit bookshelf. Books slide out, float to the middle, open to a little animated picture, and fly back to their spot.
+- **DICE**: a d4, d6, d8, d10, d12 and d20 tumble across a felt tray and a chalkboard adds up the roll. A natural 20 gets a gold glow and a tiny "CRIT!"; a 1 gets a little rain cloud.
 - **FISH**: clownfish, a blue tang, a pufferfish, seaweed and a bubbling treasure chest.
 - **BIRDS**: a sunny summer sky with bluebirds, cardinals, finches and robins flying over a flower meadow. (Also requested by a six-year-old.)
 - **STARS**: a warp-speed starfield.
@@ -158,7 +159,7 @@ Settings live in `~/.config/toastsaver.conf`. The picker and Screensaver Setting
 
 ```sh
 ENABLED=1               # 0 = turn the screensaver off
-SAVER=toasters          # toasters rainbow pipes books aquarium birds starfield mystify matrix lava name random
+SAVER=toasters          # toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava name random
 NAME='HELLO'            # letters, digits, space and ! ? - . *  (* draws a heart)
 IDLE_MINUTES=5          # minutes of no input before the screensaver appears
 SCREEN_OFF_MINUTES=30   # minutes before the display turns off (0 = never)
