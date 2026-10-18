@@ -37,6 +37,7 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed) {
     void *st = sv->create(r, w, h);
     if (!st) return 1;
     if (!windowed) SDL_ShowCursor(SDL_DISABLE);
+    clock_reset(w, h);
 
     const Uint64 freq = SDL_GetPerformanceFrequency();
     Uint64 last = SDL_GetPerformanceCounter();
@@ -82,6 +83,10 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed) {
         sv->step(st, dt);
         SDL_RenderSetViewport(r, NULL);
         sv->draw(st, r);
+        if (g_config.clock) {
+            clock_step(dt);
+            clock_draw(r, w, h);
+        }
         SDL_RenderPresent(r);
         SDL_Delay(8); /* vsync paces us when available; this keeps CPU sane otherwise */
     }
@@ -92,7 +97,8 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed) {
 
 /* ---------- offscreen rendering for tests and the icon ---------- */
 
-Canvas make_toaster(int frame); /* from savers/toasters.c */
+Canvas make_toaster(int frame);   /* from savers/toasters.c */
+Canvas toasters_sheet(void);
 
 static void font_test(SDL_Renderer *r, int w, int h) {
     SDL_SetRenderDrawColor(r, 20, 20, 40, 255);
@@ -110,8 +116,27 @@ static int snapshot(const char *path, const char *what, int w, int h, float seco
     if (!r) { fprintf(stderr, "snapshot: %s\n", SDL_GetError()); return 1; }
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
     const float dt = 1.0f / 30;
+    if (!strcmp(what, "sprites")) {                       /* scaled-up sprite sheet, own size */
+        Canvas sh = toasters_sheet();
+        int z = 4, rc;
+        Canvas big = canvas_new(sh.w * z, sh.h * z);
+        for (int i = 0; i < big.w * big.h; i++) {
+            uint32_t p = get(&sh, (i % big.w) / z, (i / big.w) / z);
+            big.px[i] = p ? p : 0x101030FF;
+        }
+        rc = write_png(path, big.w, big.h, big.px);
+        free(sh.px); free(big.px);
+        SDL_DestroyRenderer(r);
+        SDL_FreeSurface(surf);
+        return rc == 0 ? 0 : 1;
+    }
     if (!strcmp(what, "fonttest")) {
         font_test(r, w, h);
+    } else if (!strcmp(what, "settings")) {
+        void *p = settings_create(r, w, h);
+        for (float t = 0; t < seconds; t += dt) settings_step(p, dt);
+        settings_draw(p, r);
+        settings_destroy(p);
     } else if (!strcmp(what, "picker")) {
         void *p = picker_create(r, w, h);
         for (float t = 0; t < seconds; t += dt) picker_step(p, dt);
@@ -121,8 +146,10 @@ static int snapshot(const char *path, const char *what, int w, int h, float seco
         const Saver *sv = saver_find(what);
         if (!sv) { fprintf(stderr, "unknown saver: %s\n", what); return 2; }
         void *st = sv->create(r, w, h);
-        for (float t = 0; t < seconds; t += dt) sv->step(st, dt);
+        clock_reset(w, h);
+        for (float t = 0; t < seconds; t += dt) { sv->step(st, dt); clock_step(dt); }
         sv->draw(st, r);
+        if (g_config.clock) clock_draw(r, w, h);
         sv->destroy(st);
     }
     SDL_RenderPresent(r);
@@ -156,6 +183,8 @@ static void usage(void) {
     printf("toastsaver %s - screensavers\n\n"
            "  toastsaver [SAVER]          run fullscreen (default: the one in %s)\n"
            "  toastsaver --picker         open the picker (big tiles, for kids)\n"
+           "  toastsaver --settings       open the settings window (for grown-ups)\n"
+           "  toastsaver --set KEY=VALUE  change a setting, e.g. --set CLOCK=1\n"
            "  toastsaver --list           list savers\n"
            "  toastsaver --windowed ...   use a window instead of fullscreen\n\n"
            "Savers: random", VERSION, config_path());
@@ -164,12 +193,13 @@ static void usage(void) {
 }
 
 int main(int argc, char **argv) {
-    int windowed = 0, picker = 0, inhibit = 0, sw = 1280, sh = 720;
+    int windowed = 0, picker = 0, settings = 0, inhibit = 0, sw = 1280, sh = 720;
     float seconds = 4;
     const char *snap = NULL, *which = NULL, *icon = NULL;
     const char *base = strrchr(argv[0], '/');
     base = base ? base + 1 : argv[0];
     if (!strcmp(base, "toastsaver-picker")) picker = 1;
+    if (!strcmp(base, "toastsaver-settings")) settings = 1;
 
     srand((unsigned)time(NULL));
     config_load();
@@ -178,6 +208,14 @@ int main(int argc, char **argv) {
         const char *a = argv[i];
         if (!strcmp(a, "--windowed")) windowed = 1;
         else if (!strcmp(a, "--picker")) picker = 1;
+        else if (!strcmp(a, "--settings")) settings = 1;
+        else if (!strcmp(a, "--clock")) g_config.clock = 1;   /* for snapshots */
+        else if (!strcmp(a, "--set") && i + 1 < argc) {
+            if (!config_apply(argv[++i])) { fprintf(stderr, "toastsaver: unknown setting '%s'\n", argv[i]); return 2; }
+            if (config_save() != 0) { fprintf(stderr, "toastsaver: cannot write %s\n", config_path()); return 1; }
+            printf("saved %s\n", argv[i]);
+            return 0;
+        }
         else if (!strcmp(a, "--inhibit")) inhibit = 1;   /* test only: behave like a video player */
         else if (!strcmp(a, "--list")) {
             for (int k = 0; k < SAVER_COUNT; k++) printf("%s\n", SAVERS[k]->id);
@@ -197,7 +235,7 @@ int main(int argc, char **argv) {
     if (icon) return write_icon(icon) == 0 ? 0 : 1;
     if (snap) {
         if (SDL_Init(0) != 0) return 1;
-        int rc = snapshot(snap, picker ? "picker" : (which ? which : "toasters"), sw, sh, seconds);
+        int rc = snapshot(snap, picker ? "picker" : settings ? "settings" : (which ? which : "toasters"), sw, sh, seconds);
         SDL_Quit();
         return rc;
     }
@@ -217,7 +255,7 @@ int main(int argc, char **argv) {
     if (inhibit) SDL_DisableScreenSaver();
 
     Uint32 flags = SDL_WINDOW_SHOWN | (windowed ? SDL_WINDOW_RESIZABLE : SDL_WINDOW_FULLSCREEN_DESKTOP);
-    SDL_Window *win = SDL_CreateWindow(picker ? "Screensavers" : "toastsaver",
+    SDL_Window *win = SDL_CreateWindow(picker ? "Screensavers" : settings ? "Screensaver Settings" : "toastsaver",
                                        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 800, flags);
     if (!win) {
         fprintf(stderr, "toastsaver: cannot open window: %s\n", SDL_GetError());
@@ -233,7 +271,8 @@ int main(int argc, char **argv) {
     }
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
 
-    if (picker) run_picker(win, r);
+    if (settings) run_settings(win, r);
+    else if (picker) run_picker(win, r);
     else run_saver(win, r, saver_resolve(which ? which : g_config.saver), windowed);
 
     SDL_DestroyRenderer(r);

@@ -38,6 +38,12 @@ Eight screensavers, plus a SURPRISE tile that picks a random one each time.
 
 All of the artwork is original and drawn by the program itself. There are no image files.
 
+### Easter eggs
+
+Keep watching the toasters. Every so often a toaster flies by in a **propeller beanie**, a **golden toast** sparkles past, or a **bagel** sneaks in with the toast.
+
+![Easter eggs: a toaster, the propeller beanie, toast, golden toast and a bagel](docs/eggs.png)
+
 ## Install on a Raspberry Pi
 
 ### From a USB stick (easiest)
@@ -77,14 +83,31 @@ Open **Screensavers** from the desktop icon or the app menu. The picker fills th
 
 On a keyboard, use the arrow keys to move, **Enter** to try, and **Esc** to close.
 
+### Screensaver Settings (for grown-ups)
+
+Open **Screensaver Settings** from the app menu. Changes are saved right away, and new timings take effect as soon as you close the window, without logging out.
+
+![Screensaver Settings](docs/settings.png)
+
+- **Start after**: how long the computer waits before showing the screensaver.
+- **Screen off after**: when the display turns off, or **NEVER**. It is always later than the screensaver.
+- **Show clock**: puts the time over any screensaver. It drifts to a new spot about once a minute, so it never sits in one place.
+- **Clock style**: 12-hour or 24-hour.
+- **Change** opens the picker. **Test it** shows the current screensaver.
+
+![The clock over the aquarium](docs/clock.png)
+
 ### Commands
 
 | Command | What it does |
 | --- | --- |
 | `toastsaver-picker` | Open the picker |
+| `toastsaver-settings` | Open Screensaver Settings |
+| `toastsaver --set CLOCK=1` | Change any setting from a terminal |
 | `toastsaver-idle --now` | Show your chosen saver now |
 | `toastsaver-idle --now pipes` | Show a specific saver now |
 | `toastsaver-idle --check` | Check that everything is set up and running |
+| `toastsaver-idle --restart` | Apply new timings now |
 | `toastsaver --list` | List the saver names |
 | `toastsaver --windowed toasters` | Run a saver in a window (for testing) |
 | `./uninstall.sh` | Remove toastsaver (your settings are kept) |
@@ -98,7 +121,11 @@ IDLE_MINUTES=5          # minutes with no input before the saver starts
 SCREEN_OFF_MINUTES=30   # minutes before the screen turns off (0 = never)
 SAVER=toasters          # any saver name from the list above, or random
 NAME='HELLO'            # letters, digits, space and ! ? - . *  (shown in capitals)
+CLOCK=0                 # 1 = show a drifting clock over the screensaver
+CLOCK_24H=0             # 1 = 24-hour clock
 ```
+
+Screensaver Settings and the picker edit this file for you and keep your comments.
 
 In `NAME`, the `*` character draws a heart.
 
@@ -133,7 +160,8 @@ The tests run in a throwaway Debian ARM64 Docker container (the base of Raspberr
 1. a saver appears after the idle timeout and leaves on a key press,
 2. an app that inhibits idle (like a playing video) stops it from starting, and it starts again once that app closes,
 3. dismissing a saver that pops up over the picker leaves the picker open,
-4. `toastsaver-idle --now pipes` starts that saver.
+4. `toastsaver-idle --now pipes` starts that saver,
+5. `--set` keeps the file's comments, `--restart` switches to the new timings, the settings window opens, and a saver runs with the clock on.
 
 ```sh
 docker run --rm -v "$PWD":/src debian:trixie sh /src/tests/pi-os-test.sh

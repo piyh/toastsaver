@@ -1,4 +1,5 @@
-/* Flying toasters: winged chrome toasters and slices of toast drifting down-left. */
+/* Flying toasters: winged chrome toasters and slices of toast drifting down-left.
+   Easter eggs: a rare sparkling golden toast, a bagel, and toasters in propeller beanies. */
 #include "../engine.h"
 #include <math.h>
 #include <stdlib.h>
@@ -29,12 +30,20 @@ static void wing(Canvas *c, float px, float py, float flapDeg, int dir) {
     }
 }
 
-Canvas make_toaster(int frame) {
+Canvas make_toaster_hat(int frame, int hat) {
     static const float flap[WING_FRAMES] = { -58.0f, -32.0f, -8.0f, 14.0f };
     Canvas c = canvas_new(TOASTER_W, TOASTER_H);
     const int ox = 16, oy = 14;
     wing(&c, ox + 4, oy + 3, flap[frame], -1);
     wing(&c, ox + 28, oy + 3, flap[frame], +1);
+    if (hat) {
+        /* Beanie dome, drawn before the body so only its top half shows. */
+        int cx = ox + 16, base = oy - 1;
+        fill_ellipse(&c, cx, base + 1, 7, 6.5f, rgb(0xE53935));
+        for (int y = base - 6; y <= base + 1; y++)
+            for (int x = cx; x <= cx + 8; x++)
+                if (get(&c, x, y) == rgb(0xE53935)) put(&c, x, y, rgb(0x1E88E5));
+    }
     fill_round_rect(&c, ox, oy, ox + 31, oy + 21, 5, rgb(0xC3C9D3));
     fill_round_rect(&c, ox + 1, oy + 1, ox + 30, oy + 5, 3, rgb(0xE6EAF0));
     fill_rect(&c, ox + 2, oy + 17, ox + 29, oy + 20, rgb(0x9CA3B0));
@@ -52,9 +61,20 @@ Canvas make_toaster(int frame) {
     fill_rect(&c, ox + 20, oy + 13, ox + 20, oy + 13, rgb(0x3A3F4A));
     fill_rect(&c, ox + 3, oy + 22, ox + 6, oy + 23, rgb(0x3A3F4A));
     fill_rect(&c, ox + 25, oy + 22, ox + 28, oy + 23, rgb(0x3A3F4A));
+    if (hat) {
+        /* Band and propeller go on top; the propeller "spins" with the wing frames. */
+        static const int blade[WING_FRAMES] = { 7, 3, 1, 4 };
+        int cx = ox + 16, base = oy - 1;
+        fill_rect(&c, cx - 7, base, cx + 7, base + 1, rgb(0xFDD835));
+        fill_rect(&c, cx, base - 9, cx, base - 6, rgb(0x6B7280));
+        fill_rect(&c, cx - blade[frame], base - 10, cx + blade[frame], base - 10, rgb(0xFFB300));
+        put(&c, cx, base - 10, rgb(0xE53935));
+    }
     outline(&c, rgb(0x1E2128));
     return c;
 }
+
+Canvas make_toaster(int frame) { return make_toaster_hat(frame, 0); }
 
 static Canvas make_toast(int shade, int buttered) {
     static const uint32_t crumb[TOAST_SHADES] = { 0xF4DCA6, 0xE2B064, 0xB97C3C };
@@ -76,16 +96,52 @@ static Canvas make_toast(int shade, int buttered) {
     return c;
 }
 
+static Canvas make_golden(int sparkle) {
+    Canvas c = canvas_new(TOAST_W, TOAST_H);
+    fill_ellipse(&c, 14, 10, 12, 8, rgb(0xC9971C));
+    fill_round_rect(&c, 3, 9, 24, 25, 3, rgb(0xC9971C));
+    fill_ellipse(&c, 14, 10.5f, 9.5f, 6, rgb(0xFFD54A));
+    fill_round_rect(&c, 5, 10, 22, 23, 2, rgb(0xFFD54A));
+    fill_rect(&c, 7, 9, 8, 20, rgb(0xFFF3B0));            /* shine */
+    fill_rect(&c, 10, 7, 11, 9, rgb(0xFFF3B0));
+    outline(&c, rgb(0x6E4E00));
+    /* Twinkles sit outside the outline so they read as sparkle, not texture. */
+    static const int tw[2][2][2] = { { {3, 3}, {23, 21} }, { {24, 4}, {4, 23} } };
+    for (int k = 0; k < 2; k++) {
+        int x = tw[sparkle][k][0], y = tw[sparkle][k][1];
+        put(&c, x, y, rgb(0xFFFFFF));
+        put(&c, x - 1, y, rgb(0xFFF3B0)); put(&c, x + 1, y, rgb(0xFFF3B0));
+        put(&c, x, y - 1, rgb(0xFFF3B0)); put(&c, x, y + 1, rgb(0xFFF3B0));
+    }
+    return c;
+}
+
+static Canvas make_bagel(void) {
+    Canvas c = canvas_new(TOAST_W, TOAST_H);
+    fill_ellipse(&c, 14, 14, 12.5f, 10.5f, rgb(0xB8712F));
+    fill_ellipse(&c, 14, 12.5f, 10.5f, 7.5f, rgb(0xD99A52));
+    fill_ellipse(&c, 14, 14, 3.6f, 2.8f, 0);                /* the hole */
+    static const int seeds[][2] = { {7,9}, {11,6}, {16,6}, {20,8}, {9,13}, {19,12}, {13,9}, {22,13}, {6,14} };
+    for (size_t i = 0; i < sizeof seeds / sizeof seeds[0]; i++) {
+        put(&c, seeds[i][0], seeds[i][1], rgb(0xFFF4D6));
+        put(&c, seeds[i][0] + 1, seeds[i][1], rgb(0xFFF4D6));
+    }
+    outline(&c, rgb(0x4A2A0C));
+    return c;
+}
+
+enum { PLAIN = 0, HAT = 1, GOLDEN = 2, BAGEL = 3 };
+
 typedef struct {
     float x, y, speed, flapPhase, flapRate;
-    int isToast, shade, buttered;
+    int isToast, shade, buttered, special;
 } Flyer;
 
 typedef struct {
     int w, h, scale, count;
     Flyer *f;
-    SDL_Texture *toaster[WING_FRAMES];
-    SDL_Texture *toast[TOAST_SHADES][2];
+    SDL_Texture *toaster[WING_FRAMES], *hatToaster[WING_FRAMES];
+    SDL_Texture *toast[TOAST_SHADES][2], *golden[2], *bagel;
 } Toasters;
 
 static int spr_w(const Toasters *t, const Flyer *f) { return (f->isToast ? TOAST_W : TOASTER_W) * t->scale; }
@@ -121,9 +177,15 @@ static void respawn(Toasters *t, int i, int anywhere) {
     }
     f->x = x;
     f->y = y;
+    f->special = PLAIN;
     if (f->isToast) {
         f->shade = irand(TOAST_SHADES);
         f->buttered = irand(3) == 0;
+        int roll = irand(100);                 /* rare treats */
+        if (roll < 3) f->special = GOLDEN;
+        else if (roll < 7) f->special = BAGEL;
+    } else if (irand(100) < 6) {
+        f->special = HAT;
     }
 }
 
@@ -154,9 +216,16 @@ static void *create(SDL_Renderer *r, int w, int h) {
     qsort(t->f, (size_t)t->count, sizeof(Flyer), by_speed);
     for (int i = 0; i < t->count; i++) respawn(t, i, 1);
     for (int i = 0; i < WING_FRAMES; i++) {
-        Canvas c = make_toaster(i);
+        Canvas c = make_toaster_hat(i, 0), h2 = make_toaster_hat(i, 1);
         t->toaster[i] = canvas_texture(r, &c);
+        t->hatToaster[i] = canvas_texture(r, &h2);
     }
+    for (int i = 0; i < 2; i++) {
+        Canvas g = make_golden(i);
+        t->golden[i] = canvas_texture(r, &g);
+    }
+    Canvas b = make_bagel();
+    t->bagel = canvas_texture(r, &b);
     for (int s = 0; s < TOAST_SHADES; s++)
         for (int b = 0; b < 2; b++) {
             Canvas c = make_toast(s, b);
@@ -185,15 +254,25 @@ static void draw(void *p, SDL_Renderer *r) {
         const Flyer *f = &t->f[i];
         SDL_Rect dst = { (int)f->x, (int)f->y, spr_w(t, f), spr_h(t, f) };
         if (dst.x > t->w || dst.y + dst.h < 0) continue;
-        SDL_Texture *tex = f->isToast ? t->toast[f->shade][f->buttered]
-                                      : t->toaster[seq[(int)(f->flapPhase * 6) % 6]];
+        int frame = seq[(int)(f->flapPhase * 6) % 6];
+        SDL_Texture *tex = f->special == HAT    ? t->hatToaster[frame]
+                         : f->special == GOLDEN ? t->golden[(int)(f->flapPhase * 4) % 2]
+                         : f->special == BAGEL  ? t->bagel
+                         : f->isToast           ? t->toast[f->shade][f->buttered]
+                                                : t->toaster[frame];
         SDL_RenderCopy(r, tex, NULL, &dst);
     }
 }
 
 static void destroy(void *p) {
     Toasters *t = p;
-    for (int i = 0; i < WING_FRAMES; i++) SDL_DestroyTexture(t->toaster[i]);
+    for (int i = 0; i < WING_FRAMES; i++) {
+        SDL_DestroyTexture(t->toaster[i]);
+        SDL_DestroyTexture(t->hatToaster[i]);
+    }
+    SDL_DestroyTexture(t->golden[0]);
+    SDL_DestroyTexture(t->golden[1]);
+    SDL_DestroyTexture(t->bagel);
     for (int s = 0; s < TOAST_SHADES; s++)
         for (int b = 0; b < 2; b++) SDL_DestroyTexture(t->toast[s][b]);
     free(t->f);
@@ -201,3 +280,20 @@ static void destroy(void *p) {
 }
 
 const Saver saver_toasters = { "toasters", "TOASTERS", create, step, draw, destroy };
+
+/* Debug/README helper: every toaster sprite side by side (toastsaver --snapshot x.png sprites). */
+Canvas toasters_sheet(void) {
+    Canvas sheet = canvas_new(TOASTER_W * 5 + TOAST_W * 4, TOASTER_H);
+    Canvas parts[9] = { make_toaster_hat(1, 0), make_toaster_hat(0, 1), make_toaster_hat(1, 1),
+                        make_toaster_hat(2, 1), make_toaster_hat(3, 1), make_toast(1, 1),
+                        make_golden(0), make_golden(1), make_bagel() };
+    for (int i = 0, x = 0; i < 9; i++) {
+        int oy = (TOASTER_H - parts[i].h) / 2;
+        for (int y = 0; y < parts[i].h; y++)
+            for (int k = 0; k < parts[i].w; k++)
+                if (get(&parts[i], k, y)) put(&sheet, x + k, oy + y, get(&parts[i], k, y));
+        x += parts[i].w;
+        free(parts[i].px);
+    }
+    return sheet;
+}

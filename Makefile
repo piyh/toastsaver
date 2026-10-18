@@ -13,6 +13,7 @@ bin/toastsaver: $(SRC) src/engine.h
 install: bin/toastsaver
 	install -Dm755 bin/toastsaver $(DESTDIR)$(PREFIX)/bin/toastsaver
 	ln -sf toastsaver $(DESTDIR)$(PREFIX)/bin/toastsaver-picker
+	ln -sf toastsaver $(DESTDIR)$(PREFIX)/bin/toastsaver-settings
 	install -Dm755 scripts/toastsaver-idle $(DESTDIR)$(PREFIX)/bin/toastsaver-idle
 	mkdir -p $(DESTDIR)$(PREFIX)/share/toastsaver
 	bin/toastsaver --write-icon $(DESTDIR)$(PREFIX)/share/toastsaver/icon.png

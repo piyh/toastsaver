@@ -9,7 +9,7 @@
 
 /* ---------- settings ---------- */
 
-Config g_config = { "toasters", "HELLO" };
+Config g_config = { "toasters", "HELLO", 5, 30, 0, 0 };
 
 const char *config_path(void) {
     static char path[1024];
@@ -41,35 +41,69 @@ static void read_value(const char *line, char *out, size_t size) {
     out[n] = 0;
 }
 
+/* Applies one KEY=value line. Returns 0 if the key isn't one of ours. */
+int config_apply(const char *line) {
+    char v[64];
+    if (!strchr(line, '=') || line[0] == '#') return 0;
+    read_value(line, v, sizeof v);
+    if (!strncmp(line, "SAVER=", 6)) snprintf(g_config.saver, sizeof g_config.saver, "%.31s", v);
+    else if (!strncmp(line, "NAME=", 5)) config_set_name(v);
+    else if (!strncmp(line, "IDLE_MINUTES=", 13)) g_config.idleMinutes = atoi(v) > 0 ? atoi(v) : 5;
+    else if (!strncmp(line, "SCREEN_OFF_MINUTES=", 19)) g_config.screenOffMinutes = atoi(v) > 0 ? atoi(v) : 0;
+    else if (!strncmp(line, "CLOCK=", 6)) g_config.clock = atoi(v) != 0;
+    else if (!strncmp(line, "CLOCK_24H=", 10)) g_config.clock24 = atoi(v) != 0;
+    else return 0;
+    return 1;
+}
+
 void config_load(void) {
     FILE *f = fopen(config_path(), "r");
-    char line[512], tmp[64];
+    char line[512];
     if (!f) return;
-    while (fgets(line, sizeof line, f)) {
-        if (!strncmp(line, "SAVER=", 6)) read_value(line, g_config.saver, sizeof g_config.saver);
-        else if (!strncmp(line, "NAME=", 5)) { read_value(line, tmp, sizeof tmp); config_set_name(tmp); }
-    }
+    while (fgets(line, sizeof line, f)) config_apply(line);
     fclose(f);
 }
 
+/* Formats KEY=value for every setting we own. */
+static void format_key(int k, char *out, size_t n) {
+    switch (k) {
+    case 0: snprintf(out, n, "SAVER=%s", g_config.saver); break;
+    case 1: snprintf(out, n, "NAME='%s'", g_config.name); break;
+    case 2: snprintf(out, n, "IDLE_MINUTES=%d", g_config.idleMinutes); break;
+    case 3: snprintf(out, n, "SCREEN_OFF_MINUTES=%d", g_config.screenOffMinutes); break;
+    case 4: snprintf(out, n, "CLOCK=%d", g_config.clock); break;
+    default: snprintf(out, n, "CLOCK_24H=%d", g_config.clock24); break;
+    }
+}
+#define NKEYS 6
+static const char *const KEYS[NKEYS] = { "SAVER=", "NAME=", "IDLE_MINUTES=", "SCREEN_OFF_MINUTES=", "CLOCK=", "CLOCK_24H=" };
+
 int config_save(void) {
     const char *path = config_path();
-    char tmp[1100], line[512];
-    int wroteSaver = 0, wroteName = 0;
+    char tmp[1100], dir[1100], line[512], kv[96];
+    int wrote[NKEYS] = { 0 };
     snprintf(tmp, sizeof tmp, "%s.tmp", path);
-    char dir[1100];
     snprintf(dir, sizeof dir, "%s", path);
     char *slash = strrchr(dir, '/');
     if (slash) { *slash = 0; mkdir(dir, 0755); }   /* make sure ~/.config exists */
     FILE *in = fopen(path, "r"), *out = fopen(tmp, "w");
     if (!out) { if (in) fclose(in); return -1; }
     while (in && fgets(line, sizeof line, in)) {
-        if (!strncmp(line, "SAVER=", 6)) { fprintf(out, "SAVER=%s\n", g_config.saver); wroteSaver = 1; }
-        else if (!strncmp(line, "NAME=", 5)) { fprintf(out, "NAME='%s'\n", g_config.name); wroteName = 1; }
-        else fputs(line, out);
+        int k = 0;
+        while (k < NKEYS && strncmp(line, KEYS[k], strlen(KEYS[k]))) k++;
+        if (k == NKEYS) { fputs(line, out); continue; }
+        format_key(k, kv, sizeof kv);
+        const char *comment = strchr(line, '#');      /* keep a trailing "# explanation" */
+        if (comment) {
+            int pad = 24 - (int)strlen(kv);
+            fprintf(out, "%s%*s%s", kv, pad > 1 ? pad : 1, "", comment);
+        } else {
+            fprintf(out, "%s\n", kv);
+        }
+        wrote[k] = 1;
     }
-    if (!wroteSaver) fprintf(out, "SAVER=%s\n", g_config.saver);
-    if (!wroteName) fprintf(out, "NAME='%s'\n", g_config.name);
+    for (int k = 0; k < NKEYS; k++)
+        if (!wrote[k]) { format_key(k, kv, sizeof kv); fprintf(out, "%s\n", kv); }
     if (in) fclose(in);
     if (fclose(out) != 0) return -1;
     return rename(tmp, path);

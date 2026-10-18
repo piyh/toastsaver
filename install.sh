@@ -47,6 +47,16 @@ Icon=/usr/local/share/toastsaver/icon.png
 Categories=Game;
 Terminal=false
 DESKTOP
+cat > "$HOME/.local/share/applications/toastsaver-settings.desktop" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=Screensaver Settings
+Comment=Screensaver timing, clock and test
+Exec=/usr/local/bin/toastsaver-settings
+Icon=/usr/local/share/toastsaver/icon.png
+Categories=Settings;DesktopSettings;
+Terminal=false
+DESKTOP
 if [ -d "$HOME/Desktop" ]; then
     cp "$PICKER" "$HOME/Desktop/Screensavers.desktop"
     chmod +x "$HOME/Desktop/Screensavers.desktop"
@@ -56,17 +66,18 @@ fi
 CONF="$HOME/.config/toastsaver.conf"
 if [ ! -f "$CONF" ]; then
     cat > "$CONF" <<SETTINGS
-# toastsaver settings. The Screensavers picker changes SAVER and NAME for you.
+# toastsaver settings. "Screensaver Settings" and the Screensavers picker change these for you.
 IDLE_MINUTES=5          # minutes of no input before the screensaver appears
 SCREEN_OFF_MINUTES=30   # minutes before the display turns off (0 = never)
 SAVER=toasters          # toasters pipes starfield mystify matrix aquarium lava name random
 NAME='HELLO'            # shown by the name saver
+CLOCK=0                 # 1 = show a clock over the screensaver
+CLOCK_24H=0             # 1 = 24-hour clock
 SETTINGS
 fi
 
 if [ -n "${WAYLAND_DISPLAY:-}" ]; then
-    pkill -f 'swayidle.*toastsaver' 2>/dev/null || true
-    nohup /usr/local/bin/toastsaver-idle >/dev/null 2>&1 &
+    /usr/local/bin/toastsaver-idle --restart
     sleep 1
     echo "==> Started."
 else
@@ -75,4 +86,5 @@ fi
 echo
 echo "Pick a screensaver:  double-click 'Screensavers' on the desktop (or: toastsaver-picker)"
 echo "Try one now:         toastsaver-idle --now pipes      (move the mouse to exit)"
+echo "Grown-up settings:   'Screensaver Settings' in the app menu (or: toastsaver-settings)"
 echo "Check everything:    toastsaver-idle --check"

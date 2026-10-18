@@ -11,14 +11,19 @@
 /* ---------- settings (~/.config/toastsaver.conf) ---------- */
 
 typedef struct {
-    char saver[32];   /* saver id or "random" */
-    char name[16];    /* shown by the NAME saver */
+    char saver[32];          /* saver id or "random" */
+    char name[16];           /* shown by the NAME saver */
+    int idleMinutes;         /* IDLE_MINUTES: wait before the screensaver */
+    int screenOffMinutes;    /* SCREEN_OFF_MINUTES: display off after (0 = never) */
+    int clock;               /* CLOCK: 1 shows a drifting clock over any saver */
+    int clock24;             /* CLOCK_24H: 1 for 24-hour time */
 } Config;
 
 extern Config g_config;
 const char *config_path(void);
 void config_load(void);
-int config_save(void);              /* rewrites SAVER= and NAME=, keeps other lines */
+int config_apply(const char *line);  /* one KEY=value line; 0 if unknown */
+int config_save(void);              /* rewrites known keys, keeps comments and other lines */
 void config_set_name(const char *s); /* uppercases and keeps only safe characters */
 
 /* ---------- random ---------- */
@@ -66,6 +71,12 @@ void draw_text(SDL_Renderer *r, const char *s, int x, int y, int scale, SDL_Colo
 void draw_text_shadow(SDL_Renderer *r, const char *s, int x, int y, int scale, SDL_Color c);
 Canvas text_canvas(const char *s, uint32_t col);         /* 1 canvas pixel per font dot */
 
+/* ---------- clock overlay ---------- */
+
+void clock_reset(int w, int h);
+void clock_step(float dt);
+void clock_draw(SDL_Renderer *r, int w, int h);
+
 /* ---------- screensavers ---------- */
 
 typedef struct Saver {
@@ -90,6 +101,11 @@ const Saver *saver_resolve(const char *id); /* handles "random"; falls back to t
    whole app should quit (window closed / SIGTERM), 0 if it was dismissed by input. */
 int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed);
 int run_picker(SDL_Window *win, SDL_Renderer *r);
+int run_settings(SDL_Window *win, SDL_Renderer *r);
+void *settings_create(SDL_Renderer *r, int w, int h);
+void settings_step(void *p, float dt);
+void settings_draw(void *p, SDL_Renderer *r);
+void settings_destroy(void *p);
 
 /* For tests: render the picker or a saver offscreen. */
 void *picker_create(SDL_Renderer *r, int w, int h);

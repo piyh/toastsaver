@@ -5,6 +5,8 @@
 #   2. an app that inhibits idle (like a playing video) stops it from starting
 #   3. a screensaver over the picker can be dismissed without closing the picker
 #   4. toastsaver-idle --now pipes starts that saver
+#   5. settings: --set keeps the file's comments, --restart swaps the watcher,
+#      the settings window opens, and a saver runs with the clock on
 # Usage (from the repo):  docker run --rm -v "$PWD":/src debian:trixie sh /src/tests/pi-os-test.sh
 set -eu
 export DEBIAN_FRONTEND=noninteractive
@@ -28,9 +30,12 @@ set -eu
 fail() { echo "FAIL: $*"; exit 1; }
 count() { pgrep -c -x toastsaver || true; }
 cd ~/toastsaver
-echo "--- build warnings"; make clean >/dev/null; make 2>&1 | grep -Ei "warning|error" || echo "none"
+echo "--- build warnings"; make clean >/dev/null
+W=$(make 2>&1 | grep -Ei "warning|error" || true)
+if [ -n "$W" ]; then echo "$W" | sed "s/^/WARN /"; else echo "none"; fi
 echo "--- installer"; ./install.sh 2>&1 | grep "==>"
 ls ~/.config/autostart/toastsaver.desktop ~/.local/share/applications/toastsaver-picker.desktop \
+   ~/.local/share/applications/toastsaver-settings.desktop /usr/local/bin/toastsaver-settings \
    ~/Desktop/Screensavers.desktop /usr/local/share/toastsaver/icon.png /usr/local/bin/toastsaver-picker
 echo "savers: $(toastsaver --list | tr "\n" " ")"
 
@@ -41,7 +46,7 @@ sleep 3
 export WAYLAND_DISPLAY=$(ls $XDG_RUNTIME_DIR | grep -m1 "^wayland-[0-9]*$")
 echo "--- compositor $COMP on $WAYLAND_DISPLAY"
 
-IDLE_SECONDS=3 SCREEN_OFF_SECONDS=0 toastsaver-idle &
+IDLE_SECONDS=3 SCREEN_OFF_SECONDS=0 toastsaver-idle &   # fast timings for the first checks
 sleep 1
 toastsaver-idle; [ "$(pgrep -c swayidle)" = 1 ] || fail "more than one idle watcher"
 echo "single instance: ok"
@@ -84,6 +89,26 @@ pgrep -a -x toastsaver | grep -q pipes || fail "pipes not running"
 grim /tmp/pipes.png
 pkill -x toastsaver
 echo "ok"
+
+echo "--- 5. settings"
+toastsaver --set CLOCK=1 >/dev/null && toastsaver --set IDLE_MINUTES=10 >/dev/null
+grep -q "^CLOCK=1 .*# 1 = show a clock" ~/.config/toastsaver.conf || fail "comment lost or CLOCK not saved"
+grep -q "^IDLE_MINUTES=10 .*# minutes" ~/.config/toastsaver.conf || fail "IDLE_MINUTES not saved with its comment"
+echo "--set keeps comments: ok"
+OLD=$(pgrep -x swayidle)
+toastsaver-idle --restart; sleep 1
+NEW=$(pgrep -x swayidle || true)
+[ -n "$NEW" ] && [ "$NEW" != "$OLD" ] && [ "$(pgrep -c swayidle)" = 1 ] || fail "--restart did not replace the watcher"
+pgrep -a swayidle | grep -q "timeout 600" || fail "new watcher is not using IDLE_MINUTES=10"
+echo "--restart picks up new timings: ok"
+toastsaver-settings &
+SET=$!; sleep 2
+kill -0 $SET 2>/dev/null || fail "settings window did not stay open"
+kill $SET
+toastsaver-idle --now aquarium &
+sleep 3; pgrep -x toastsaver >/dev/null || fail "saver with clock did not run"
+grim /tmp/clock.png; pkill -x toastsaver
+echo "settings window and clock: ok"
 
 cp /tmp/s1.png /src/tests/wayland-toasters.png
 cp /tmp/pipes.png /src/tests/wayland-pipes.png
