@@ -253,6 +253,14 @@ static PolyMesh build_d6(void) {
         for (int j = 0; j < 4; j++) m.faces[i].idx[j] = fidx[i][j];
     }
     init_poly_mesh(&m);
+    /* Square the pip grid to the edges (not the corners) so pips sit like a real die's
+       and the die comes to rest square on, not balanced on a corner. */
+    for (int i = 0; i < 6; i++) {
+        PolyFace *fc = &m.faces[i];
+        Vec3 mid = v_scale(v_add(m.verts[fc->idx[0]], m.verts[fc->idx[1]]), 0.5f);
+        fc->up = v_norm(v_sub(mid, fc->c));
+        fc->right = v_cross(fc->normal, fc->up);
+    }
     return m;
 }
 
@@ -817,6 +825,7 @@ static Quat compute_target_orientation(const PolyMesh *m, int kind, int value) {
         float turn = atan2f(fn.x, fn.y) + frand(-0.3f, 0.3f);   /* swing its normal round to +y */
         return quat_norm(quat_mul(quat_axis_angle(z, turn), align));
     }
+    if (kind == D6) up = vec3(0, 0, 1);   /* a cube sits flat, so its front face shows too */
     Quat align = orient_face_to(n, up);
     float turn;
     {
