@@ -25,6 +25,9 @@ install_name_tool -change "$SDL2" @executable_path/../Frameworks/libSDL2-2.0.0.d
 cat > "$APP/Contents/MacOS/Toastsaver" <<'SH'
 #!/bin/sh
 export XDG_CONFIG_HOME="${TMPDIR:-/tmp}/toastsaver-demo"
+mkdir -p "$XDG_CONFIG_HOME"
+# The demo has no Settings window, so show the clock (off by default on the Pi).
+"$(dirname "$0")/toastsaver-bin" --set CLOCK=1 >/dev/null
 exec "$(dirname "$0")/toastsaver-bin" --picker
 SH
 chmod 755 "$APP/Contents/MacOS/Toastsaver"

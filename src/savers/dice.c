@@ -547,65 +547,103 @@ static void to_screen(const Die *e, float R, Vec3 v, float *x, float *y) {
     *y = (w.y * CAM_S - w.z * CAM_C) * R;
 }
 
-/* Paints a mask (0 nothing, 1 rim, 2 ink) centred on (ox, oy). One mask pixel steps by
-   (ax, ay) across and (bx, by) down, so the bitmap lies flat on a tilted face. */
-static void paint_on_face(Canvas *c, const unsigned char *mask, int mw, int mh, float ox, float oy,
-                          float ax, float ay, float bx, float by, uint32_t rim, uint32_t ink) {
-    float det = ax * by - ay * bx;
-    if (fabsf(det) < 0.05f) return;  /* seen edge-on */
-    float hw = mw * 0.5f, hh = mh * 0.5f, x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
-    for (int k = 0; k < 4; k++) {
-        float u = k & 1 ? hw : -hw, v = k & 2 ? hh : -hh, px = ox + ax * u + bx * v, py = oy + ay * u + by * v;
-        x0 = fminf(x0, px); x1 = fmaxf(x1, px); y0 = fminf(y0, py); y1 = fmaxf(y1, py);
-    }
-    for (int y = (int)floorf(y0); y <= (int)ceilf(y1); y++)
-        for (int x = (int)floorf(x0); x <= (int)ceilf(x1); x++) {
-            float dx = x + 0.5f - ox, dy = y + 0.5f - oy;
-            int i = (int)floorf((dx * by - dy * bx) / det + hw), j = (int)floorf((ax * dy - ay * dx) / det + hh);
-            if (i < 0 || j < 0 || i >= mw || j >= mh || !mask[j * mw + i]) continue;
-            put(c, x, y, rgb(mask[j * mw + i] == 2 ? ink : rim));
-        }
+/* ---------- stroke digits printed on the dice ---------- */
+
+/* Dice numbers are drawn as smooth strokes, not the chunky 5x7 bitmap font: each digit is
+   a few line segments (arcs are short chains) in a box 1 wide and 1.5 tall, y down, and
+   each pixel is coloured by its distance to the nearest stroke. */
+typedef struct { float x0, y0, x1, y1; } Seg;
+#define DSEGS 48
+static Seg DIGIT[10][DSEGS];
+static int NSEG[10];
+
+static void dseg(int d, float x0, float y0, float x1, float y1) {
+    if (NSEG[d] < DSEGS) DIGIT[d][NSEG[d]++] = (Seg){ x0, y0, x1, y1 };
 }
 
-/* A number printed on a face: centre p, text axes right/up (model space), mask pixel size px. */
+static void darc(int d, float cx, float cy, float rx, float ry, float a0, float a1, int n) {
+    for (int i = 0; i < n; i++) {
+        float t0 = (a0 + (a1 - a0) * i / n) * PI_F / 180, t1 = (a0 + (a1 - a0) * (i + 1) / n) * PI_F / 180;
+        dseg(d, cx + rx * cosf(t0), cy + ry * sinf(t0), cx + rx * cosf(t1), cy + ry * sinf(t1));
+    }
+}
+
+static void dbez(int d, float x0, float y0, float x1, float y1, float x2, float y2, int n) {
+    float px = x0, py = y0;
+    for (int i = 1; i <= n; i++) {
+        float t = (float)i / n, u = 1 - t;
+        float x = u * u * x0 + 2 * u * t * x1 + t * t * x2, y = u * u * y0 + 2 * u * t * y1 + t * t * y2;
+        dseg(d, px, py, x, y);
+        px = x; py = y;
+    }
+}
+
+static void build_digits(void) {
+    if (NSEG[0]) return;
+    darc(0, 0.5f, 0.75f, 0.4f, 0.66f, 0, 360, 20);
+    dseg(1, 0.55f, 0.09f, 0.55f, 1.41f); dseg(1, 0.55f, 0.09f, 0.25f, 0.35f); dseg(1, 0.25f, 1.41f, 0.85f, 1.41f);
+    darc(2, 0.5f, 0.44f, 0.38f, 0.35f, 195, 380, 10); dseg(2, 0.86f, 0.56f, 0.12f, 1.41f); dseg(2, 0.12f, 1.41f, 0.9f, 1.41f);
+    darc(3, 0.48f, 0.42f, 0.36f, 0.32f, 210, 450, 12); darc(3, 0.48f, 1.06f, 0.42f, 0.35f, 270, 510, 12);
+    dseg(4, 0.68f, 1.41f, 0.68f, 0.09f); dseg(4, 0.68f, 0.09f, 0.1f, 0.98f); dseg(4, 0.1f, 0.98f, 0.92f, 0.98f);
+    dseg(5, 0.86f, 0.09f, 0.22f, 0.09f); dseg(5, 0.22f, 0.09f, 0.17f, 0.66f); darc(5, 0.49f, 1.0f, 0.41f, 0.41f, 230, 500, 14);
+    dbez(6, 0.82f, 0.12f, 0.12f, 0.2f, 0.12f, 1.0f, 8); darc(6, 0.5f, 1.02f, 0.38f, 0.39f, 0, 360, 16);
+    dseg(7, 0.1f, 0.09f, 0.9f, 0.09f); dseg(7, 0.9f, 0.09f, 0.38f, 1.41f);
+    darc(8, 0.5f, 0.4f, 0.32f, 0.31f, 0, 360, 14); darc(8, 0.5f, 1.06f, 0.39f, 0.35f, 0, 360, 16);
+    darc(9, 0.5f, 0.48f, 0.38f, 0.39f, 0, 360, 16); dbez(9, 0.88f, 0.5f, 0.88f, 1.3f, 0.18f, 1.38f, 8);
+}
+
+static float seg_d2(const Seg *g, float x, float y) {
+    float dx = g->x1 - g->x0, dy = g->y1 - g->y0, l2 = dx * dx + dy * dy;
+    float t = l2 > 0 ? ((x - g->x0) * dx + (y - g->y0) * dy) / l2 : 0;
+    t = t < 0 ? 0 : (t > 1 ? 1 : t);
+    float ex = g->x0 + dx * t - x, ey = g->y0 + dy * t - y;
+    return ex * ex + ey * ey;
+}
+
+#define STROKE 0.12f   /* half the stroke width, in digit units */
+#define RIM 0.1f       /* the darker engraved edge around it */
+#define ADVANCE 1.2f   /* digit spacing */
+
+/* A number printed on a face, centred on (ox, oy): its text axes are right/up (model
+   space) and a digit is 7 * px tall, so it foreshortens and turns with the face. */
 static void face_number(Dice *d, const Die *e, float ox, float oy, Vec3 right, Vec3 up, float px,
                         int value, uint32_t face, uint32_t ink, float a) {
     uint32_t rim = mixc(face, shade(face, 0.42f), a);
     ink = mixc(face, ink, a);
     char s[4];
     snprintf(s, sizeof s, "%d", value);
-    int bar = value == 6 || value == 9, tw = glyphs_w(s, 1), th = FONT_H + (bar ? 2 : 0);
-    int mw = tw + 2, mh = th + 2;
-    unsigned char mask[16 * 13] = { 0 };
-    for (int k = 0; s[k]; k++) {
-        const char *const *g = font_glyph(s[k]);
-        for (int j = 0; g && j < FONT_H; j++)
-            for (int i = 0; i < FONT_W; i++)
-                if (g[j][i] == '#') mask[(j + 1) * mw + k * (FONT_W + 1) + i + 1] = 2;
-    }
-    if (bar) for (int i = 0; i < tw; i++) mask[th * mw + i + 1] = 2;   /* 6. and 9. */
-    for (int j = 0; j < mh; j++)
-        for (int i = 0; i < mw; i++)
-            if (!mask[j * mw + i] && ((i > 0 && mask[j * mw + i - 1] == 2) || (i < mw - 1 && mask[j * mw + i + 1] == 2) ||
-                                      (j > 0 && mask[(j - 1) * mw + i] == 2) || (j < mh - 1 && mask[(j + 1) * mw + i] == 2)))
-                mask[j * mw + i] = 1;
+    int n = (int)strlen(s), bar = value == 6 || value == 9;
+    float u = FONT_H * px / 1.5f;                      /* model units per digit unit */
+    float W = n + (n - 1) * (ADVANCE - 1), top = -0.75f, bottom = bar ? 0.98f : 0.75f;
     float ax, ay, bx, by, R = (float)(d->R * FINE);
-    to_screen(e, R, v_scale(right, px), &ax, &ay);
-    to_screen(e, R, v_scale(up, -px), &bx, &by);
-    if (ax > 0 && by > 0 && fabsf(ay) < 0.1f * ax && fabsf(bx) < 0.1f * by) {
-        /* Square on to the viewer (a die at rest): draw it as crisp whole pixels. */
-        int sc = (int)lroundf(fminf(ax, by)), x0, y0;
-        if (sc < 1) sc = 1;
-        x0 = (int)lroundf(ox - mw * sc / 2.0f);
-        y0 = (int)lroundf(oy - mh * sc / 2.0f);
-        for (int j = 0; j < mh; j++)
-            for (int i = 0; i < mw; i++)
-                if (mask[j * mw + i])
-                    fill_rect(&d->fine, x0 + i * sc, y0 + j * sc, x0 + i * sc + sc - 1, y0 + j * sc + sc - 1,
-                              rgb(mask[j * mw + i] == 2 ? ink : rim));
-        return;
+    to_screen(e, R, v_scale(right, u), &ax, &ay);
+    to_screen(e, R, v_scale(up, -u), &bx, &by);
+    float det = ax * by - ay * bx;
+    if (fabsf(det) < 0.3f) return;                     /* seen edge-on */
+    float m = STROKE + RIM, x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
+    for (int k = 0; k < 4; k++) {
+        float lx = k & 1 ? W / 2 + m : -W / 2 - m, ly = k & 2 ? bottom + m : top - m;
+        float sx = ox + ax * lx + bx * ly, sy = oy + ay * lx + by * ly;
+        x0 = fminf(x0, sx); x1 = fmaxf(x1, sx); y0 = fminf(y0, sy); y1 = fmaxf(y1, sy);
     }
-    paint_on_face(&d->fine, mask, mw, mh, ox, oy, ax, ay, bx, by, rim, ink);
+    for (int y = (int)floorf(y0); y <= (int)ceilf(y1); y++)
+        for (int x = (int)floorf(x0); x <= (int)ceilf(x1); x++) {
+            float dx = x + 0.5f - ox, dy = y + 0.5f - oy;
+            float lx = (dx * by - dy * bx) / det + W / 2, ly = (ax * dy - ay * dx) / det + 0.75f;
+            float best = 1e9f;
+            for (int k = 0; k < n; k++) {
+                float gx = lx - k * ADVANCE;
+                if (gx < -m || gx > 1 + m) continue;
+                int dg = s[k] - '0';
+                for (int i = 0; i < NSEG[dg]; i++) best = fminf(best, seg_d2(&DIGIT[dg][i], gx, ly));
+            }
+            if (bar) {                                  /* the line under 6 and 9 */
+                Seg g = { 0.15f, 1.73f, W - 0.15f, 1.73f };
+                best = fminf(best, seg_d2(&g, lx, ly));
+            }
+            if (best < STROKE * STROKE) put(&d->fine, x, y, rgb(ink));
+            else if (best < m * m) put(&d->fine, x, y, rgb(rim));
+        }
 }
 
 /* A pip: a disc on the face at (u, v) in the face's own units, with a dark rim. */
@@ -1399,6 +1437,7 @@ static void *create(SDL_Renderer *r, int w, int h) {
     d->bx = (d->W - d->bw) / 2;
     d->by = d->F / 2 - 1 > 1 ? d->F / 2 - 1 : 1;
 
+    build_digits();
     /* Build the 3D meshes for all 6 dice kinds */
     d->mesh[D4]  = build_d4();
     d->mesh[D6]  = build_d6();
