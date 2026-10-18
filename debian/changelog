@@ -2,10 +2,13 @@ toastsaver (1.1.0) stable; urgency=medium
 
   * New screensavers: RAINBOW (the Waffle Cat flies on a rainbow),
     BOOKS (books fly off a cozy shelf and open to little moving
-    pictures) and BIRDS (songbirds over summer hills).
+    pictures), DICE (a felt dice tray with a chalkboard tally) and
+    BIRDS (songbirds over summer hills).
+  * SURPRISE ME picks from a mix you choose in the picker
+    (RANDOM_SAVERS in the config file).
   * LAVA rewritten: wax that warms, rises, cools and sinks inside a
     glowing glass lamp.
-  * The picker grows to four columns to fit eleven savers.
+  * The picker grows to four columns to fit twelve savers.
 
  -- piyh <10518137+piyh@users.noreply.github.com>  Sun, 18 Oct 2026 17:30:25 +0000
 
