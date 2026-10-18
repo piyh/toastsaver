@@ -1,4 +1,4 @@
-/* Settings window for grown-ups: timings, clock, and shortcuts to the picker
+/* Settings window for grown-ups: on/off, timings, clock, and shortcuts to the picker
    and a test run. Every change is saved at once; timing changes restart the
    idle watcher when the window closes so they apply without logging out. */
 #define _POSIX_C_SOURCE 200809L
@@ -8,7 +8,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#define ROWS 5
+#define ROWS 6
 static const int IDLE_OPTS[] = { 1, 2, 3, 5, 10, 15, 20, 30, 45, 60 };
 static const int OFF_OPTS[] = { 0, 5, 10, 15, 20, 30, 45, 60, 90, 120 };
 #define NOPTS 10
@@ -21,7 +21,7 @@ typedef struct {
 } Settings;
 
 static void layout(Settings *s) {
-    float top = s->h * 0.16f, bottom = s->h * 0.80f;
+    float top = s->h * 0.15f, bottom = s->h * 0.81f;
     s->rowH = (bottom - top) / ROWS;
     int pad = (int)(s->rowH * 0.1f), btn = (int)(s->rowH * 0.62f);
     for (int i = 0; i < ROWS; i++) {
@@ -33,7 +33,7 @@ static void layout(Settings *s) {
         s->toggle[i] = (SDL_Rect){ (int)(s->w * 0.56f), cy, btn * 2, btn };
     }
     int bh = (int)(s->h * 0.11f), bw = s->w / 4, by = (int)(s->h * 0.84f);
-    s->change = (SDL_Rect){ (int)(s->w * 0.70f), s->plus[0].y, (int)(s->w * 0.22f), s->plus[0].h };
+    s->change = (SDL_Rect){ (int)(s->w * 0.70f), s->plus[1].y, (int)(s->w * 0.22f), s->plus[1].h };
     s->test = (SDL_Rect){ s->w / 2 - bw - s->w / 40, by, bw, bh };
     s->done = (SDL_Rect){ s->w / 2 + s->w / 40, by, bw, bh };
 }
@@ -69,7 +69,7 @@ static void fix_order(int idleChanged) {
 }
 
 static void stepper(int row, int dir) {
-    if (row == 1) {
+    if (row == 2) {
         int i = index_of(IDLE_OPTS, g_config.idleMinutes) + dir;
         if (i < 0 || i >= NOPTS) return;
         g_config.idleMinutes = IDLE_OPTS[i];
@@ -120,7 +120,7 @@ void settings_draw(void *p, SDL_Renderer *r) {
     text_at(r, "SCREENSAVER SETTINGS", (s->w - text_width("SCREENSAVER SETTINGS", tsc)) / 2,
             (int)(s->h * 0.08f), tsc, hexcol(0xFFE45C));
 
-    static const char *const labels[ROWS] = { "SCREENSAVER", "START AFTER", "SCREEN OFF AFTER", "SHOW CLOCK", "CLOCK STYLE" };
+    static const char *const labels[ROWS] = { "SCREENSAVER", "CHOSEN", "START AFTER", "SCREEN OFF AFTER", "SHOW CLOCK", "CLOCK STYLE" };
     int sc = (int)(s->rowH * 0.3f / FONT_H);
     if (sc < 1) sc = 1;
     while (sc > 1 && text_width("SCREEN OFF AFTER", sc) > s->w * 0.46f) sc--;
@@ -128,26 +128,28 @@ void settings_draw(void *p, SDL_Renderer *r) {
     for (int i = 0; i < ROWS; i++) {
         SDL_Rect rw = s->row[i];
         fill_rrect(r, rw, rw.h / 4, i == s->hover ? hexcol(0x1D5578) : hexcol(0x163F5E));
-        int cy = rw.y + rw.h / 2, dim = i == 4 && !g_config.clock;
+        int cy = rw.y + rw.h / 2;
+        /* Rows that don't matter right now are drawn dimmed. */
+        int dim = (i == 5 && !g_config.clock) || (i >= 1 && !g_config.enabled);
         text_at(r, labels[i], rw.x + rw.h / 3, cy, sc, dim ? hexcol(0x7F93A6) : hexcol(0xFFFFFF));
-        if (i == 0) {
+        if (i == 1) {
             const Saver *sv = saver_find(g_config.saver);
-            text_at(r, sv ? sv->label : "SURPRISE", s->minus[0].x, cy, sc, hexcol(0xFFE45C));
+            text_at(r, sv ? sv->label : "SURPRISE", s->minus[1].x, cy, sc, dim ? hexcol(0x7F93A6) : hexcol(0xFFE45C));
             button(r, s->change, "CHANGE", 0x8E24AA, 0x5E1675);
-        } else if (i <= 2) {
-            int v = i == 1 ? g_config.idleMinutes : g_config.screenOffMinutes;
+        } else if (i == 2 || i == 3) {
+            int v = i == 2 ? g_config.idleMinutes : g_config.screenOffMinutes;
             if (v == 0) snprintf(val, sizeof val, "NEVER");
             else snprintf(val, sizeof val, "%d MIN", v);
-            int lo = i == 1 ? v > IDLE_OPTS[0] : v != 0;
-            int hi = i == 1 ? v < IDLE_OPTS[NOPTS - 1] : v < OFF_OPTS[NOPTS - 1];
-            round_button(r, s->minus[i], 0, lo);
-            round_button(r, s->plus[i], 1, hi);
+            int lo = i == 2 ? v > IDLE_OPTS[0] : v != 0;
+            int hi = i == 2 ? v < IDLE_OPTS[NOPTS - 1] : v < OFF_OPTS[NOPTS - 1];
+            round_button(r, s->minus[i], 0, lo && !dim);
+            round_button(r, s->plus[i], 1, hi && !dim);
             int mid = (s->minus[i].x + s->minus[i].w + s->plus[i].x) / 2;
-            text_at(r, val, mid - text_width(val, sc) / 2, cy, sc, hexcol(0xFFFFFF));
+            text_at(r, val, mid - text_width(val, sc) / 2, cy, sc, dim ? hexcol(0x7F93A6) : hexcol(0xFFFFFF));
         } else {
-            int on = i == 3 ? g_config.clock : g_config.clock24;
+            int on = i == 0 ? g_config.enabled : i == 4 ? g_config.clock : g_config.clock24;
             toggle_switch(r, s->toggle[i], on, !dim, s->t);
-            const char *t = i == 3 ? (on ? "ON" : "OFF") : (on ? "24 HOUR" : "12 HOUR");
+            const char *t = i == 5 ? (on ? "24 HOUR" : "12 HOUR") : (on ? "ON" : "OFF");
             text_at(r, t, s->toggle[i].x + s->toggle[i].w + rw.h / 3, cy, sc, dim ? hexcol(0x7F93A6) : hexcol(0xFFFFFF));
         }
     }
@@ -161,12 +163,20 @@ void settings_draw(void *p, SDL_Renderer *r) {
 static int hit(SDL_Rect rc, int x, int y) { return x >= rc.x && y >= rc.y && x < rc.x + rc.w && y < rc.y + rc.h; }
 
 static void click(Settings *s, SDL_Window *win, int x, int y) {
-    for (int i = 1; i <= 2; i++) {
-        if (hit(s->minus[i], x, y)) { stepper(i, -1); s->timingChanged = 1; config_save(); return; }
-        if (hit(s->plus[i], x, y)) { stepper(i, +1); s->timingChanged = 1; config_save(); return; }
+    if (hit(s->row[0], x, y)) {                    /* the master on/off switch */
+        g_config.enabled = !g_config.enabled;
+        s->timingChanged = 1;
+        config_save();
+        return;
     }
-    if (hit(s->row[3], x, y)) { g_config.clock = !g_config.clock; config_save(); return; }
-    if (hit(s->row[4], x, y) && g_config.clock) { g_config.clock24 = !g_config.clock24; config_save(); return; }
+    if (g_config.enabled) {
+        for (int i = 2; i <= 3; i++) {
+            if (hit(s->minus[i], x, y)) { stepper(i, -1); s->timingChanged = 1; config_save(); return; }
+            if (hit(s->plus[i], x, y)) { stepper(i, +1); s->timingChanged = 1; config_save(); return; }
+        }
+        if (hit(s->row[4], x, y)) { g_config.clock = !g_config.clock; config_save(); return; }
+        if (hit(s->row[5], x, y) && g_config.clock) { g_config.clock24 = !g_config.clock24; config_save(); return; }
+    }
     if (hit(s->change, x, y)) { run_picker(win, s->r); SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT); return; }
     if (hit(s->test, x, y)) {
         if (run_saver(win, s->r, saver_resolve(g_config.saver), 0) == 1) s->quit = 1;
@@ -211,8 +221,8 @@ int run_settings(SDL_Window *win, SDL_Renderer *r) {
         SDL_Delay(16);
     }
     /* New timings take effect now rather than at next login. */
-    if (s->timingChanged && access("/usr/local/bin/toastsaver-idle", X_OK) == 0)
-        if (system("/usr/local/bin/toastsaver-idle --restart >/dev/null 2>&1") != 0)
+    if (s->timingChanged && access(TOASTSAVER_BINDIR "/toastsaver-idle", X_OK) == 0)
+        if (system(TOASTSAVER_BINDIR "/toastsaver-idle --restart >/dev/null 2>&1") != 0)
             fprintf(stderr, "toastsaver: could not restart the idle watcher\n");
     settings_destroy(s);
     return 0;

@@ -6,11 +6,20 @@
 #include <stdint.h>
 
 #define PI_F 3.14159265f
-#define VERSION "2.0.0"
+#define VERSION "1.0.0"
+
+/* Install locations, passed in by the Makefile. */
+#ifndef TOASTSAVER_BINDIR
+#define TOASTSAVER_BINDIR "/usr/local/bin"
+#endif
+#ifndef TOASTSAVER_DATADIR
+#define TOASTSAVER_DATADIR "/usr/local/share"
+#endif
 
 /* ---------- settings (~/.config/toastsaver.conf) ---------- */
 
 typedef struct {
+    int enabled;             /* ENABLED: 0 turns the screensaver off */
     char saver[32];          /* saver id or "random" */
     char name[16];           /* shown by the NAME saver */
     int idleMinutes;         /* IDLE_MINUTES: wait before the screensaver */

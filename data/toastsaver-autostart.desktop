@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=toastsaver idle watcher
+Comment=Shows a screensaver when the computer is idle
+TryExec=@BINDIR@/toastsaver-idle
+Exec=@BINDIR@/toastsaver-idle
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

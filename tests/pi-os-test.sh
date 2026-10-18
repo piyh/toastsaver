@@ -1,42 +1,67 @@
 #!/bin/sh
-# End-to-end test in a throwaway Debian ARM64 container (the base of Raspberry Pi OS).
-# It builds and installs with the real installer, starts a headless compositor and checks:
+# End-to-end test in a throwaway Debian container (the base of Raspberry Pi OS).
+# Installs toastsaver (from source with install.sh, or a .deb with apt if DEB is
+# set), starts a headless compositor, and checks that:
 #   1. the screensaver appears after the idle timeout and leaves on a key press
 #   2. an app that inhibits idle (like a playing video) stops it from starting
 #   3. a screensaver over the picker can be dismissed without closing the picker
 #   4. toastsaver-idle --now pipes starts that saver
 #   5. settings: --set keeps the file's comments, --restart swaps the watcher,
-#      the settings window opens, and a saver runs with the clock on
-# Usage (from the repo):  docker run --rm -v "$PWD":/src debian:trixie sh /src/tests/pi-os-test.sh
+#      ENABLED=0 stops it, the settings window opens, a saver runs with the clock on
+# Usage (from the repo):
+#   docker run --rm -v "$PWD":/src debian:trixie sh /src/tests/pi-os-test.sh
+#   docker run --rm -e DEB=toastsaver_1.0.0_arm64.deb -v "$PWD":/src debian:trixie sh /src/tests/pi-os-test.sh
 set -eu
 export DEBIAN_FRONTEND=noninteractive
+DEB=${DEB:-}
 apt-get update -qq >/dev/null
 # Pi OS ships labwc; plain Debian bookworm doesn't, so fall back to sway (also wlroots).
 COMP=labwc; apt-cache show labwc >/dev/null 2>&1 || COMP=sway
-apt-get install -y -qq build-essential pkg-config libsdl2-dev swayidle $COMP grim wtype \
-    shellcheck procps util-linux sudo libegl-mesa0 libgl1-mesa-dri >/dev/null
+# Test tools only. Graphics libraries come from the package's own dependencies (DEB mode).
+apt-get install -y -qq $COMP grim wtype shellcheck procps sudo >/dev/null
+# A source install needs the compiler before the build-warnings check runs.
+[ -n "$DEB" ] || apt-get install -y -qq build-essential pkgconf libsdl2-dev >/dev/null
 echo "--- shellcheck"
-shellcheck -s sh /src/install.sh /src/uninstall.sh /src/deploy.sh /src/scripts/toastsaver-idle && echo "clean"
+shellcheck -s sh /src/install.sh /src/uninstall.sh /src/extras/deploy-from-usb.sh /src/scripts/toastsaver-idle && echo "clean"
 
-# A disposable user with passwordless sudo, so the installer can run unattended (container only).
+# A disposable user with passwordless sudo, so installs run unattended (container only).
 useradd -m pi
 mkdir -p /home/pi/Desktop
 cp -r /src /home/pi/toastsaver && rm -rf /home/pi/toastsaver/bin
 chown -R pi:pi /home/pi/toastsaver /home/pi/Desktop
 echo "pi ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/pi
 
-su pi -s /bin/sh -c "COMP=$COMP; "'
+if [ -n "$DEB" ]; then
+    echo "--- apt install ./$DEB (pulls in its own dependencies)"
+    apt-get install -y -qq "/src/dist/$DEB" >/dev/null
+    dpkg -s toastsaver | grep -E "^(Version|Depends):"
+    PREFIX=/usr
+else
+    PREFIX=/usr/local
+fi
+
+su pi -s /bin/sh -c "COMP=$COMP; PREFIX=$PREFIX; DEB=$DEB; "'
 set -eu
 fail() { echo "FAIL: $*"; exit 1; }
 count() { pgrep -c -x toastsaver || true; }
 cd ~/toastsaver
-echo "--- build warnings"; make clean >/dev/null
-W=$(make 2>&1 | grep -Ei "warning|error" || true)
-if [ -n "$W" ]; then echo "$W" | sed "s/^/WARN /"; else echo "none"; fi
-echo "--- installer"; ./install.sh 2>&1 | grep "==>"
-ls ~/.config/autostart/toastsaver.desktop ~/.local/share/applications/toastsaver-picker.desktop \
-   ~/.local/share/applications/toastsaver-settings.desktop /usr/local/bin/toastsaver-settings \
-   ~/Desktop/Screensavers.desktop /usr/local/share/toastsaver/icon.png /usr/local/bin/toastsaver-picker
+if [ -z "$DEB" ]; then
+    echo "--- build warnings"; make clean >/dev/null
+    W=$(make 2>&1 | grep -Ei "warning|error" || true)
+    if [ -n "$W" ]; then echo "$W" | sed "s/^/WARN /"; else echo "none"; fi
+    echo "--- installer"; ./install.sh 2>&1 | grep "==>"
+else
+    toastsaver --desktop-icon
+fi
+ls /etc/xdg/autostart/toastsaver.desktop $PREFIX/share/applications/toastsaver-picker.desktop \
+   $PREFIX/share/applications/toastsaver-settings.desktop $PREFIX/bin/toastsaver-settings \
+   $PREFIX/bin/toastsaver-picker $PREFIX/share/icons/hicolor/128x128/apps/toastsaver.png \
+   ~/Desktop/Screensavers.desktop >/dev/null
+grep -q "Exec=$PREFIX/bin/toastsaver-idle" /etc/xdg/autostart/toastsaver.desktop || fail "autostart has wrong path"
+# Docker images skip installing man pages, so for the package check its file list.
+if [ -n "$DEB" ]; then dpkg -L toastsaver | grep -q "man1/toastsaver-picker.1" || fail "man page missing from package"
+else [ -e $PREFIX/share/man/man1/toastsaver-picker.1 ] || fail "man page missing"; fi
+echo "files in place under $PREFIX: ok"
 echo "savers: $(toastsaver --list | tr "\n" " ")"
 
 export XDG_RUNTIME_DIR=/tmp/xdg; mkdir -p -m 700 $XDG_RUNTIME_DIR
@@ -53,7 +78,7 @@ echo "single instance: ok"
 
 echo "--- 1. idle -> screensaver -> key -> gone"
 sleep 6
-[ "$(count)" = 1 ] || fail "screensaver did not start"
+[ "$(count)" = 1 ] || { pgrep -a swayidle; pgrep -a toastsaver; tail -5 /tmp/compositor.log; fail "screensaver did not start"; }
 sleep 1; grim /tmp/s1.png
 wtype a; sleep 2
 [ "$(count)" = 0 ] || fail "screensaver still running after a key"
@@ -101,17 +126,34 @@ NEW=$(pgrep -x swayidle || true)
 [ -n "$NEW" ] && [ "$NEW" != "$OLD" ] && [ "$(pgrep -c swayidle)" = 1 ] || fail "--restart did not replace the watcher"
 pgrep -a swayidle | grep -q "timeout 600" || fail "new watcher is not using IDLE_MINUTES=10"
 echo "--restart picks up new timings: ok"
+toastsaver --set ENABLED=0 >/dev/null; toastsaver-idle --restart; sleep 1
+[ -z "$(pgrep -x swayidle)" ] || fail "watcher still running with ENABLED=0"
+toastsaver --set ENABLED=1 >/dev/null; toastsaver-idle --restart; sleep 1
+[ "$(pgrep -c swayidle)" = 1 ] || fail "watcher did not come back with ENABLED=1"
+echo "ENABLED switch: ok"
 toastsaver-settings &
 SET=$!; sleep 2
 kill -0 $SET 2>/dev/null || fail "settings window did not stay open"
 kill $SET
 toastsaver-idle --now aquarium &
 sleep 3; pgrep -x toastsaver >/dev/null || fail "saver with clock did not run"
-grim /tmp/clock.png; pkill -x toastsaver
+pkill -x toastsaver
 echo "settings window and clock: ok"
 
 cp /tmp/s1.png /src/tests/wayland-toasters.png
 cp /tmp/pipes.png /src/tests/wayland-pipes.png
 toastsaver-idle --check
 '
-echo "--- ALL PASSED ($COMP)"
+if [ -n "$DEB" ]; then
+    echo "--- apt remove, then purge"
+    apt-get remove -y -qq toastsaver >/dev/null
+    for f in /usr/bin/toastsaver /usr/bin/toastsaver-idle /usr/share/applications/toastsaver-picker.desktop; do
+        [ ! -e "$f" ] || { echo "FAIL: $f still present after remove"; exit 1; }
+    done
+    # Debian keeps files in /etc until purge; TryExec makes the desktop ignore the leftover entry.
+    grep -q "^TryExec=/usr/bin/toastsaver-idle" /etc/xdg/autostart/toastsaver.desktop || { echo "FAIL: leftover autostart lacks TryExec"; exit 1; }
+    apt-get purge -y -qq toastsaver >/dev/null
+    [ ! -e /etc/xdg/autostart/toastsaver.desktop ] || { echo "FAIL: autostart still present after purge"; exit 1; }
+    echo "remove + purge clean: ok"
+fi
+echo "--- ALL PASSED ($COMP, ${DEB:-source install})"

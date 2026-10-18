@@ -9,7 +9,7 @@
 
 /* ---------- settings ---------- */
 
-Config g_config = { "toasters", "HELLO", 5, 30, 0, 0 };
+Config g_config = { 1, "toasters", "HELLO", 5, 30, 0, 0 };
 
 const char *config_path(void) {
     static char path[1024];
@@ -46,7 +46,8 @@ int config_apply(const char *line) {
     char v[64];
     if (!strchr(line, '=') || line[0] == '#') return 0;
     read_value(line, v, sizeof v);
-    if (!strncmp(line, "SAVER=", 6)) snprintf(g_config.saver, sizeof g_config.saver, "%.31s", v);
+    if (!strncmp(line, "ENABLED=", 8)) g_config.enabled = atoi(v) != 0;
+    else if (!strncmp(line, "SAVER=", 6)) snprintf(g_config.saver, sizeof g_config.saver, "%.31s", v);
     else if (!strncmp(line, "NAME=", 5)) config_set_name(v);
     else if (!strncmp(line, "IDLE_MINUTES=", 13)) g_config.idleMinutes = atoi(v) > 0 ? atoi(v) : 5;
     else if (!strncmp(line, "SCREEN_OFF_MINUTES=", 19)) g_config.screenOffMinutes = atoi(v) > 0 ? atoi(v) : 0;
@@ -64,23 +65,42 @@ void config_load(void) {
     fclose(f);
 }
 
-/* Formats KEY=value for every setting we own. */
+/* Every setting we own, with the comment written next to it in a new file. */
+#define NKEYS 7
+static const char *const KEYS[NKEYS] = {
+    "ENABLED=", "SAVER=", "NAME=", "IDLE_MINUTES=", "SCREEN_OFF_MINUTES=", "CLOCK=", "CLOCK_24H=" };
+static const char *const HELP[NKEYS] = {
+    "# 0 = turn the screensaver off",
+    "# toasters pipes starfield mystify matrix aquarium lava name random",
+    "# shown by the name saver",
+    "# minutes of no input before the screensaver appears",
+    "# minutes before the display turns off (0 = never)",
+    "# 1 = show a clock over the screensaver",
+    "# 1 = 24-hour clock" };
+
 static void format_key(int k, char *out, size_t n) {
     switch (k) {
-    case 0: snprintf(out, n, "SAVER=%s", g_config.saver); break;
-    case 1: snprintf(out, n, "NAME='%s'", g_config.name); break;
-    case 2: snprintf(out, n, "IDLE_MINUTES=%d", g_config.idleMinutes); break;
-    case 3: snprintf(out, n, "SCREEN_OFF_MINUTES=%d", g_config.screenOffMinutes); break;
-    case 4: snprintf(out, n, "CLOCK=%d", g_config.clock); break;
+    case 0: snprintf(out, n, "ENABLED=%d", g_config.enabled); break;
+    case 1: snprintf(out, n, "SAVER=%s", g_config.saver); break;
+    case 2: snprintf(out, n, "NAME='%s'", g_config.name); break;
+    case 3: snprintf(out, n, "IDLE_MINUTES=%d", g_config.idleMinutes); break;
+    case 4: snprintf(out, n, "SCREEN_OFF_MINUTES=%d", g_config.screenOffMinutes); break;
+    case 5: snprintf(out, n, "CLOCK=%d", g_config.clock); break;
     default: snprintf(out, n, "CLOCK_24H=%d", g_config.clock24); break;
     }
 }
-#define NKEYS 6
-static const char *const KEYS[NKEYS] = { "SAVER=", "NAME=", "IDLE_MINUTES=", "SCREEN_OFF_MINUTES=", "CLOCK=", "CLOCK_24H=" };
+
+static void write_key(FILE *out, int k, const char *comment) {
+    char kv[96];
+    format_key(k, kv, sizeof kv);
+    int pad = 24 - (int)strlen(kv);
+    if (comment) fprintf(out, "%s%*s%s%s", kv, pad > 1 ? pad : 1, "", comment, strchr(comment, '\n') ? "" : "\n");
+    else fprintf(out, "%s\n", kv);
+}
 
 int config_save(void) {
     const char *path = config_path();
-    char tmp[1100], dir[1100], line[512], kv[96];
+    char tmp[1100], dir[1100], line[512];
     int wrote[NKEYS] = { 0 };
     snprintf(tmp, sizeof tmp, "%s.tmp", path);
     snprintf(dir, sizeof dir, "%s", path);
@@ -88,22 +108,16 @@ int config_save(void) {
     if (slash) { *slash = 0; mkdir(dir, 0755); }   /* make sure ~/.config exists */
     FILE *in = fopen(path, "r"), *out = fopen(tmp, "w");
     if (!out) { if (in) fclose(in); return -1; }
+    if (!in) fputs("# toastsaver settings. Screensaver Settings and the Screensavers picker change these for you.\n", out);
     while (in && fgets(line, sizeof line, in)) {
         int k = 0;
         while (k < NKEYS && strncmp(line, KEYS[k], strlen(KEYS[k]))) k++;
         if (k == NKEYS) { fputs(line, out); continue; }
-        format_key(k, kv, sizeof kv);
-        const char *comment = strchr(line, '#');      /* keep a trailing "# explanation" */
-        if (comment) {
-            int pad = 24 - (int)strlen(kv);
-            fprintf(out, "%s%*s%s", kv, pad > 1 ? pad : 1, "", comment);
-        } else {
-            fprintf(out, "%s\n", kv);
-        }
+        write_key(out, k, strchr(line, '#'));       /* keep a trailing "# explanation" */
         wrote[k] = 1;
     }
     for (int k = 0; k < NKEYS; k++)
-        if (!wrote[k]) { format_key(k, kv, sizeof kv); fprintf(out, "%s\n", kv); }
+        if (!wrote[k]) write_key(out, k, HELP[k]);
     if (in) fclose(in);
     if (fclose(out) != 0) return -1;
     return rename(tmp, path);

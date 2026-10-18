@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <sys/stat.h>
 
 const Saver *const SAVERS[] = {
     &saver_toasters, &saver_pipes, &saver_starfield, &saver_mystify,
@@ -159,6 +160,24 @@ static int snapshot(const char *path, const char *what, int w, int h, float seco
     return rc == 0 ? 0 : 1;
 }
 
+/* Copies the Screensavers menu entry onto the user's desktop (packages can't do this). */
+static int desktop_icon(void) {
+    const char *home = getenv("HOME");
+    char dst[1024], line[512];
+    FILE *in = fopen(TOASTSAVER_DATADIR "/applications/toastsaver-picker.desktop", "r"), *out;
+    if (!in || !home) { fprintf(stderr, "toastsaver: menu entry not found; is toastsaver installed?\n"); return 1; }
+    snprintf(dst, sizeof dst, "%s/Desktop", home);
+    mkdir(dst, 0755);
+    snprintf(dst, sizeof dst, "%s/Desktop/Screensavers.desktop", home);
+    if (!(out = fopen(dst, "w"))) { fclose(in); fprintf(stderr, "toastsaver: cannot write %s\n", dst); return 1; }
+    while (fgets(line, sizeof line, in)) fputs(line, out);
+    fclose(in);
+    fclose(out);
+    chmod(dst, 0755);   /* file managers only launch executable .desktop files */
+    printf("added %s\n", dst);
+    return 0;
+}
+
 static int write_icon(const char *path) {
     const int S = 128;
     Canvas icon = canvas_new(S, S), t = make_toaster(1);
@@ -185,6 +204,7 @@ static void usage(void) {
            "  toastsaver --picker         open the picker (big tiles, for kids)\n"
            "  toastsaver --settings       open the settings window (for grown-ups)\n"
            "  toastsaver --set KEY=VALUE  change a setting, e.g. --set CLOCK=1\n"
+           "  toastsaver --desktop-icon   put a Screensavers icon on the desktop\n"
            "  toastsaver --list           list savers\n"
            "  toastsaver --windowed ...   use a window instead of fullscreen\n\n"
            "Savers: random", VERSION, config_path());
@@ -222,6 +242,7 @@ int main(int argc, char **argv) {
             return 0;
         }
         else if (!strcmp(a, "--version")) { puts(VERSION); return 0; }
+        else if (!strcmp(a, "--desktop-icon")) return desktop_icon();
         else if (!strcmp(a, "--help") || !strcmp(a, "-h")) { usage(); return 0; }
         else if (!strcmp(a, "--snapshot") && i + 1 < argc) snap = argv[++i];
         else if (!strcmp(a, "--size") && i + 1 < argc) sscanf(argv[++i], "%dx%d", &sw, &sh);
@@ -255,8 +276,8 @@ int main(int argc, char **argv) {
     if (inhibit) SDL_DisableScreenSaver();
 
     Uint32 flags = SDL_WINDOW_SHOWN | (windowed ? SDL_WINDOW_RESIZABLE : SDL_WINDOW_FULLSCREEN_DESKTOP);
-    SDL_Window *win = SDL_CreateWindow(picker ? "Screensavers" : settings ? "Screensaver Settings" : "toastsaver",
-                                       SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 800, flags);
+    const char *title = picker ? "Screensavers" : settings ? "Screensaver Settings" : "toastsaver";
+    SDL_Window *win = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 800, flags);
     if (!win) {
         fprintf(stderr, "toastsaver: cannot open window: %s\n", SDL_GetError());
         SDL_Quit();

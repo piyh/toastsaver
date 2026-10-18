@@ -1,0 +1,12 @@
+#!/usr/bin/make -f
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+%:
+	dh $@
+
+# Build with the final paths so the program and scripts point at /usr.
+override_dh_auto_build:
+	$(MAKE) PREFIX=/usr
+
+override_dh_auto_install:
+	$(MAKE) install PREFIX=/usr SYSCONFDIR=/etc DESTDIR=$(CURDIR)/debian/toastsaver

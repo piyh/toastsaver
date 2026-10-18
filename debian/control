@@ -1,0 +1,28 @@
+Source: toastsaver
+Section: x11
+Priority: optional
+Maintainer: piyh <10518137+piyh@users.noreply.github.com>
+Build-Depends: debhelper-compat (= 13), pkgconf, libsdl2-dev (>= 2.0.18)
+Standards-Version: 4.6.2
+Homepage: https://github.com/piyh/toastsaver
+Vcs-Browser: https://github.com/piyh/toastsaver
+Vcs-Git: https://github.com/piyh/toastsaver.git
+Rules-Requires-Root: no
+
+Package: toastsaver
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, swayidle, procps, libegl1, libgl1
+Recommends: wlopm, libegl-mesa0, libgl1-mesa-dri
+Description: retro screensavers for Wayland desktops
+ A collection of screensavers with original pixel art: flying toasters,
+ 3D pipes, a starfield, mystify, matrix rain, an aquarium, a lava lamp and
+ a bouncing name banner.
+ .
+ The screensaver starts after a period without input and goes away on any
+ key, click, touch or mouse movement. It never blocks screen blanking, and
+ apps that inhibit idle (such as video players) keep it from starting.
+ .
+ Includes a fullscreen picker with big tiles that young children can use,
+ and a settings window for timings, an optional drifting clock and an
+ on/off switch. Works with labwc (Raspberry Pi OS), Wayfire, sway and
+ other wlroots-based compositors.

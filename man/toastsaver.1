@@ -1,0 +1,76 @@
+.TH TOASTSAVER 1 "October 2026" "toastsaver 1.0.0" "User Commands"
+.SH NAME
+toastsaver \- retro screensavers for Wayland desktops
+.SH SYNOPSIS
+.B toastsaver
+.RI [ SAVER ]
+.br
+.B toastsaver-picker
+.br
+.B toastsaver-settings
+.br
+.B toastsaver-idle
+.RB [ \-\-now
+.RI [ SAVER ]
+|
+.B \-\-check
+|
+.B \-\-restart
+|
+.BR \-\-stop ]
+.SH DESCRIPTION
+.B toastsaver
+is a collection of screensavers: flying toasters, 3D pipes, a starfield, mystify,
+matrix rain, an aquarium, a lava lamp and a bouncing name banner.
+All artwork is drawn by the program.
+.PP
+At login,
+.B toastsaver-idle
+is started from
+.IR /etc/xdg/autostart .
+It runs
+.BR swayidle (1),
+starts the chosen saver after a period without input, stops it on any input,
+and later turns the display off with
+.BR wlopm (1)
+if it is installed.
+.PP
+.B toastsaver-picker
+opens a fullscreen picker with big tiles, designed for children.
+.B toastsaver-settings
+opens a settings window for on/off, timings and the clock.
+.SH OPTIONS
+.TP
+.B \-\-windowed
+Use a window instead of fullscreen.
+.TP
+.B \-\-list
+List saver names.
+.TP
+.BI \-\-set " KEY=VALUE"
+Change a setting and save it.
+.TP
+.B \-\-desktop\-icon
+Put a Screensavers icon on the desktop.
+.TP
+.BI \-\-snapshot " FILE.png"
+Render a frame to a PNG file without a display (with
+.BI \-\-size " WxH"
+and
+.BI \-\-seconds " N"
+).
+.SH SAVERS
+toasters, pipes, starfield, mystify, matrix, aquarium, lava, name, and random.
+.SH FILES
+.TP
+.I ~/.config/toastsaver.conf
+Settings, in shell syntax: ENABLED, SAVER, NAME, IDLE_MINUTES,
+SCREEN_OFF_MINUTES, CLOCK and CLOCK_24H. Created on first change.
+.SH NOTES
+Needs a Wayland compositor that supports idle notification, such as labwc,
+Wayfire, sway or Hyprland. It is not a lock screen.
+.SH SEE ALSO
+.BR swayidle (1),
+.BR wlopm (1)
+.PP
+https://github.com/piyh/toastsaver

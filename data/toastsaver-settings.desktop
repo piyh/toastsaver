@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Screensaver Settings
+Comment=Screensaver on/off, timing, clock and test
+Exec=@BINDIR@/toastsaver-settings
+Icon=toastsaver
+Categories=Settings;DesktopSettings;
+Terminal=false
