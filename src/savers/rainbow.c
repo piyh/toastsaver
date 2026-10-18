@@ -77,7 +77,7 @@ Canvas make_waffle_cat(int frame) {
 
 enum { FLY, SHIMMER, POOF, STREAK };
 
-typedef struct { float x, y, t; } TrailPt;
+typedef struct { float x, y, t; int brk; } TrailPt;   /* brk: start of a new ribbon */
 typedef struct { float x, y, vx, vy, life, max; SDL_Color c; } Bit;
 typedef struct { float y, start, len; } Streak;
 
@@ -97,8 +97,9 @@ static float catw(const Rainbow *r) { return (float)CAT_W * r->sc; }
 static float cath(const Rainbow *r) { return (float)CAT_H * r->sc; }
 
 static void push_trail(Rainbow *r, float x, float y) {
+    int brk = r->count == 0 || x < r->trail[r->head].x;   /* wrapped back to the left edge */
     r->head = (r->head + 1) % TRAIL;
-    r->trail[r->head] = (TrailPt){ x, y, r->t };
+    r->trail[r->head] = (TrailPt){ x, y, r->t, brk };
     if (r->count < TRAIL) r->count++;
 }
 
@@ -122,7 +123,7 @@ static void *create(SDL_Renderer *ren, int w, int h) {
     Rainbow *r = calloc(1, sizeof *r);
     r->w = w;
     r->h = h;
-    r->sc = h / 260 > 1 ? h / 260 : 1;
+    r->sc = h / 200 > 1 ? h / 200 : 1;
     for (int i = 0; i < CAT_FRAMES; i++) {
         Canvas c = make_waffle_cat(i);
         r->cat[i] = canvas_texture(ren, &c);
@@ -220,6 +221,14 @@ static void ribbon_band(Rainbow *r, SDL_Renderer *ren, int band, float bandH, fl
         TrailPt *p = &r->trail[(r->head - i + TRAIL) % TRAIL];
         float age = r->t - p->t;
         if (age > maxAge) continue;
+        if (p->brk && n >= 2) {                           /* finish this ribbon, start a new one */
+            for (int j = 0; j + 3 < n; j += 2) {
+                idx[k++] = j; idx[k++] = j + 1; idx[k++] = j + 2;
+                idx[k++] = j + 1; idx[k++] = j + 3; idx[k++] = j + 2;
+            }
+            if (k) SDL_RenderGeometry(ren, NULL, v, n, idx, k);
+            n = k = 0;
+        }
         float wave = sinf(p->x * 0.02f - r->t * 6) * bandH * 0.8f;
         float off = (band - 2.5f) * bandH + wave;
         SDL_Color c = hexcol(BANDS[band]);

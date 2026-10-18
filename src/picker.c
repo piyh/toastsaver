@@ -5,7 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define TILES 9            /* every saver plus SURPRISE */
+#define MAX_TILES 16       /* every saver plus SURPRISE */
+#define TILES (SAVER_COUNT + 1)
 #define SURPRISE (TILES - 1)
 
 typedef struct {
@@ -18,7 +19,8 @@ typedef struct {
     SDL_Renderer *r;
     int w, h, sel, hover, quit;
     float t, bump, titleH, labelH;
-    Tile tile[TILES];
+    Tile tile[MAX_TILES];
+    int cols;
     SDL_Rect tryBtn, nameBox;
     SDL_Point closeC;
     int closeR;
@@ -36,13 +38,19 @@ static void layout(Picker *p) {
     int W = p->w, H = p->h, m = H / 32 > 6 ? H / 32 : 6;
     p->titleH = H * 0.13f;
     float bottomH = H * 0.17f, gridTop = p->titleH, gridBottom = H - bottomH;
-    int tw = (W - 2 * m - 2 * m) / 3, th = (int)((gridBottom - gridTop - 2 * m) / 3);
+    /* 3 columns while it fits in a 3x3 grid, then 4. The last row is centered. */
+    p->cols = TILES > 9 ? 4 : 3;
+    int rows = (TILES + p->cols - 1) / p->cols;
+    int tw = (W - 2 * m - (p->cols - 1) * m) / p->cols, th = (int)((gridBottom - gridTop - (rows - 1) * m) / rows);
     p->labelH = th * 0.22f;
     int pad = th / 22 > 4 ? th / 22 : 4;
     for (int i = 0; i < TILES; i++) {
         Tile *t = &p->tile[i];
         t->sv = i < SAVER_COUNT ? SAVERS[i] : NULL;
-        t->box = (SDL_Rect){ m + (i % 3) * (tw + m), (int)gridTop + (i / 3) * (th + m), tw, th };
+        int row = i / p->cols, col = i % p->cols;
+        int inRow = row == rows - 1 ? TILES - row * p->cols : p->cols;
+        int left = m + (p->cols - inRow) * (tw + m) / 2;
+        t->box = (SDL_Rect){ left + col * (tw + m), (int)gridTop + row * (th + m), tw, th };
         t->preview = (SDL_Rect){ t->box.x + pad, t->box.y + pad, tw - 2 * pad, th - (int)p->labelH - pad };
         if (t->sv) t->st = t->sv->create(p->r, t->preview.w, t->preview.h);
     }
@@ -255,10 +263,10 @@ int run_picker(SDL_Window *win, SDL_Renderer *r) {
                 if (k == SDLK_ESCAPE) p->quit = 1;
                 else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) try_it(p, win);
                 else if (k == SDLK_SPACE && !name_selected(p)) try_it(p, win);
-                else if (k == SDLK_LEFT) select_tile(p, p->sel % 3 ? p->sel - 1 : p->sel);
-                else if (k == SDLK_RIGHT) select_tile(p, p->sel % 3 < 2 ? p->sel + 1 : p->sel);
-                else if (k == SDLK_UP) select_tile(p, p->sel >= 3 ? p->sel - 3 : p->sel);
-                else if (k == SDLK_DOWN) select_tile(p, p->sel < TILES - 3 ? p->sel + 3 : p->sel);
+                else if (k == SDLK_LEFT) select_tile(p, p->sel > 0 ? p->sel - 1 : p->sel);
+                else if (k == SDLK_RIGHT) select_tile(p, p->sel < TILES - 1 ? p->sel + 1 : p->sel);
+                else if (k == SDLK_UP) select_tile(p, p->sel >= p->cols ? p->sel - p->cols : p->sel);
+                else if (k == SDLK_DOWN) select_tile(p, p->sel + p->cols < TILES ? p->sel + p->cols : p->sel);
                 else if (k == SDLK_BACKSPACE && name_selected(p) && g_config.name[0]) {
                     g_config.name[strlen(g_config.name) - 1] = 0;
                     config_save();
