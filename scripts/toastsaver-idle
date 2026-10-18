@@ -1,0 +1,60 @@
+#!/bin/sh
+# Shows a screensaver after the screen has been idle, and turns the display
+# off later. Started automatically at login (XDG autostart).
+#
+#   toastsaver-idle                run the idle watcher (normally done at login)
+#   toastsaver-idle --now [SAVER]  show the chosen saver (or SAVER) right now
+#   toastsaver-idle --check        explain what is and isn't working
+
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}/toastsaver.conf"
+IDLE_MINUTES=5          # minutes of no input before the screensaver appears
+SCREEN_OFF_MINUTES=30   # minutes before the display turns off (0 = never)
+SAVER=toasters
+# shellcheck disable=SC1090
+[ -r "$CONF" ] && . "$CONF"
+# Seconds overrides exist for testing; normal settings are in minutes.
+IDLE_SECONDS=${IDLE_SECONDS:-$((IDLE_MINUTES * 60))}
+SCREEN_OFF_SECONDS=${SCREEN_OFF_SECONDS:-$((SCREEN_OFF_MINUTES * 60))}
+
+BIN=/usr/local/bin/toastsaver
+
+check() {
+    ok() { printf '  ok    %s\n' "$1"; }
+    bad() { printf '  FAIL  %s\n' "$1"; }
+    echo "toastsaver check"
+    if [ -x "$BIN" ]; then ok "$BIN installed"; else bad "$BIN missing (run ./install.sh)"; fi
+    if command -v swayidle >/dev/null; then ok "swayidle installed"; else bad "swayidle missing (sudo apt install swayidle)"; fi
+    if [ -n "${WAYLAND_DISPLAY:-}" ]; then ok "Wayland session ($WAYLAND_DISPLAY)"; else bad "not a Wayland session (session type: ${XDG_SESSION_TYPE:-unknown})"; fi
+    comp=$(pgrep -l -x 'labwc|wayfire|sway' | awk '{print $2}' | head -n1)
+    if [ -n "$comp" ]; then ok "compositor: $comp"; else bad "no labwc/wayfire/sway compositor found"; fi
+    if [ -f "$HOME/.config/autostart/toastsaver.desktop" ]; then ok "starts at login"; else bad "login autostart entry missing"; fi
+    if pgrep -f 'swayidle.*toastsaver' >/dev/null; then ok "idle watcher running"; else bad "idle watcher not running (log out and back in, or run: toastsaver-idle &)"; fi
+    if [ -f "$HOME/.local/share/applications/toastsaver-picker.desktop" ]; then ok "Screensavers picker in the app menu"; else bad "picker menu entry missing"; fi
+    if command -v wlopm >/dev/null; then ok "wlopm available (screen off after $SCREEN_OFF_MINUTES min)"; else echo "  note  wlopm not installed; display won't be turned off by toastsaver"; fi
+    echo "  settings: '$SAVER' after $IDLE_MINUTES min (edit $CONF or use the Screensavers picker)"
+}
+
+case "${1:-}" in
+    --check) check; exit 0 ;;
+    --now) shift; exec "$BIN" "$@" ;;
+    "") ;;
+    *) echo "usage: toastsaver-idle [--now [SAVER]|--check]" >&2; exit 2 ;;
+esac
+
+if [ -z "${WAYLAND_DISPLAY:-}" ]; then
+    echo "toastsaver-idle: needs a Wayland session" >&2
+    exit 1
+fi
+
+# One watcher per login session.
+exec 9>"${XDG_RUNTIME_DIR:-/tmp}/toastsaver-idle.lock"
+flock -n 9 || exit 0
+
+# The saver reads SAVER from the settings each time, so picker changes apply at once.
+# 'pkill -x toastsaver' doesn't touch the picker (its process is toastsaver-picker).
+# fd 9 is closed for children so the lock only lives as long as swayidle.
+set -- timeout "$IDLE_SECONDS" "$BIN 9>&- &" resume 'pkill -x toastsaver'
+if [ "$SCREEN_OFF_SECONDS" -gt 0 ] && command -v wlopm >/dev/null; then
+    set -- "$@" timeout "$SCREEN_OFF_SECONDS" 'wlopm --off "*"' resume 'wlopm --on "*"'
+fi
+exec swayidle -w "$@"
