@@ -1,12 +1,18 @@
 # toastsaver
 
-Retro screensavers for Raspberry Pi OS, with a big, kid-friendly picker to choose your favorite.
+[![CI](https://github.com/piyh/toastsaver/actions/workflows/ci.yml/badge.svg)](https://github.com/piyh/toastsaver/actions/workflows/ci.yml)
 
-![The picker](docs/picker.png)
+Retro screensavers for Raspberry Pi OS and other Wayland desktops: flying toasters, 3D pipes, an aquarium and more, with a big friendly picker that a six-year-old can use.
+
+![toastsaver demo](docs/demo.gif)
+
+```sh
+curl -fsSL https://piyh.github.io/toastsaver/setup.sh | sh
+```
 
 ## What's inside
 
-Eight screensavers, plus a SURPRISE tile that picks a random one each time.
+Eight screensavers, plus a SURPRISE tile that picks a random one each time. All of the artwork is original and drawn by the program itself.
 
 <table>
   <tr>
@@ -32,35 +38,46 @@ Eight screensavers, plus a SURPRISE tile that picks a random one each time.
 - **STARS**: a warp-speed starfield.
 - **MYSTIFY**: bouncing, color-changing shapes with echo trails.
 - **MATRIX**: falling green code. Sometimes a column spells your name.
-- **FISH**: clownfish, a blue tang, a pufferfish, seaweed, and a bubbling treasure chest.
-- **LAVA**: a lava lamp, with a new random color palette each time.
+- **FISH**: clownfish, a blue tang, a pufferfish, seaweed and a bubbling treasure chest.
+- **LAVA**: a lava lamp, with a new color palette each time.
 - **NAME**: your name bounces around like the old DVD logo, with confetti when it hits a corner.
-
-All of the artwork is original and drawn by the program itself. There are no image files.
 
 ### Easter eggs
 
 Keep watching the toasters. Every so often a toaster flies by in a **propeller beanie**, a **golden toast** sparkles past, or a **bagel** sneaks in with the toast.
 
-![Easter eggs: a toaster, the propeller beanie, toast, golden toast and a bagel](docs/eggs.png)
+![A toaster, the propeller beanie, toast, golden toast and a bagel](docs/eggs.png)
 
-## Install on a Raspberry Pi
+## Install
 
-### From a USB stick (easiest)
+### Raspberry Pi OS, Debian and Ubuntu (64-bit, 32-bit Pi and x86)
 
-1. On another computer, copy the `toastsaver` folder onto a USB stick.
-2. Plug the stick into the Raspberry Pi.
-3. Open the Terminal and run this, as your normal user (not as root):
+```sh
+curl -fsSL https://piyh.github.io/toastsaver/setup.sh | sh
+```
 
-   ```sh
-   sh /media/$USER/*/toastsaver/deploy.sh
-   ```
+[`setup.sh`](site/setup.sh) adds the toastsaver APT repository and installs the package. If you'd rather not pipe a script into your shell, these four lines do the same thing:
 
-4. Type your password when asked. It only asks once.
+```sh
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://piyh.github.io/toastsaver/toastsaver.gpg | sudo tee /etc/apt/keyrings/toastsaver.gpg >/dev/null
+echo "deb [signed-by=/etc/apt/keyrings/toastsaver.gpg] https://piyh.github.io/toastsaver stable main" | sudo tee /etc/apt/sources.list.d/toastsaver.list
+sudo apt update && sudo apt install toastsaver
+```
 
-The script copies the folder to `~/toastsaver`, installs the packages it needs, builds the program, installs it, sets it to start at login, adds a **Screensavers** icon, and starts it. To update later, run the same command again.
+Updates then arrive with your normal system updates. You can also download a `.deb` from the [releases page](https://github.com/piyh/toastsaver/releases) and install it with `sudo apt install ./toastsaver_*.deb`.
 
-### From git
+The repository is signed with this key (also in [`packaging/toastsaver-archive-keyring.asc`](packaging/toastsaver-archive-keyring.asc)):
+
+```
+01E0 71BE 5AE3 0687 7A69  7699 EDD0 90A6 DE03 BB9F
+```
+
+### Arch Linux
+
+A [`PKGBUILD`](packaging/aur/PKGBUILD) is included. Build it with `makepkg -si` from that folder. An AUR package is coming.
+
+### From source
 
 ```sh
 git clone https://github.com/piyh/toastsaver.git
@@ -68,32 +85,42 @@ cd toastsaver
 ./install.sh
 ```
 
+This installs the build tools, builds, and installs under `/usr/local`. To install offline from a USB stick, copy the folder onto the stick and run `sh /media/$USER/<stick>/toastsaver/extras/deploy-from-usb.sh` on the Pi.
+
+### After installing
+
+Log out and back in (or run `toastsaver-idle --restart`). The screensaver now starts by itself whenever the computer has been idle for 5 minutes.
+
 ## Using it
 
-### The picker
+### The picker (for kids)
 
-Open **Screensavers** from the desktop icon or the app menu. The picker fills the screen with nine big, live tiles.
+Open **Screensavers** from the app menu. To put an icon on the desktop too, run `toastsaver --desktop-icon`.
+
+![The picker](docs/picker.png)
 
 - **Tap a tile** to choose it. Your choice is saved right away. There is no Save button.
 - **Tap the chosen tile again**, or the big green **TRY IT!** button, to watch it.
 - **Move the mouse, touch the screen, or press any key** to go back to the picker.
 - **SURPRISE** picks a random saver each time.
 - **NAME**: when it is chosen, type your name on the keyboard.
-- **Big red X** closes the picker.
+- The **big red X** closes the picker.
 
 On a keyboard, use the arrow keys to move, **Enter** to try, and **Esc** to close.
 
 ### Screensaver Settings (for grown-ups)
 
-Open **Screensaver Settings** from the app menu. Changes are saved right away, and new timings take effect as soon as you close the window, without logging out.
+Open **Screensaver Settings** from the app menu. Changes are saved right away, and new timings take effect as soon as you close the window.
 
 ![Screensaver Settings](docs/settings.png)
 
+- **Screensaver**: turn it on or off.
+- **Chosen**: the current screensaver. **Change** opens the picker.
 - **Start after**: how long the computer waits before showing the screensaver.
 - **Screen off after**: when the display turns off, or **NEVER**. It is always later than the screensaver.
 - **Show clock**: puts the time over any screensaver. It drifts to a new spot about once a minute, so it never sits in one place.
 - **Clock style**: 12-hour or 24-hour.
-- **Change** opens the picker. **Test it** shows the current screensaver.
+- **Test it** shows the current screensaver.
 
 ![The clock over the aquarium](docs/clock.png)
 
@@ -103,51 +130,70 @@ Open **Screensaver Settings** from the app menu. Changes are saved right away, a
 | --- | --- |
 | `toastsaver-picker` | Open the picker |
 | `toastsaver-settings` | Open Screensaver Settings |
-| `toastsaver --set CLOCK=1` | Change any setting from a terminal |
 | `toastsaver-idle --now` | Show your chosen saver now |
 | `toastsaver-idle --now pipes` | Show a specific saver now |
 | `toastsaver-idle --check` | Check that everything is set up and running |
-| `toastsaver-idle --restart` | Apply new timings now |
+| `toastsaver-idle --restart` | Apply new settings now |
+| `toastsaver --set CLOCK=1` | Change any setting from a terminal |
 | `toastsaver --list` | List the saver names |
-| `toastsaver --windowed toasters` | Run a saver in a window (for testing) |
-| `./uninstall.sh` | Remove toastsaver (your settings are kept) |
+| `toastsaver --desktop-icon` | Put a Screensavers icon on the desktop |
+| `toastsaver --windowed toasters` | Run a saver in a window |
 
-## Settings
+See `man toastsaver` for everything.
 
-Settings live in `~/.config/toastsaver.conf`. The file uses simple shell syntax:
+### Settings file
+
+Settings live in `~/.config/toastsaver.conf`. The picker and Screensaver Settings edit it for you and keep your comments.
 
 ```sh
-IDLE_MINUTES=5          # minutes with no input before the saver starts
-SCREEN_OFF_MINUTES=30   # minutes before the screen turns off (0 = never)
-SAVER=toasters          # any saver name from the list above, or random
-NAME='HELLO'            # letters, digits, space and ! ? - . *  (shown in capitals)
+ENABLED=1               # 0 = turn the screensaver off
+SAVER=toasters          # toasters pipes starfield mystify matrix aquarium lava name random
+NAME='HELLO'            # letters, digits, space and ! ? - . *  (* draws a heart)
+IDLE_MINUTES=5          # minutes of no input before the screensaver appears
+SCREEN_OFF_MINUTES=30   # minutes before the display turns off (0 = never)
 CLOCK=0                 # 1 = show a drifting clock over the screensaver
 CLOCK_24H=0             # 1 = 24-hour clock
 ```
 
-Screensaver Settings and the picker edit this file for you and keep your comments.
-
-In `NAME`, the `*` character draws a heart.
-
 ## How it works
 
-When you log in, `toastsaver-idle` starts automatically (through `~/.config/autostart`) and runs `swayidle`, which watches for inactivity.
+At login, every user's session starts `toastsaver-idle` from `/etc/xdg/autostart`. It runs [`swayidle`](https://github.com/swaywm/swayidle), which watches for inactivity:
 
-- After `IDLE_MINUTES` with no input, the saver you chose starts full screen.
-- Any key, click, touch, or mouse movement makes it go away.
-- After `SCREEN_OFF_MINUTES`, the display turns off using `wlopm`, if it is installed.
+- After `IDLE_MINUTES` with no input, the chosen saver starts full screen.
+- Any key, click, touch or mouse movement makes it go away.
+- After `SCREEN_OFF_MINUTES`, the display turns off with `wlopm`, if it is installed.
 
-toastsaver does not change the Pi's own screen blanking settings, and it never stops the screen from blanking.
+toastsaver never stops the screen from blanking. Apps that block idle the standard Wayland way (the idle-inhibit protocol, which video players and games use while playing) keep the saver from starting.
 
-Apps that block idle the standard Wayland way (the idle-inhibit protocol, which video players and games use while playing) keep the saver from starting. This is covered by the tests below.
+It is not a lock screen.
+
+## Supported desktops
+
+| Desktop | Status |
+| --- | --- |
+| labwc (Raspberry Pi OS default) | Tested |
+| sway | Tested |
+| Wayfire (older Raspberry Pi OS) | Should work, untested |
+| Hyprland, river and other wlroots desktops | Should work, untested |
+| GNOME, KDE Plasma | Not supported (they use their own idle systems) |
+| X11 sessions | Not supported (toastsaver quietly does nothing) |
+
+Tested on a **Raspberry Pi 4 (4 GB) with 64-bit Raspberry Pi OS**, and in Debian trixie and bookworm containers on every change. Only the first monitor is used, and the 3D pipes run best on a Raspberry Pi 4 or 5.
+
+## Uninstall
+
+```sh
+sudo apt remove toastsaver       # keeps the autostart file in /etc (it is ignored)
+sudo apt purge toastsaver        # removes everything except your ~/.config/toastsaver.conf
+```
+
+For a source install, run `./uninstall.sh`.
 
 ## Development
 
-You need SDL2 (version 2.0.18 or newer) and `pkg-config`. Then run `make`.
+You need SDL2 (2.0.18 or newer) and `pkg-config`. Then run `make`. On macOS, `brew install sdl2` and run savers with `--windowed`.
 
-On macOS, you can develop with a window instead: install SDL2 with `brew install sdl2`, then build and run a saver with `--windowed`.
-
-To save a picture of a saver without a display, use:
+Render a frame without a display:
 
 ```sh
 toastsaver --snapshot out.png --size 1280x720 --seconds 5 pipes
@@ -155,32 +201,31 @@ toastsaver --snapshot out.png --size 1280x720 --seconds 5 pipes
 
 ### Tests
 
-The tests run in a throwaway Debian ARM64 Docker container (the base of Raspberry Pi OS). The container builds the program, runs the real installer, starts a headless compositor, and checks that:
+[`tests/pi-os-test.sh`](tests/pi-os-test.sh) runs in a throwaway Debian container (the base of Raspberry Pi OS). It installs toastsaver, from source or from a `.deb`, starts a headless compositor (labwc on trixie, sway on bookworm), and checks that:
 
 1. a saver appears after the idle timeout and leaves on a key press,
 2. an app that inhibits idle (like a playing video) stops it from starting, and it starts again once that app closes,
 3. dismissing a saver that pops up over the picker leaves the picker open,
 4. `toastsaver-idle --now pipes` starts that saver,
-5. `--set` keeps the file's comments, `--restart` switches to the new timings, the settings window opens, and a saver runs with the clock on.
+5. settings: `--set` keeps the file's comments, `--restart` switches to the new timings, `ENABLED=0` stops the watcher, the settings window opens and a saver runs with the clock on,
+6. for the `.deb`: `apt remove` and `apt purge` clean up.
 
 ```sh
 docker run --rm -v "$PWD":/src debian:trixie sh /src/tests/pi-os-test.sh
+sh packaging/build-deb.sh arm64          # builds dist/toastsaver_<version>_arm64.deb (also armhf, amd64)
+sh packaging/test-debs.sh                # runs the suite against the built packages
 ```
 
-Trixie uses labwc. Bookworm uses sway.
+### Releases
 
-## Tested on
+Pushing a tag like `v1.0.1` (matching the top entry in `debian/changelog`) makes GitHub Actions build the three packages, run the tests against them, create a GitHub release, and publish the signed APT repository to GitHub Pages.
 
-- **Raspberry Pi 4 (4 GB), 64-bit Raspberry Pi OS**: installed from a USB stick with `deploy.sh` and working.
-- Debian ARM64 containers on every change: trixie with labwc and bookworm with sway (see Tests above).
+## About
 
-## Known limits
+Made by a parent for a six-year-old who loves screensavers.
 
-- Works on Wayland only. Tested with labwc (Raspberry Pi OS's default) and sway; Wayfire should work but is untested. It does not work on X11.
-- It is not a lock screen. It does not ask for a password.
-- It only uses the first monitor.
-- The 3D pipes run best on a Raspberry Pi 4 or 5.
+toastsaver was written with the help of an AI assistant (Claude). It is tested on real hardware and by an automated end-to-end suite, and every line is in this repository to read. Bug reports and pull requests are welcome.
 
 ## License
 
-MIT. See the `LICENSE` file.
+MIT. See [`LICENSE`](LICENSE).

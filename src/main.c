@@ -111,6 +111,31 @@ static void font_test(SDL_Renderer *r, int w, int h) {
     (void)w;
 }
 
+/* Renders FRAMES pngs (frame0000.png ...) of a saver after warming up for `seconds`. */
+static int sequence(const char *dir, const char *what, int w, int h, float seconds, int frames, int fps) {
+    const Saver *sv = saver_find(what);
+    if (!sv) { fprintf(stderr, "unknown saver: %s\n", what); return 2; }
+    SDL_Surface *surf = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_RGBA8888);
+    SDL_Renderer *r = surf ? SDL_CreateSoftwareRenderer(surf) : NULL;
+    if (!r) return 1;
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    void *st = sv->create(r, w, h);
+    const float dt = 1.0f / fps;
+    for (float t = 0; t < seconds; t += dt) sv->step(st, dt);
+    char path[1100];
+    for (int i = 0; i < frames; i++) {
+        sv->step(st, dt);
+        sv->draw(st, r);
+        SDL_RenderPresent(r);
+        snprintf(path, sizeof path, "%s/frame%04d.png", dir, i);
+        if (write_png(path, w, h, surf->pixels) != 0) return 1;
+    }
+    sv->destroy(st);
+    SDL_DestroyRenderer(r);
+    SDL_FreeSurface(surf);
+    return 0;
+}
+
 static int snapshot(const char *path, const char *what, int w, int h, float seconds) {
     SDL_Surface *surf = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_RGBA8888);
     SDL_Renderer *r = surf ? SDL_CreateSoftwareRenderer(surf) : NULL;
@@ -215,7 +240,8 @@ static void usage(void) {
 int main(int argc, char **argv) {
     int windowed = 0, picker = 0, settings = 0, inhibit = 0, sw = 1280, sh = 720;
     float seconds = 4;
-    const char *snap = NULL, *which = NULL, *icon = NULL;
+    const char *snap = NULL, *which = NULL, *icon = NULL, *frameDir = NULL;
+    int frames = 0, fps = 15;
     const char *base = strrchr(argv[0], '/');
     base = base ? base + 1 : argv[0];
     if (!strcmp(base, "toastsaver-picker")) picker = 1;
@@ -245,6 +271,8 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--desktop-icon")) return desktop_icon();
         else if (!strcmp(a, "--help") || !strcmp(a, "-h")) { usage(); return 0; }
         else if (!strcmp(a, "--snapshot") && i + 1 < argc) snap = argv[++i];
+        else if (!strcmp(a, "--frames") && i + 2 < argc) { frameDir = argv[++i]; frames = atoi(argv[++i]); }
+        else if (!strcmp(a, "--fps") && i + 1 < argc) fps = atoi(argv[++i]);
         else if (!strcmp(a, "--size") && i + 1 < argc) sscanf(argv[++i], "%dx%d", &sw, &sh);
         else if (!strcmp(a, "--seconds") && i + 1 < argc) seconds = (float)atof(argv[++i]);
         else if (!strcmp(a, "--name") && i + 1 < argc) config_set_name(argv[++i]);
@@ -254,6 +282,12 @@ int main(int argc, char **argv) {
     }
 
     if (icon) return write_icon(icon) == 0 ? 0 : 1;
+    if (frameDir) {
+        if (SDL_Init(0) != 0) return 1;
+        int rc = sequence(frameDir, which ? which : "toasters", sw, sh, seconds, frames, fps > 0 ? fps : 15);
+        SDL_Quit();
+        return rc;
+    }
     if (snap) {
         if (SDL_Init(0) != 0) return 1;
         int rc = snapshot(snap, picker ? "picker" : settings ? "settings" : (which ? which : "toasters"), sw, sh, seconds);

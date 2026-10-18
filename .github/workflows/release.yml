@@ -1,0 +1,102 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build .deb (${{ matrix.arch }})
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        arch: [amd64, arm64, armhf]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag must match debian/changelog
+        run: |
+          v=$(sed -n '1s/.*(\(.*\)).*/\1/p' debian/changelog)
+          [ "v$v" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME != changelog $v"; exit 1; }
+      - uses: docker/setup-qemu-action@v3
+      - name: Build in Debian bookworm
+        run: sh packaging/build-deb.sh ${{ matrix.arch }} bookworm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.arch }}
+          path: dist/*.deb
+
+  test:
+    name: test the package (${{ matrix.suite }})
+    needs: build
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        suite: [trixie, bookworm]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: deb-amd64
+          path: dist
+      - name: Install with apt and run the full suite
+        run: |
+          deb=$(basename dist/*.deb)
+          docker run --rm -e DEB="$deb" -v "$PWD":/src debian:${{ matrix.suite }} sh /src/tests/pi-os-test.sh
+
+  release:
+    name: GitHub release
+    needs: test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: deb-*
+          merge-multiple: true
+          path: dist
+      - name: Create the release with the packages attached
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes=$(sed -n '3,/^ --/p' debian/changelog | sed '$d')
+          gh release create "$GITHUB_REF_NAME" dist/*.deb --title "toastsaver $GITHUB_REF_NAME" --notes "$notes"
+
+  apt-repo:
+    name: publish the APT repository
+    needs: release
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: deb-*
+          merge-multiple: true
+          path: dist
+      - name: Start from the current gh-pages branch (keeps older versions)
+        run: |
+          mkdir repo && cd repo
+          git init -q -b gh-pages
+          git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          if git fetch -q origin gh-pages; then git reset -q --hard FETCH_HEAD; fi
+      - name: Import the signing key
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+        run: |
+          sudo apt-get install -y -qq apt-utils gnupg >/dev/null
+          printf '%s\n' "$APT_SIGNING_KEY" | gpg --batch --import
+          echo "KEY_ID=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/ {print $10; exit}')" >> "$GITHUB_ENV"
+      - name: Build and sign the repository
+        run: |
+          sh packaging/make-apt-repo.sh dist repo "$KEY_ID"
+          cp site/setup.sh site/index.html repo/
+          touch repo/.nojekyll
+      - name: Publish to gh-pages
+        run: |
+          cd repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "APT repository for $GITHUB_REF_NAME"
+          git push -q origin gh-pages
