@@ -1,5 +1,5 @@
 /* RAINBOW: the Waffle Cat flies across the night sky on a wavy rainbow.
-   On most passes it slows down and shimmers, goes *poof*, its rainbow races
+   Every 20-30 seconds it slows down and shimmers, goes *poof*, its rainbow races
    ahead with rainbow lines zooming across the screen, and it pops back out
    at the end of the rainbow.
    (Idea and story by a six-year-old.) */
@@ -78,18 +78,21 @@ Canvas make_waffle_cat(int frame) {
 
 enum { FLY, SHIMMER, POOF, STREAK };
 
-#define SHIMMER_T 1.2f   /* slow down, flash colours, wobble: something is coming */
-#define POOF_T 0.45f     /* gone! just sparkles */
-#define STREAK_T 0.9f    /* the rainbow zooms ahead on its own */
-#define FLASH_T 0.35f    /* bright pop when the cat comes back out */
+/* Flying is the main show: the trick is a short treat every 20-30 seconds. */
+#define SHIMMER_T 0.8f   /* slow down, flash colours, wobble: something is coming */
+#define POOF_T 0.3f      /* gone! just sparkles */
+#define STREAK_T 0.7f    /* the rainbow zooms ahead on its own */
+#define FLASH_T 0.3f     /* bright pop when the cat comes back out */
+#define FIRST_TRICK 12   /* seconds before the first trick (plus a little) */
+#define TRICK_GAP 16     /* 16-24 s timer; waiting for the cat to reach the spot makes it ~20-30 */
 
 typedef struct { float x, y, t; int brk; } TrailPt;   /* brk: start of a new ribbon */
 typedef struct { float x, y, vx, vy, life, max; SDL_Color c; } Bit;
 typedef struct { float y, start, len; } Streak;
 
 typedef struct {
-    int w, h, sc, frame, state, head, count, brkNext, trick, plain;
-    float t, x, baseY, phase, speed, boost, frameAcc, stateT, trickAt, fromX;
+    int w, h, sc, frame, state, head, count, brkNext;
+    float t, x, baseY, phase, speed, boost, frameAcc, stateT, nextTrick, fromX;
     float streakT, ringT, ringX, ringY, flash;
     SDL_Texture *cat[CAT_FRAMES];
     TrailPt trail[TRAIL];
@@ -128,17 +131,13 @@ static void burst(Rainbow *r, float x, float y, int n, float speed) {
     }
 }
 
-/* Start a fresh pass just off the left edge. Most passes do the trick, and
-   never two plain fly-bys in a row. */
+/* Start a fresh pass just off the left edge. */
 static void new_pass(Rainbow *r) {
     r->x = -catw(r);
     r->baseY = frand(0.2f, 0.62f) * r->h;
     r->phase = frand(0, 2 * PI_F);
     r->speed = r->w * frand(0.17f, 0.22f);
     r->brkNext = 1;                              /* never join this ribbon to the last one */
-    r->trick = r->plain >= 1 || irand(3) != 0;
-    r->plain = r->trick ? 0 : r->plain + 1;
-    r->trickAt = frand(0.2f, 0.38f) * r->w;
 }
 
 static void step(void *p, float dt);
@@ -164,10 +163,9 @@ static void *create(SDL_Renderer *ren, int w, int h) {
     new_pass(r);
     float startX = frand(0.05f, 0.3f) * w;
     r->x = startX - r->speed * 2.2f;
-    r->trick = 0;
+    r->nextTrick = 99;
     while (r->x < startX) step(r, 1.0f / 30);
-    r->trick = 1;
-    r->trickAt = startX + w * 0.1f;
+    r->nextTrick = frand(FIRST_TRICK, FIRST_TRICK + 4);
     return r;
 }
 
@@ -190,7 +188,11 @@ static void step(void *p, float dt) {
         push_trail(r, r->x);
         if (r->state == FLY) {
             if (r->x > r->w) new_pass(r);                /* fully off the right edge */
-            else if (r->trick && r->x >= r->trickAt) { r->state = SHIMMER; r->stateT = 0; r->trick = 0; }
+            else {
+                r->nextTrick -= dt;
+                /* When it's time, do the trick while the cat is well on screen. */
+                if (r->nextTrick <= 0 && r->x > r->w * 0.2f && r->x < r->w * 0.42f) { r->state = SHIMMER; r->stateT = 0; }
+            }
         } else {
             float cy = cat_y(r, r->x);
             if (frand(0, 1) < 0.25f + 0.75f * k)
@@ -229,6 +231,7 @@ static void step(void *p, float dt) {
             r->state = FLY;
             r->stateT = 0;
             r->boost = 1.4f;
+            r->nextTrick = frand(TRICK_GAP, TRICK_GAP + 8);
         }
         break;
     }
