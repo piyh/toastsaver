@@ -1,6 +1,6 @@
 /* DICE: a felt dice tray with true 3D polyhedral dice (d6, d8, d10, d12, d20).
-   The dice tumble and bounce in 3D across the felt one at a time, each landing
-   cleanly to show its roll. Then, with deliberate pauses so a six-year-old has time
+   A handful is thrown together and tumbles and bounces in 3D across the felt, each
+   die landing cleanly to show its roll. Then, with deliberate pauses so a six-year-old has time
    to calculate and frontrun the math, each result flies up to the chalkboard.
    Only a natural 20 on a d20 triggers the gold glow, rays, confetti and "CRIT!",
    and only a natural 1 on a d20 gets the grumpy cloud and "WOMP". */
@@ -607,9 +607,8 @@ static float seg_d2(const Seg *g, float x, float y) {
 /* A number printed on a face, centred on (ox, oy): its text axes are right/up (model
    space) and a digit is 7 * px tall, so it foreshortens and turns with the face. */
 static void face_number(Dice *d, const Die *e, float ox, float oy, Vec3 right, Vec3 up, float px,
-                        int value, uint32_t face, uint32_t ink, float a) {
-    uint32_t rim = mixc(face, shade(face, 0.42f), a);
-    ink = mixc(face, ink, a);
+                        int value, uint32_t face, uint32_t ink) {
+    uint32_t rim = shade(face, 0.42f);
     char s[4];
     snprintf(s, sizeof s, "%d", value);
     int n = (int)strlen(s), bar = value == 6 || value == 9;
@@ -647,7 +646,7 @@ static void face_number(Dice *d, const Die *e, float ox, float oy, Vec3 right, V
 }
 
 /* A pip: a disc on the face at (u, v) in the face's own units, with a dark rim. */
-static void face_pip(Dice *d, const Die *e, float ox, float oy, const PolyFace *fc, float u, float v, uint32_t face, float a) {
+static void face_pip(Dice *d, const Die *e, float ox, float oy, const PolyFace *fc, float u, float v, uint32_t face) {
     float R = (float)(d->R * FINE), Ax, Ay, Bx, By;
     to_screen(e, R, v_scale(fc->right, fc->ri), &Ax, &Ay);
     to_screen(e, R, v_scale(fc->up, -fc->ri), &Bx, &By);
@@ -658,8 +657,8 @@ static void face_pip(Dice *d, const Die *e, float ox, float oy, const PolyFace *
         for (int x = (int)floorf(pcx - ext); x <= (int)ceilf(pcx + ext); x++) {
             float dx = x + 0.5f - pcx, dy = y + 0.5f - pcy;
             float lu = (dx * By - dy * Bx) / det, lv = (Ax * dy - Ay * dx) / det, q = lu * lu + lv * lv;
-            if (q < 0.19f * 0.19f) put(&d->fine, x, y, rgb(mixc(face, 0xFFFFFF, a)));
-            else if (q < 0.26f * 0.26f) put(&d->fine, x, y, rgb(mixc(face, shade(face, 0.45f), a)));
+            if (q < 0.19f * 0.19f) put(&d->fine, x, y, rgb(0xFFFFFF));
+            else if (q < 0.26f * 0.26f) put(&d->fine, x, y, rgb(shade(face, 0.45f)));
         }
 }
 
@@ -746,19 +745,13 @@ static void draw_3d_die(Dice *d, const Die *e, float cx, float cy) {
 
         /* Print the face: pips on the d6, a number by each corner on the d4 (the top
            corner's number is the roll, as on a real d4), one number in the middle on the
-           rest. Every face always carries the same print; as a face turns away its print
-           fades into the face colour (squashed pixel digits read as noise), so nothing
-           pops in or out. */
-        float facing = v_dot(nrot, v_norm(vec3(0, 0.85f, 1)));
-        float lo = e->kind == D6 ? 0.2f : e->kind == D4 ? 0.15f : 0.45f;
-        float ink_a = ease((facing - lo) / 0.3f);
-        if (ink_a < 0.04f) continue;
+           rest. Every visible face shows its print in full, like a real die. */
         float fcx, fcy;
         to_screen(e, R, fc->c, &fcx, &fcy);
         fcx += ocx; fcy += ocy;
         if (e->kind == D6) {
             for (int p = 0; p < fc->value; p++)
-                face_pip(d, e, fcx, fcy, fc, PIPS[fc->value][p][0], PIPS[fc->value][p][1], col, ink_a);
+                face_pip(d, e, fcx, fcy, fc, PIPS[fc->value][p][0], PIPS[fc->value][p][1], col);
         } else if (e->kind == D4) {
             for (int k = 0; k < 3; k++) {
                 Vec3 vtx = m->verts[fc->idx[k]], toward = v_norm(v_sub(vtx, fc->c));
@@ -766,14 +759,14 @@ static void draw_3d_die(Dice *d, const Die *e, float cx, float cy) {
                 float px, py;
                 to_screen(e, R, at, &px, &py);
                 face_number(d, e, px + ocx, py + ocy, v_cross(fc->normal, toward), toward,
-                            fc->ri * 0.95f / FONT_H, fc->idx[k] + 1, col, 0xFFFFFF, ink_a);
+                            fc->ri * 0.95f / FONT_H, fc->idx[k] + 1, col, 0xFFFFFF);
             }
         } else {
             char s[4];
             snprintf(s, sizeof s, "%d", fc->value);
             float tw = (float)glyphs_w(s, 1), px = fminf(1.3f * fc->ri / FONT_H, 1.75f * fc->ri / tw);
             uint32_t ink = (e->kind == D20 && fc->value == 20 && e->settled && f == topf) ? 0xFFE04A : 0xFFFFFF;
-            face_number(d, e, fcx, fcy, fc->right, fc->up, px, fc->value, col, ink, ink_a);
+            face_number(d, e, fcx, fcy, fc->right, fc->up, px, fc->value, col, ink);
         }
     }
 }
@@ -913,8 +906,8 @@ static void new_roll(Dice *d) {
     if (cols * px > x1 - x0) px = (x1 - x0) / cols;
     float dir = d->fromLeft ? 1.0f : -1.0f;
 
-    /* Pacing: roll 1 die at a time so each roll has its own individual spotlight */
-    float roll_interval = 2.2f;
+    /* The handful is thrown together: each die a split second behind the last. */
+    float roll_interval = 0.14f;
     for (int i = 0; i < n; i++) {
         Die *e = &d->die[i];
         memset(e, 0, sizeof *e);
