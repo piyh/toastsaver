@@ -5,6 +5,14 @@ on:
   pull_request:
 
 jobs:
+  check:
+    name: quick checks (make check)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run the checks in Debian trixie
+        run: docker run --rm -v "$PWD":/src -w /src debian:trixie sh -c 'apt-get update -qq && apt-get install -y -qq build-essential pkg-config libsdl2-dev >/dev/null && make check'
+
   test:
     name: end-to-end (${{ matrix.suite }}, source install)
     runs-on: ubuntu-24.04

@@ -22,6 +22,14 @@ bin/toastsaver: $(SRC) src/engine.h
 bin/toastsaver.png: bin/toastsaver
 	bin/toastsaver --write-icon $@
 
+# Quick checks that need no display: make check
+check: bin/dice-geometry
+	bin/dice-geometry
+
+bin/dice-geometry: tests/dice-geometry.c src/savers/dice.c src/engine.c src/font.c src/engine.h
+	mkdir -p bin
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ tests/dice-geometry.c src/engine.c src/font.c $(LDLIBS)
+
 install: all
 	install -Dm755 bin/toastsaver $(DESTDIR)$(BINDIR)/toastsaver
 	ln -sf toastsaver $(DESTDIR)$(BINDIR)/toastsaver-picker
@@ -52,4 +60,4 @@ uninstall:
 clean:
 	rm -rf bin
 
-.PHONY: all install uninstall clean
+.PHONY: all check install uninstall clean
