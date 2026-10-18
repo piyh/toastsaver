@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/piyh/toastsaver/actions/workflows/ci.yml/badge.svg)](https://github.com/piyh/toastsaver/actions/workflows/ci.yml)
 
-Retro screensavers for Raspberry Pi OS and other Wayland desktops: flying toasters, 3D pipes, an aquarium and more, with a big friendly picker that a six-year-old can use.
+Retro screensavers for Raspberry Pi OS and other Wayland desktops: flying toasters, a rainbow waffle cat, 3D pipes, a cozy bookshelf, birds in a summer sky and more, with a big friendly picker that a six-year-old can use.
 
 ![toastsaver demo](docs/demo.gif)
 
@@ -12,12 +12,20 @@ curl -fsSL https://piyh.github.io/toastsaver/setup.sh | sh
 
 ## What's inside
 
-Eight screensavers, plus a SURPRISE tile that picks a random one each time. All of the artwork is original and drawn by the program itself.
+Eleven screensavers, plus a SURPRISE tile that picks a random one each time. All of the artwork is original and drawn by the program itself.
 
 <table>
   <tr>
     <td align="center"><img src="docs/toasters.png" width="400"><br><b>TOASTERS</b></td>
+    <td align="center"><img src="docs/rainbow.png" width="400"><br><b>RAINBOW</b></td>
+  </tr>
+  <tr>
     <td align="center"><img src="docs/pipes.png" width="400"><br><b>PIPES</b></td>
+    <td align="center"><img src="docs/books.png" width="400"><br><b>BOOKS</b></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/aquarium.png" width="400"><br><b>FISH</b></td>
+    <td align="center"><img src="docs/birds.png" width="400"><br><b>BIRDS</b></td>
   </tr>
   <tr>
     <td align="center"><img src="docs/starfield.png" width="400"><br><b>STARS</b></td>
@@ -25,21 +33,24 @@ Eight screensavers, plus a SURPRISE tile that picks a random one each time. All 
   </tr>
   <tr>
     <td align="center"><img src="docs/matrix.png" width="400"><br><b>MATRIX</b></td>
-    <td align="center"><img src="docs/aquarium.png" width="400"><br><b>FISH</b></td>
+    <td align="center"><img src="docs/lava.png" width="400"><br><b>LAVA</b></td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/lava.png" width="400"><br><b>LAVA</b></td>
     <td align="center"><img src="docs/name.png" width="400"><br><b>NAME</b></td>
+    <td></td>
   </tr>
 </table>
 
 - **TOASTERS**: winged chrome toasters and slices of toast flying down and to the left.
+- **RAINBOW**: the Waffle Cat flies across the night sky on a wavy rainbow. Every so often it shimmers, goes *poof*, rainbow lines zoom across the screen, and it pops back out at the end of the rainbow. (Invented by a six-year-old.)
 - **PIPES**: shiny 3D pipes grow through a grid, then fade and start again.
+- **BOOKS**: a cozy lamplit bookshelf. Books slide out, float to the middle, open to a little animated picture, and fly back to their spot.
+- **FISH**: clownfish, a blue tang, a pufferfish, seaweed and a bubbling treasure chest.
+- **BIRDS**: a sunny summer sky with bluebirds, cardinals, finches and robins flying over a flower meadow. (Also requested by a six-year-old.)
 - **STARS**: a warp-speed starfield.
 - **MYSTIFY**: bouncing, color-changing shapes with echo trails.
 - **MATRIX**: falling green code. Sometimes a column spells your name.
-- **FISH**: clownfish, a blue tang, a pufferfish, seaweed and a bubbling treasure chest.
-- **LAVA**: a lava lamp, with a new color palette each time.
+- **LAVA**: a glowing lava lamp with wax that warms, rises, merges and sinks, in a new color each time.
 - **NAME**: your name bounces around like the old DVD logo, with confetti when it hits a corner.
 
 ### Easter eggs
@@ -147,7 +158,7 @@ Settings live in `~/.config/toastsaver.conf`. The picker and Screensaver Setting
 
 ```sh
 ENABLED=1               # 0 = turn the screensaver off
-SAVER=toasters          # toasters pipes starfield mystify matrix aquarium lava name random
+SAVER=toasters          # toasters rainbow pipes books aquarium birds starfield mystify matrix lava name random
 NAME='HELLO'            # letters, digits, space and ! ? - . *  (* draws a heart)
 IDLE_MINUTES=5          # minutes of no input before the screensaver appears
 SCREEN_OFF_MINUTES=30   # minutes before the display turns off (0 = never)
