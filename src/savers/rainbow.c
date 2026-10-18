@@ -1,6 +1,7 @@
 /* RAINBOW: the Waffle Cat flies across the night sky on a wavy rainbow.
-   Every so often it shimmers, goes *poof*, rainbow lines zoom across the
-   screen, and it pops back out at the end of the rainbow.
+   On most passes it slows down and shimmers, goes *poof*, its rainbow races
+   ahead with rainbow lines zooming across the screen, and it pops back out
+   at the end of the rainbow.
    (Idea and story by a six-year-old.) */
 #include "../engine.h"
 #include <math.h>
@@ -11,7 +12,7 @@
 #define CAT_FRAMES 4
 #define TRAIL 240
 #define STARS 140
-#define BITS 90
+#define BITS 140
 #define STREAKS 4
 
 static const uint32_t BANDS[6] = { 0xFF4D4D, 0xFF9A3C, 0xFFE14D, 0x5BD46B, 0x4DA6FF, 0x9B6BFF };
@@ -77,14 +78,19 @@ Canvas make_waffle_cat(int frame) {
 
 enum { FLY, SHIMMER, POOF, STREAK };
 
+#define SHIMMER_T 1.2f   /* slow down, flash colours, wobble: something is coming */
+#define POOF_T 0.45f     /* gone! just sparkles */
+#define STREAK_T 0.9f    /* the rainbow zooms ahead on its own */
+#define FLASH_T 0.35f    /* bright pop when the cat comes back out */
+
 typedef struct { float x, y, t; int brk; } TrailPt;   /* brk: start of a new ribbon */
 typedef struct { float x, y, vx, vy, life, max; SDL_Color c; } Bit;
 typedef struct { float y, start, len; } Streak;
 
 typedef struct {
-    int w, h, sc, frame, state, head, count;
-    float t, x, baseY, speed, boost, frameAcc, stateT, nextTrick, catY;
-    float fromX, toX;
+    int w, h, sc, frame, state, head, count, brkNext, trick, plain;
+    float t, x, baseY, phase, speed, boost, frameAcc, stateT, trickAt, fromX;
+    float streakT, ringT, ringX, ringY, flash;
     SDL_Texture *cat[CAT_FRAMES];
     TrailPt trail[TRAIL];
     Bit bits[BITS];
@@ -96,10 +102,19 @@ typedef struct {
 static float catw(const Rainbow *r) { return (float)CAT_W * r->sc; }
 static float cath(const Rainbow *r) { return (float)CAT_H * r->sc; }
 
-static void push_trail(Rainbow *r, float x, float y) {
-    int brk = r->count == 0 || x < r->trail[r->head].x;   /* wrapped back to the left edge */
+/* The cat bobs by distance flown, not by time, so its height is always a
+   function of x: the trail stays smooth through slow-downs and the teleport,
+   and the cat pops back out exactly on its rainbow. */
+static float cat_y(const Rainbow *r, float x) {
+    return r->baseY + sinf(x / r->w * 7.0f + r->phase) * r->h * 0.05f;
+}
+
+static void push_trail(Rainbow *r, float x) {
+    float tx = x + catw(r) * 0.18f, ty = cat_y(r, x) + cath(r) * 0.55f;
+    int brk = r->count == 0 || r->brkNext || tx < r->trail[r->head].x;
+    r->brkNext = 0;
     r->head = (r->head + 1) % TRAIL;
-    r->trail[r->head] = (TrailPt){ x, y, r->t, brk };
+    r->trail[r->head] = (TrailPt){ tx, ty, r->t, brk };
     if (r->count < TRAIL) r->count++;
 }
 
@@ -113,11 +128,20 @@ static void burst(Rainbow *r, float x, float y, int n, float speed) {
     }
 }
 
+/* Start a fresh pass just off the left edge. Most passes do the trick, and
+   never two plain fly-bys in a row. */
 static void new_pass(Rainbow *r) {
     r->x = -catw(r);
-    r->baseY = frand(0.2f, 0.65f) * r->h;
-    r->speed = r->w * frand(0.16f, 0.22f);
+    r->baseY = frand(0.2f, 0.62f) * r->h;
+    r->phase = frand(0, 2 * PI_F);
+    r->speed = r->w * frand(0.17f, 0.22f);
+    r->brkNext = 1;                              /* never join this ribbon to the last one */
+    r->trick = r->plain >= 1 || irand(3) != 0;
+    r->plain = r->trick ? 0 : r->plain + 1;
+    r->trickAt = frand(0.2f, 0.38f) * r->w;
 }
+
+static void step(void *p, float dt);
 
 static void *create(SDL_Renderer *ren, int w, int h) {
     Rainbow *r = calloc(1, sizeof *r);
@@ -133,10 +157,17 @@ static void *create(SDL_Renderer *ren, int w, int h) {
         r->star[i][1] = frand(0, (float)h);
         r->star[i][2] = frand(0, 6.28f);
     }
-    new_pass(r);
-    r->x = frand(0.05f, 0.35f) * w;          /* start already on screen */
-    r->nextTrick = frand(2.5f, 4.0f);
+    r->streakT = r->ringT = 99;
     r->shootT = -frand(2, 6);
+    /* Start already on screen, with a rainbow already behind the cat:
+       fly the last couple of seconds before the first frame. */
+    new_pass(r);
+    float startX = frand(0.05f, 0.3f) * w;
+    r->x = startX - r->speed * 2.2f;
+    r->trick = 0;
+    while (r->x < startX) step(r, 1.0f / 30);
+    r->trick = 1;
+    r->trickAt = startX + w * 0.1f;
     return r;
 }
 
@@ -144,61 +175,66 @@ static void step(void *p, float dt) {
     Rainbow *r = p;
     r->t += dt;
     r->stateT += dt;
-    r->frameAcc += dt * 9;
-    r->frame = (int)r->frameAcc % CAT_FRAMES;
-    float y = r->baseY + sinf(r->t * 1.4f) * r->h * 0.05f;
+    r->streakT += dt;
+    r->ringT += dt;
+    r->flash = r->flash > dt ? r->flash - dt : 0;
+    float k = r->stateT / SHIMMER_T;
 
     switch (r->state) {
     case FLY:
     case SHIMMER: {
-        float v = r->speed * (1 + r->boost) * (r->state == SHIMMER ? 0.6f : 1.0f);
+        float v = r->speed * (1 + r->boost);
+        if (r->state == SHIMMER) v *= 1 - 0.75f * k * k;  /* brake into the trick */
         r->boost = r->boost > 0 ? r->boost - dt * 1.5f : 0;
         r->x += v * dt;
-        r->catY = y;
-        push_trail(r, r->x + catw(r) * 0.18f, y + cath(r) * 0.55f);
-        if (r->x > r->w + catw(r) * 0.5f) new_pass(r);
+        push_trail(r, r->x);
         if (r->state == FLY) {
-            r->nextTrick -= dt;
-            /* Do the trick while the cat is well on screen. */
-            if (r->nextTrick <= 0 && r->x > r->w * 0.15f && r->x < r->w * 0.45f) { r->state = SHIMMER; r->stateT = 0; }
+            if (r->x > r->w) new_pass(r);                /* fully off the right edge */
+            else if (r->trick && r->x >= r->trickAt) { r->state = SHIMMER; r->stateT = 0; r->trick = 0; }
         } else {
-            if (irand(3) == 0) burst(r, r->x + frand(0, catw(r)), y + frand(0, cath(r)), 1, r->h * 0.1f);
-            if (r->stateT > 1.1f) {                      /* poof! */
-                burst(r, r->x + catw(r) / 2, y + cath(r) / 2, 60, r->h * 0.45f);
+            float cy = cat_y(r, r->x);
+            if (frand(0, 1) < 0.25f + 0.75f * k)
+                burst(r, r->x + frand(0, catw(r)), cy + frand(0, cath(r)), 1, r->h * (0.08f + 0.1f * k));
+            if (r->stateT > SHIMMER_T) {                 /* poof! */
+                r->ringX = r->x + catw(r) / 2;
+                r->ringY = cy + cath(r) / 2;
+                burst(r, r->ringX, r->ringY, 70, r->h * 0.45f);
+                r->ringT = 0;
                 r->state = POOF;
                 r->stateT = 0;
             }
         }
         break;
     }
-    case POOF:                                           /* gone for a second */
-        if (r->stateT > 1.0f) {
+    case POOF:
+        if (r->stateT > POOF_T) {
             r->state = STREAK;
             r->stateT = 0;
+            r->streakT = 0;
             r->fromX = r->x;
-            r->toX = r->x + r->w * 0.42f;
-            if (r->toX > r->w * 0.8f) r->toX = r->w * 0.8f;
             for (int i = 0; i < STREAKS; i++)
-                r->streak[i] = (Streak){ frand(0.1f, 0.9f) * r->h, frand(0, 0.5f), frand(0.4f, 0.8f) };
+                r->streak[i] = (Streak){ frand(0.1f, 0.9f) * r->h, frand(0, 0.3f), frand(0.4f, 0.7f) };
         }
         break;
-    case STREAK: {                                       /* rainbow lines come */
-        float k = r->stateT / 1.2f;
-        if (k > 1) k = 1;
-        float e = 1 - (1 - k) * (1 - k);
-        float nx = r->fromX + (r->toX - r->fromX) * e;
-        push_trail(r, nx + catw(r) * 0.18f, r->catY + cath(r) * 0.55f);
-        if (r->stateT > 1.6f) {                          /* pop back out and zoom off */
-            r->x = r->toX;
-            burst(r, r->x + catw(r) / 2, r->catY + cath(r) / 2, 35, r->h * 0.3f);
+    case STREAK: {                                       /* the rainbow races ahead */
+        float toX = fminf(r->fromX + r->w * 0.42f, r->w * 0.8f);
+        float s = fminf(r->stateT / STREAK_T, 1);
+        r->x = r->fromX + (toX - r->fromX) * s * s * (3 - 2 * s);
+        push_trail(r, r->x);
+        TrailPt *hp = &r->trail[r->head];
+        burst(r, hp->x, hp->y, 1, r->h * 0.05f);
+        if (s >= 1) {                                    /* pop back out and zoom off */
+            burst(r, r->x + catw(r) / 2, cat_y(r, r->x) + cath(r) / 2, 40, r->h * 0.3f);
+            r->flash = FLASH_T;
             r->state = FLY;
             r->stateT = 0;
-            r->boost = 1.5f;
-            r->nextTrick = frand(7, 11);
+            r->boost = 1.4f;
         }
         break;
     }
     }
+    r->frameAcc += dt * (r->state == SHIMMER ? 9 + 12 * k : 9);
+    r->frame = (int)r->frameAcc % CAT_FRAMES;
     for (int i = 0; i < BITS; i++) {
         Bit *b = &r->bits[i];
         if (b->life <= 0) continue;
@@ -229,7 +265,8 @@ static void ribbon_band(Rainbow *r, SDL_Renderer *ren, int band, float bandH, fl
             if (k) SDL_RenderGeometry(ren, NULL, v, n, idx, k);
             n = k = 0;
         }
-        float wave = sinf(p->x * 0.02f - r->t * 6) * bandH * 0.8f;
+        /* wavelength scales with the pixel size, so it looks the same from the preview to 4K */
+        float wave = sinf(p->x * 0.06f / r->sc - r->t * 6) * bandH * 0.8f;
         float off = (band - 2.5f) * bandH + wave;
         SDL_Color c = hexcol(BANDS[band]);
         c.a = (Uint8)(255 * (1 - age / maxAge));
@@ -251,11 +288,21 @@ static void sparkle(SDL_Renderer *ren, float x, float y, float s, SDL_Color c) {
 static void draw(void *p, SDL_Renderer *ren) {
     Rainbow *r = p;
     vgradient(ren, r->w, r->h, hexcol(0x0B1033), hexcol(0x2A1450));
+
+    /* Stars light up as the cat (or the racing rainbow) goes by. */
+    int lit = r->state != POOF;
+    float lx = r->x + catw(r) / 2, ly = cat_y(r, r->x) + cath(r) / 2, lr = catw(r) * 1.4f;
     for (int i = 0; i < STARS; i++) {
-        float tw = 0.5f + 0.5f * sinf(r->t * 2 + r->star[i][2]);
-        SDL_Color c = { 255, 255, 230, (Uint8)(60 + 160 * tw) };
-        if (i % 9 == 0) sparkle(ren, r->star[i][0], r->star[i][1], r->sc * (1 + tw), c);
-        else { set_color(ren, c); SDL_Rect s = { (int)r->star[i][0], (int)r->star[i][1], r->sc, r->sc }; SDL_RenderFillRect(ren, &s); }
+        float sx = r->star[i][0], sy = r->star[i][1];
+        float tw = 0.5f + 0.5f * sinf(r->t * 2 + r->star[i][2]), glow = 0;
+        if (lit) {
+            float dx = sx - lx, dy = sy - ly, d2 = (dx * dx + dy * dy) / (lr * lr);
+            if (d2 < 1) glow = 1 - d2;
+        }
+        float a = 60 + 160 * tw + 120 * glow;
+        SDL_Color c = { 255, 255, 230, (Uint8)(a > 255 ? 255 : a) };
+        if (i % 9 == 0 || glow > 0.3f) sparkle(ren, sx, sy, r->sc * (1 + tw + 1.5f * glow), c);
+        else { set_color(ren, c); SDL_Rect s = { (int)sx, (int)sy, r->sc, r->sc }; SDL_RenderFillRect(ren, &s); }
     }
     if (r->shootT > 0) {                                 /* the occasional shooting star */
         float k = r->shootT / 1.2f, x = r->shootX - k * r->w * 0.5f, y = r->shootY + k * r->h * 0.25f;
@@ -266,32 +313,55 @@ static void draw(void *p, SDL_Renderer *ren) {
     float bandH = 3.0f * r->sc;
     for (int b = 0; b < 6; b++) ribbon_band(r, ren, b, bandH, 2.6f);
 
-    if (r->state == STREAK) {                            /* extra rainbow lines zooming across */
-        for (int i = 0; i < STREAKS; i++) {
-            float k = (r->stateT - r->streak[i].start) / r->streak[i].len;
-            if (k <= 0 || k > 1.6f) continue;
-            float head = (k > 1 ? 1 : k) * (r->w + 200), tail = head - r->w * 0.45f;
-            Uint8 a = (Uint8)(k > 1 ? 255 * (1.6f - k) / 0.6f : 255);
-            for (int b = 0; b < 6; b++) {
-                SDL_Color c = hexcol(BANDS[b]);
-                c.a = a;
-                float y = r->streak[i].y + (b - 2.5f) * bandH * 0.6f;
-                thick_line(ren, tail < 0 ? 0 : tail, y, head, y, bandH * 0.6f, c);
-            }
+    for (int i = 0; i < STREAKS && r->streakT < 2; i++) {  /* extra rainbow lines zooming across */
+        float k = (r->streakT - r->streak[i].start) / r->streak[i].len;
+        if (k <= 0 || k > 1.6f) continue;
+        float head = (k > 1 ? 1 : k) * (r->w + 200), tail = head - r->w * 0.45f;
+        Uint8 a = (Uint8)(k > 1 ? 255 * (1.6f - k) / 0.6f : 255);
+        for (int b = 0; b < 6; b++) {
+            SDL_Color c = hexcol(BANDS[b]);
+            c.a = a;
+            float y = r->streak[i].y + (b - 2.5f) * bandH * 0.6f;
+            thick_line(ren, tail < 0 ? 0 : tail, y, head, y, bandH * 0.6f, c);
         }
     }
 
+    if (r->ringT < 0.4f) {                               /* poof ring of chunky dots */
+        float k = r->ringT / 0.4f, rad = catw(r) * (0.3f + 0.9f * k), s = r->sc * 3.0f * (1 - k * 0.5f);
+        for (int i = 0; i < 12; i++) {
+            SDL_Color c = hexcol(BANDS[i % 6]);
+            c.a = (Uint8)(255 * (1 - k));
+            set_color(ren, c);
+            float a = i * PI_F / 6;
+            SDL_Rect d = { (int)(r->ringX + cosf(a) * rad - s / 2), (int)(r->ringY + sinf(a) * rad - s / 2), (int)s, (int)s };
+            SDL_RenderFillRect(ren, &d);
+        }
+    }
+
+    if (r->state == STREAK) {                            /* a bright star leads the rainbow */
+        TrailPt *hp = &r->trail[r->head];
+        float tw = 0.5f + 0.5f * sinf(r->t * 30);
+        sparkle(ren, hp->x, hp->y, r->sc * (5 + 2 * tw), (SDL_Color){ 255, 255, 255, 255 });
+    }
+
     if (r->state == FLY || r->state == SHIMMER) {
-        SDL_Rect d = { (int)r->x, (int)r->catY, (int)catw(r), (int)cath(r) };
+        SDL_Rect d = { (int)r->x, (int)cat_y(r, r->x), (int)catw(r), (int)cath(r) };
         SDL_Texture *t = r->cat[r->frame];
         if (r->state == SHIMMER) {
-            SDL_Color c = hsv(r->t * 720, 0.6f, 1);
+            float k = r->stateT / SHIMMER_T;
+            SDL_Color c = hsv(r->t * (360 + 900 * k), 0.6f, 1);
             SDL_SetTextureColorMod(t, c.r, c.g, c.b);
-        } else {
-            SDL_SetTextureColorMod(t, 255, 255, 255);
+            d.x += ((int)(r->t * 30) % 2 ? 1 : -1) * (int)(k * 2.5f) * r->sc;   /* wobble */
         }
         SDL_RenderCopy(ren, t, NULL, &d);
         SDL_SetTextureColorMod(t, 255, 255, 255);
+        if (r->flash > 0) {                              /* pop! a bright flash as it reappears */
+            SDL_SetTextureBlendMode(t, SDL_BLENDMODE_ADD);
+            SDL_SetTextureAlphaMod(t, (Uint8)(255 * r->flash / FLASH_T));
+            SDL_RenderCopy(ren, t, NULL, &d);
+            SDL_SetTextureAlphaMod(t, 255);
+            SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND);
+        }
     }
     for (int i = 0; i < BITS; i++) {
         Bit *b = &r->bits[i];
