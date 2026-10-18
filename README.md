@@ -35,6 +35,7 @@ Eight screensavers, plus a SURPRISE tile that picks a random one each time. All 
 
 - **TOASTERS**: winged chrome toasters and slices of toast flying down and to the left.
 - **PIPES**: shiny 3D pipes grow through a grid, then fade and start again.
+- **DICE**: a d4, d6, d8, d10, d12 and d20 tumble across a felt tray and a chalkboard adds up the roll. A natural 20 gets a gold glow and a tiny "CRIT!"; a 1 gets a little rain cloud.
 - **STARS**: a warp-speed starfield.
 - **MYSTIFY**: bouncing, color-changing shapes with echo trails.
 - **MATRIX**: falling green code. Sometimes a column spells your name.
@@ -147,7 +148,7 @@ Settings live in `~/.config/toastsaver.conf`. The picker and Screensaver Setting
 
 ```sh
 ENABLED=1               # 0 = turn the screensaver off
-SAVER=toasters          # toasters pipes starfield mystify matrix aquarium lava name random
+SAVER=toasters          # toasters pipes dice starfield mystify matrix aquarium lava name random
 NAME='HELLO'            # letters, digits, space and ! ? - . *  (* draws a heart)
 IDLE_MINUTES=5          # minutes of no input before the screensaver appears
 SCREEN_OFF_MINUTES=30   # minutes before the display turns off (0 = never)
