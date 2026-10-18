@@ -45,7 +45,7 @@ Twelve screensavers, plus a SURPRISE ME button that picks a random one each time
 - **RAINBOW**: the Waffle Cat flies across the night sky on a wavy rainbow. Every so often it shimmers, goes *poof*, rainbow lines zoom across the screen, and it pops back out at the end of the rainbow. (Invented by a six-year-old.)
 - **PIPES**: shiny 3D pipes grow through a grid, then fade and start again.
 - **BOOKS**: a cozy lamplit bookshelf. Books slide out, float to the middle, open to a little animated picture, and fly back to their spot.
-- **DICE**: 3D dice (d4, d6, d8, d10, d12 and d20) tumble onto a felt tray one at a time. Then each number flies up to a chalkboard, slowly enough for a kid to add them up first. A natural 20 on the d20 gets gold rays, confetti and "CRIT!"; a natural 1 gets a grumpy rain cloud.
+- **DICE**: 3D dice (d6, d8, d10, d12 and d20) tumble onto a felt tray one at a time. Then each number flies up to a chalkboard, slowly enough for a kid to add them up first. A natural 20 on the d20 gets gold rays, confetti and "CRIT!"; a natural 1 gets a grumpy rain cloud.
 - **FISH**: clownfish, a blue tang, a pufferfish, seaweed and a bubbling treasure chest.
 - **BIRDS**: a sunny summer sky with bluebirds, cardinals, finches and robins flying over a flower meadow. (Also requested by a six-year-old.)
 - **STARS**: a warp-speed starfield.

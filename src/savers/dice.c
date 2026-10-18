@@ -1,4 +1,4 @@
-/* DICE: a felt dice tray with true 3D polyhedral dice (d4, d6, d8, d10, d12, d20).
+/* DICE: a felt dice tray with true 3D polyhedral dice (d6, d8, d10, d12, d20).
    The dice tumble and bounce in 3D across the felt one at a time, each landing
    cleanly to show its roll. Then, with deliberate pauses so a six-year-old has time
    to calculate and frontrun the math, each result flies up to the chalkboard.
@@ -27,13 +27,15 @@ static const uint32_t BODY[KINDS] = { 0xF0464E, 0xFF9230, 0xFFD23C, 0x26C6BE, 0x
 static const uint32_t CONFETTI[6] = { 0xFF5A6E, 0xFFD23C, 0x5BD46B, 0x4DA6FF, 0xC98BFF, 0xFFFFFF };
 static const float BOUNCE[NB] = { 0.28f, 0.52f, 0.70f, 0.83f, 0.93f };
 
-/* Handfuls of dice, prominently featuring d4 and varying sets. */
+/* Handfuls of dice (the first is always the first roll). The d4 still has a model but
+   sits out: a real d4 prints three numbers per face, two of them sideways or upside
+   down, and at this pixel size those read as squiggles. */
 static const int SETS[][MAXDICE + 1] = {
-    { 2, D4, D6 }, { 1, D20 }, { 2, D6, D6 }, { 3, D4, D6, D8 },
-    { 1, D4 }, { 2, D4, D4 }, { 2, D8, D12 }, { 1, D12 },
+    { 2, D6, D8 }, { 1, D20 }, { 2, D6, D6 }, { 3, D6, D8, D10 },
+    { 1, D6 }, { 2, D8, D8 }, { 2, D8, D12 }, { 1, D12 },
     { 2, D10, D10 }, { 1, D20 }, { 2, D6, D20 }, { 1, D10 },
     { 3, D6, D6, D6 }, { 3, D6, D8, D20 }, { 2, D20, D20 },
-    { 6, D4, D6, D8, D10, D12, D20 }
+    { 5, D6, D8, D10, D12, D20 }
 };
 #define NSETS ((int)(sizeof SETS / sizeof SETS[0]))
 
@@ -150,6 +152,8 @@ typedef struct {
     int idx[MAX_FACE_VERTS];
     int value;
     Vec3 normal;
+    Vec3 c, up, right;   /* centre and in-plane axes the face's number or pips are printed on */
+    float ri;            /* distance from the centre to the nearest edge */
 } PolyFace;
 
 typedef struct {
@@ -178,6 +182,30 @@ static void init_poly_mesh(PolyMesh *m) {
             n = v_scale(n, -1.0f);
         }
         fc->normal = n;
+        fc->c = c;
+        fc->up = v_norm(v_sub(m->verts[fc->idx[0]], c));
+        fc->right = v_cross(n, fc->up);
+        fc->ri = 1e9f;
+        for (int i = 0; i < fc->nverts; i++) {
+            Vec3 a = m->verts[fc->idx[i]], b = m->verts[fc->idx[(i + 1) % fc->nverts]];
+            float dist = v_len(v_cross(v_norm(v_sub(b, a)), v_sub(c, a)));
+            if (dist < fc->ri) fc->ri = dist;
+        }
+    }
+}
+
+/* Numbers the faces like real dice: opposite faces add up to sides + 1 (7 on a d6,
+   21 on a d20). Called after init_poly_mesh, which knows the face normals. */
+static void number_opposites(PolyMesh *m) {
+    int next = 1, done[MAX_POLY_FACES] = { 0 };
+    for (int f = 0; f < m->nfaces; f++) {
+        if (done[f]) continue;
+        int o = f;
+        for (int g = 0; g < m->nfaces; g++)
+            if (v_dot(m->faces[g].normal, m->faces[f].normal) < v_dot(m->faces[o].normal, m->faces[f].normal)) o = g;
+        m->faces[f].value = next;
+        m->faces[o].value = m->nfaces + 1 - next++;
+        done[f] = done[o] = 1;
     }
 }
 
@@ -248,6 +276,7 @@ static PolyMesh build_d8(void) {
         for (int j = 0; j < 3; j++) m.faces[i].idx[j] = fidx[i][j];
     }
     init_poly_mesh(&m);
+    number_opposites(&m);
     return m;
 }
 
@@ -268,10 +297,11 @@ static PolyMesh build_d10(void) {
     for (int k = 0; k < 5; k++) {
         int k1 = (k + 1) % 5;
         PolyFace *top = &m.faces[k * 2], *bot = &m.faces[k * 2 + 1];
-        *top = (PolyFace){ 4, { 0, 2 + k, 7 + k, 2 + k1 }, 2 * k + 1, {0} };
-        *bot = (PolyFace){ 4, { 1, 7 + k, 2 + k1, 7 + k1 }, 2 * k + 2, {0} };
+        *top = (PolyFace){ .nverts = 4, .idx = { 0, 2 + k, 7 + k, 2 + k1 }, .value = 2 * k + 1 };
+        *bot = (PolyFace){ .nverts = 4, .idx = { 1, 7 + k, 2 + k1, 7 + k1 }, .value = 2 * k + 2 };
     }
     init_poly_mesh(&m);
+    number_opposites(&m);
     return m;
 }
 
@@ -337,6 +367,7 @@ static PolyMesh build_d12(void) {
         for (int i = 0; i < 5; i++) m.faces[f].idx[i] = cverts[i];
     }
     init_poly_mesh(&m);
+    number_opposites(&m);
     return m;
 }
 
@@ -379,6 +410,7 @@ static PolyMesh build_d20(void) {
         for (int j = 0; j < 3; j++) m.faces[i].idx[j] = fidx[i][j];
     }
     init_poly_mesh(&m);
+    number_opposites(&m);
     return m;
 }
 
@@ -473,35 +505,13 @@ static void glyphs(Canvas *c, const char *s, int x, int y, int sc, uint32_t col)
 
 static int glyphs_w(const char *s, int sc) { int n = (int)strlen(s); return n ? n * (FONT_W + 1) * sc - sc : 0; }
 
-static void number(Canvas *c, int v, float cx, float cy, int sc, uint32_t base, uint32_t ink) {
-    char s[4];
-    snprintf(s, sizeof s, "%d", v);
-    int w = glyphs_w(s, sc), x = (int)floorf(cx - w / 2.0f + 0.5f), y = (int)floorf(cy - FONT_H * sc / 2.0f + 0.5f);
-    uint32_t dark = rgb(shade(base, 0.28f));
-    int bar = v == 6 || v == 9, by = y + FONT_H * sc + 1;
-    for (int dy = -1; dy <= 1; dy++)
-        for (int dx = -1; dx <= 1; dx++) {
-            glyphs(c, s, x + dx, y + dy, sc, dark);
-            if (bar) fill_rect(c, x + dx, by + dy, x + w - 1 + dx, by + dy, dark);
-        }
-    glyphs(c, s, x, y + 1, sc, rgb(ink == 0xFFFFFF ? shade(base, 0.55f) : 0xB07A10));
-    glyphs(c, s, x, y, sc, rgb(ink));
-    if (bar) fill_rect(c, x, by, x + w - 1, by, rgb(ink));
-}
-
-static void draw_pip(Canvas *c, float cx, float cy, float r, uint32_t base, uint32_t ink) {
-    fill_ellipse(c, cx, cy, r + 0.8f, r + 0.8f, rgb(shade(base, 0.45f)));
-    fill_ellipse(c, cx, cy, r, r, rgb(ink));
-    put(c, (int)(cx - r * 0.35f), (int)(cy - r * 0.35f), rgb(lit(ink, 1.4f)));
-}
-
 /* ---------- 3D die rendering ---------- */
 
 /* Screen y = y - 0.85 z, so faces whose normal points along (0, 0.85, 1) face the
    viewer. Dice come to rest with the rolled face pointing at REST: mostly up, tipped
-   a little toward the viewer so the top reads clearly. The label always goes on the
-   face (or, for the d4, the corner) that points most along REST, so what you see
-   while tumbling is a fair peek and what you see at rest is exactly the roll. */
+   a little toward the viewer so the top reads clearly, turned so its number is upright.
+   Numbers and pips are printed on the faces themselves: each face maps a little bitmap
+   through its own tilted axes, so they foreshorten and tumble with the die. */
 static Vec3 rest_dir(void) { return v_norm(vec3(0, 0.38f, 1.0f)); }
 
 static const float PIPS[7][6][2] = {
@@ -513,6 +523,91 @@ static const float PIPS[7][6][2] = {
     {{-0.55f, -0.55f}, {0.55f, -0.55f}, {0, 0}, {-0.55f, 0.55f}, {0.55f, 0.55f}},
     {{-0.55f, -0.55f}, {0.55f, -0.55f}, {-0.55f, 0}, {0.55f, 0}, {-0.55f, 0.55f}, {0.55f, 0.55f}},
 };
+
+/* Where a model-space direction lands on screen (in canvas pixels per unit). */
+static void to_screen(const Die *e, float R, Vec3 v, float *x, float *y) {
+    Vec3 w = mat3_mul_v(e->orient, v);
+    *x = w.x * R;
+    *y = (w.y - 0.85f * w.z) * R;
+}
+
+/* Paints a mask (0 nothing, 1 rim, 2 ink) centred on (ox, oy). One mask pixel steps by
+   (ax, ay) across and (bx, by) down, so the bitmap lies flat on a tilted face. */
+static void paint_on_face(Canvas *c, const unsigned char *mask, int mw, int mh, float ox, float oy,
+                          float ax, float ay, float bx, float by, uint32_t rim, uint32_t ink) {
+    float det = ax * by - ay * bx;
+    if (fabsf(det) < 0.05f) return;  /* seen edge-on */
+    float hw = mw * 0.5f, hh = mh * 0.5f, x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
+    for (int k = 0; k < 4; k++) {
+        float u = k & 1 ? hw : -hw, v = k & 2 ? hh : -hh, px = ox + ax * u + bx * v, py = oy + ay * u + by * v;
+        x0 = fminf(x0, px); x1 = fmaxf(x1, px); y0 = fminf(y0, py); y1 = fmaxf(y1, py);
+    }
+    for (int y = (int)floorf(y0); y <= (int)ceilf(y1); y++)
+        for (int x = (int)floorf(x0); x <= (int)ceilf(x1); x++) {
+            float dx = x + 0.5f - ox, dy = y + 0.5f - oy;
+            int i = (int)floorf((dx * by - dy * bx) / det + hw), j = (int)floorf((ax * dy - ay * dx) / det + hh);
+            if (i < 0 || j < 0 || i >= mw || j >= mh || !mask[j * mw + i]) continue;
+            put(c, x, y, rgb(mask[j * mw + i] == 2 ? ink : rim));
+        }
+}
+
+/* A number printed on a face: centre p, text axes right/up (model space), mask pixel size px. */
+static void face_number(Dice *d, const Die *e, float ox, float oy, Vec3 right, Vec3 up, float px,
+                        int value, uint32_t face, uint32_t ink, float a) {
+    uint32_t rim = mixc(face, shade(face, 0.42f), a);
+    ink = mixc(face, ink, a);
+    char s[4];
+    snprintf(s, sizeof s, "%d", value);
+    int bar = value == 6 || value == 9, tw = glyphs_w(s, 1), th = FONT_H + (bar ? 2 : 0);
+    int mw = tw + 2, mh = th + 2;
+    unsigned char mask[16 * 13] = { 0 };
+    for (int k = 0; s[k]; k++) {
+        const char *const *g = font_glyph(s[k]);
+        for (int j = 0; g && j < FONT_H; j++)
+            for (int i = 0; i < FONT_W; i++)
+                if (g[j][i] == '#') mask[(j + 1) * mw + k * (FONT_W + 1) + i + 1] = 2;
+    }
+    if (bar) for (int i = 0; i < tw; i++) mask[th * mw + i + 1] = 2;   /* 6. and 9. */
+    for (int j = 0; j < mh; j++)
+        for (int i = 0; i < mw; i++)
+            if (!mask[j * mw + i] && ((i > 0 && mask[j * mw + i - 1] == 2) || (i < mw - 1 && mask[j * mw + i + 1] == 2) ||
+                                      (j > 0 && mask[(j - 1) * mw + i] == 2) || (j < mh - 1 && mask[(j + 1) * mw + i] == 2)))
+                mask[j * mw + i] = 1;
+    float ax, ay, bx, by, R = (float)d->R;
+    to_screen(e, R, v_scale(right, px), &ax, &ay);
+    to_screen(e, R, v_scale(up, -px), &bx, &by);
+    if (ax > 0 && by > 0 && fabsf(ay) < 0.1f * ax && fabsf(bx) < 0.1f * by) {
+        /* Square on to the viewer (a die at rest): draw it as crisp whole pixels. */
+        int sc = (int)lroundf(fminf(ax, by)), x0, y0;
+        if (sc < 1) sc = 1;
+        x0 = (int)lroundf(ox - mw * sc / 2.0f);
+        y0 = (int)lroundf(oy - mh * sc / 2.0f);
+        for (int j = 0; j < mh; j++)
+            for (int i = 0; i < mw; i++)
+                if (mask[j * mw + i])
+                    fill_rect(&d->top, x0 + i * sc, y0 + j * sc, x0 + i * sc + sc - 1, y0 + j * sc + sc - 1,
+                              rgb(mask[j * mw + i] == 2 ? ink : rim));
+        return;
+    }
+    paint_on_face(&d->top, mask, mw, mh, ox, oy, ax, ay, bx, by, rim, ink);
+}
+
+/* A pip: a disc on the face at (u, v) in the face's own units, with a dark rim. */
+static void face_pip(Dice *d, const Die *e, float ox, float oy, const PolyFace *fc, float u, float v, uint32_t face, float a) {
+    float R = (float)d->R, Ax, Ay, Bx, By;
+    to_screen(e, R, v_scale(fc->right, fc->ri), &Ax, &Ay);
+    to_screen(e, R, v_scale(fc->up, -fc->ri), &Bx, &By);
+    float det = Ax * By - Ay * Bx;
+    if (fabsf(det) < 0.5f) return;
+    float pcx = ox + Ax * u + Bx * v, pcy = oy + Ay * u + By * v, ext = 0.3f * (fabsf(Ax) + fabsf(Bx) + fabsf(Ay) + fabsf(By));
+    for (int y = (int)floorf(pcy - ext); y <= (int)ceilf(pcy + ext); y++)
+        for (int x = (int)floorf(pcx - ext); x <= (int)ceilf(pcx + ext); x++) {
+            float dx = x + 0.5f - pcx, dy = y + 0.5f - pcy;
+            float lu = (dx * By - dy * Bx) / det, lv = (Ax * dy - Ay * dx) / det, q = lu * lu + lv * lv;
+            if (q < 0.19f * 0.19f) put(&d->top, x, y, rgb(mixc(face, 0xFFFFFF, a)));
+            else if (q < 0.26f * 0.26f) put(&d->top, x, y, rgb(mixc(face, shade(face, 0.45f), a)));
+        }
+}
 
 static void draw_3d_die(Dice *d, const Die *e, float cx, float cy) {
     const PolyMesh *m = &d->mesh[e->kind];
@@ -556,18 +651,15 @@ static void draw_3d_die(Dice *d, const Die *e, float cx, float cy) {
         for (int j = i + 1; j < nvis; j++)
             if (vis[j].d < vis[i].d) { VisFace t = vis[i]; vis[i] = vis[j]; vis[j] = t; }
 
-    /* Which face (or d4 corner) points most along REST: that's the number to show. */
+    /* The face pointing most along REST is the roll (it gets the gold ink on a natural 20). */
     Vec3 up = rest_dir();
-    int topf = 0, topv = 0;
-    float bf = -2, bv = -2;
+    int topf = 0;
+    float bf = -2;
     for (int f = 0; f < m->nfaces; f++) {
         float k = v_dot(mat3_mul_v(e->orient, m->faces[f].normal), up);
         if (k > bf) { bf = k; topf = f; }
     }
-    for (int i = 0; i < m->nverts; i++) {
-        float k = v_dot(mat3_mul_v(e->orient, v_norm(m->verts[i])), up);
-        if (k > bv) { bv = k; topv = i; }
-    }
+    float ocx = cx, ocy = cy - e->z * 0.85f;
 
     Vec3 light = v_norm(vec3(-0.5f, -0.6f, 0.8f));
     uint32_t base = BODY[e->kind];
@@ -595,35 +687,37 @@ static void draw_3d_die(Dice *d, const Die *e, float cx, float cy) {
             draw_line(&d->top, (int)fx[i], (int)fy[i], (int)fx[j], (int)fy[j], rgb(edge_col));
         }
 
-        /* Pips on d6 */
-        if (e->kind == D6 && fc->nverts == 4) {
-            if (vis[vi].view > 0.12f) {
-                int val = fc->value;
-                float pr = R * 0.13f;
-                if (pr < 1.0f) pr = 1.0f;
-                for (int p = 0; p < val; p++) {
-                    float u = PIPS[val][p][0], v = PIPS[val][p][1];
-                    float px = 0.25f * ((1 - u) * (1 - v) * fx[0] + (1 + u) * (1 - v) * fx[1] +
-                                        (1 + u) * (1 + v) * fx[2] + (1 - u) * (1 + v) * fx[3]);
-                    float py = 0.25f * ((1 - u) * (1 - v) * fy[0] + (1 + u) * (1 - v) * fy[1] +
-                                        (1 + u) * (1 + v) * fy[2] + (1 - u) * (1 + v) * fy[3]);
-                    draw_pip(&d->top, px, py, pr, base, 0xFFFFFF);
-                }
+        /* Print the face: pips on the d6, a number by each corner on the d4 (the top
+           corner's number is the roll, as on a real d4), one number in the middle on the
+           rest. Every face always carries the same print; as a face turns away its print
+           fades into the face colour (squashed pixel digits read as noise), so nothing
+           pops in or out. */
+        float facing = v_dot(nrot, v_norm(vec3(0, 0.85f, 1)));
+        float lo = e->kind == D6 ? 0.2f : e->kind == D4 ? 0.15f : 0.45f;
+        float ink_a = ease((facing - lo) / 0.3f);
+        if (ink_a < 0.04f) continue;
+        float fcx, fcy;
+        to_screen(e, R, fc->c, &fcx, &fcy);
+        fcx += ocx; fcy += ocy;
+        if (e->kind == D6) {
+            for (int p = 0; p < fc->value; p++)
+                face_pip(d, e, fcx, fcy, fc, PIPS[fc->value][p][0], PIPS[fc->value][p][1], col, ink_a);
+        } else if (e->kind == D4) {
+            for (int k = 0; k < 3; k++) {
+                Vec3 vtx = m->verts[fc->idx[k]], toward = v_norm(v_sub(vtx, fc->c));
+                Vec3 at = v_add(fc->c, v_scale(v_sub(vtx, fc->c), 0.5f));
+                float px, py;
+                to_screen(e, R, at, &px, &py);
+                face_number(d, e, px + ocx, py + ocy, v_cross(fc->normal, toward), toward,
+                            fc->ri * 0.95f / FONT_H, fc->idx[k] + 1, col, 0xFFFFFF, ink_a);
             }
-        } else if (e->kind != D4 && f == topf) {
-            float mcx = 0, mcy = 0;
-            for (int i = 0; i < fc->nverts; i++) { mcx += fx[i]; mcy += fy[i]; }
-            mcx /= fc->nverts; mcy /= fc->nverts;
-            int sc = (R >= 16 && fc->value < 10) ? 2 : 1;
-            uint32_t ink = (e->kind == D20 && fc->value == 20 && e->settled) ? 0xFFE04A : 0xFFFFFF;
-            number(&d->top, fc->value, mcx, mcy, sc, col, ink);
+        } else {
+            char s[4];
+            snprintf(s, sizeof s, "%d", fc->value);
+            float tw = (float)glyphs_w(s, 1), px = fminf(1.3f * fc->ri / FONT_H, 1.75f * fc->ri / tw);
+            uint32_t ink = (e->kind == D20 && fc->value == 20 && e->settled && f == topf) ? 0xFFE04A : 0xFFFFFF;
+            face_number(d, e, fcx, fcy, fc->right, fc->up, px, fc->value, col, ink, ink_a);
         }
-    }
-    /* A d4 is read at its top corner. That corner points at the viewer, so one number
-       sits right on it (drawing it on each face around the corner reads as "44"). */
-    if (e->kind == D4) {
-        float px = lerp(cx, sx[topv], 0.55f), py = lerp(cy - e->z * 0.85f, sy[topv], 0.55f);
-        number(&d->top, topv + 1, px, py, R >= 16 ? 2 : 1, base, 0xFFFFFF);
     }
 }
 
@@ -707,8 +801,34 @@ static Quat compute_target_orientation(const PolyMesh *m, int kind, int value) {
         for (int f = 0; f < m->nfaces; f++)
             if (m->faces[f].value == value) { n = m->faces[f].normal; break; }
     Vec3 up = rest_dir();
-    Quat spin = quat_axis_angle(up, frand(0, 2 * PI_F));  /* so two 8s don't look identical */
-    return quat_norm(quat_mul(spin, orient_face_to(n, up)));
+    if (kind == D4) {
+        /* A d4 sits flat on the felt with the rolled corner straight up, one face turned
+           toward the viewer so the number near that corner reads upright. */
+        Vec3 z = vec3(0, 0, 1);
+        Quat align = orient_face_to(n, z);
+        Mat3 a = quat_to_mat3(align);
+        const PolyFace *front = &m->faces[0];
+        for (int f = 0; f < m->nfaces; f++) {
+            int has = 0;
+            for (int i = 0; i < 3; i++) has |= m->faces[f].idx[i] == value - 1;
+            if (has) { front = &m->faces[f]; break; }
+        }
+        Vec3 fn = mat3_mul_v(a, front->normal);
+        float turn = atan2f(fn.x, fn.y) + frand(-0.3f, 0.3f);   /* swing its normal round to +y */
+        return quat_norm(quat_mul(quat_axis_angle(z, turn), align));
+    }
+    Quat align = orient_face_to(n, up);
+    float turn;
+    {
+        /* Turn the rolled face's number exactly upright (its "up" pointing away from the
+           viewer): even a slight tilt makes pixel digits jagged. */
+        const PolyFace *fc = &m->faces[0];
+        for (int f = 0; f < m->nfaces; f++) if (m->faces[f].value == value) fc = &m->faces[f];
+        Vec3 u1 = mat3_mul_v(quat_to_mat3(align), fc->up), away = vec3(0, -1, 0);
+        away = v_norm(v_sub(away, v_scale(up, v_dot(away, up))));
+        turn = atan2f(v_dot(v_cross(u1, away), up), v_dot(u1, away));
+    }
+    return quat_norm(quat_mul(quat_axis_angle(up, turn), align));
 }
 
 static void new_roll(Dice *d) {
