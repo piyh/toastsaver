@@ -14,7 +14,7 @@
 
 const Saver *const SAVERS[] = {
     &saver_toasters, &saver_rainbow, &saver_pipes, &saver_books, &saver_aquarium,
-    &saver_starfield, &saver_mystify, &saver_matrix, &saver_lava, &saver_name,
+    &saver_birds, &saver_starfield, &saver_mystify, &saver_matrix, &saver_lava, &saver_name,
 };
 const int SAVER_COUNT = sizeof SAVERS / sizeof SAVERS[0];
 

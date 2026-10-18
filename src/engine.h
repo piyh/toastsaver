@@ -99,7 +99,7 @@ typedef struct Saver {
 
 extern const Saver saver_toasters, saver_pipes, saver_starfield, saver_mystify,
                    saver_matrix, saver_aquarium, saver_lava, saver_name,
-                   saver_rainbow, saver_books;
+                   saver_rainbow, saver_books, saver_birds;
 extern const Saver *const SAVERS[];
 extern const int SAVER_COUNT;
 const Saver *saver_find(const char *id);   /* NULL if unknown */
