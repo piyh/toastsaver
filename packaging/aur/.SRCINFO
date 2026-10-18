@@ -1,0 +1,21 @@
+pkgbase = toastsaver
+	pkgdesc = Retro screensavers for Wayland: flying toasters, 3D pipes, aquarium and more, with a kid-friendly picker
+	pkgver = 1.0.0
+	pkgrel = 1
+	url = https://github.com/piyh/toastsaver
+	arch = x86_64
+	arch = aarch64
+	arch = armv7h
+	license = MIT
+	makedepends = pkgconf
+	depends = sdl2
+	depends = swayidle
+	depends = procps-ng
+	depends = libglvnd
+	depends = hicolor-icon-theme
+	optdepends = wlopm: turn the display off after a while
+	options = !debug
+	source = toastsaver-1.0.0.tar.gz::https://github.com/piyh/toastsaver/archive/refs/tags/v1.0.0.tar.gz
+	sha256sums = 596d7d1752c3b264520a4b913ee0e77821d366a7990367e1e489106da08b7dd8
+
+pkgname = toastsaver
