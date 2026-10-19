@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Screensavers
-Comment=Pick a screensaver (hold the gear for settings)
+Comment=Pick a screensaver (the gear opens settings)
 Exec=@BINDIR@/toastsaver-picker
 Icon=toastsaver
 Categories=Settings;DesktopSettings;Game;

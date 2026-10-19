@@ -1,5 +1,5 @@
-/* The settings page, reached from the picker's gear (held down, so kids don't wander in)
-   or with toastsaver-settings: on/off, timings, clock, power saving and a test run.
+/* The settings page, reached from the gear in the picker's corner: on/off, timings,
+   clock, power saving and a test run.
    Every change is saved at once; timing changes restart the idle watcher when the page
    closes so they apply without logging out. The rows that need the idle watcher are
    greyed out where it isn't installed (the Mac preview), instead of doing nothing. */

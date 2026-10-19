@@ -40,5 +40,5 @@ else
 fi
 echo
 echo "Pick a screensaver:  'Screensavers' on the desktop or in the menu"
-echo "Settings:            hold the gear in its top-left corner"
+echo "Settings:            the gear in its top-left corner"
 echo "Check everything:    toastsaver-idle --check"

@@ -7,7 +7,7 @@
 #   3. a screensaver over the picker can be dismissed without closing the picker
 #   4. toastsaver-idle --now pipes starts that saver
 #   5. settings: --set keeps the file's comments, --restart swaps the watcher,
-#      ENABLED=0 stops it, the app opens on its settings page, a saver runs with the clock on
+#      ENABLED=0 stops it, the app opens, a saver runs with the clock on
 # Usually run through tests/run.sh, which uses prepared images (tests/Dockerfile) and
 # runs the suites in parallel. It also works on a plain Debian image, as CI does:
 #   docker run --rm -v "$PWD":/src debian:trixie sh /src/tests/pi-os-test.sh
@@ -137,10 +137,12 @@ grep -q "^CLOCK=1 .*# 1 = show a clock" ~/.config/toastsaver.conf || fail "comme
 grep -q "^IDLE_MINUTES=10 .*# minutes" ~/.config/toastsaver.conf || fail "IDLE_MINUTES not saved with its comment"
 echo "--set keeps comments: ok"
 OLD=$(pgrep -x swayidle)
-replaced() { N=$(pgrep -x swayidle || true); [ -n "$N" ] && [ "$N" != "$OLD" ] && watchers 1; }
+# Settled on one new watcher with the new timings. (While the old one exits it briefly
+# forks a child to run its resume command, which also shows up as "swayidle".)
+replaced() { N=$(pgrep -x swayidle || true); [ -n "$N" ] && [ "$N" != "$OLD" ] && watchers 1 \
+    && pgrep -a -x swayidle | grep -q "timeout 600"; }
 toastsaver-idle --restart
-until_ 5 replaced || fail "--restart did not replace the watcher"
-pgrep -a swayidle | grep -q "timeout 600" || fail "new watcher is not using IDLE_MINUTES=10"
+until_ 5 replaced || { pgrep -a swayidle; fail "--restart did not leave one new watcher using IDLE_MINUTES=10"; }
 echo "--restart picks up new timings: ok"
 toastsaver --set ENABLED=0 >/dev/null; toastsaver-idle --restart
 until_ 5 watchers 0 || fail "watcher still running with ENABLED=0"

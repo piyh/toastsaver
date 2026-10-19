@@ -142,7 +142,7 @@ On a keyboard, use the arrow keys to move, **Enter** to try, **Tab** to turn SUR
 
 ### Settings (for grown-ups)
 
-**Hold the gear** in the top-left corner for about a second; a ring fills up and the settings page opens. A quick tap just says "hold for settings", so curious fingers don't wander in. `toastsaver-settings` opens the app straight on this page. Changes are saved right away, and new timings take effect as soon as you go back.
+Click the **gear** in the top-left corner of the app. Changes are saved right away, and new timings take effect as soon as you go back.
 
 ![Settings](docs/settings.png)
 
@@ -161,7 +161,7 @@ On a keyboard, use the arrow keys to move, **Enter** to try, **Tab** to turn SUR
 | Command | What it does |
 | --- | --- |
 | `toastsaver-picker` | Open the app |
-| `toastsaver-settings` | Open the app on its settings page |
+| `toastsaver-settings` | Same as `toastsaver-picker` (kept for older menus) |
 | `toastsaver-idle --now` | Show your chosen saver now |
 | `toastsaver-idle --now pipes` | Show a specific saver now |
 | `toastsaver-idle --check` | Check that everything is set up and running |
@@ -241,7 +241,7 @@ toastsaver --snapshot out.png --size 1280x720 --seconds 5 pipes
 2. an app that inhibits idle (like a playing video) stops it from starting, and it starts again once that app closes,
 3. dismissing a saver that pops up over the picker leaves the picker open,
 4. `toastsaver-idle --now pipes` starts that saver,
-5. settings: `--set` keeps the file's comments, `--restart` switches to the new timings, `ENABLED=0` stops the watcher, the app opens on its settings page and a saver runs with the clock on,
+5. settings: `--set` keeps the file's comments, `--restart` switches to the new timings, `ENABLED=0` stops the watcher, the app opens and a saver runs with the clock on,
 6. for the `.deb`: `apt remove` and `apt purge` clean up.
 
 `make check` adds a quick check of the dice geometry that needs no display.

@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 #define PI_F 3.14159265f
-#define VERSION "1.1.0"
+#define VERSION "1.2.0"
 
 /* Install locations, passed in by the Makefile. */
 #ifndef TOASTSAVER_BINDIR
@@ -115,7 +115,7 @@ int saver_set_in_mix(const Saver *sv, int on); /* 0 (and no change) if that woul
 /* Runs a saver in the window until input (after a short grace period). Returns 1 if the
    whole app should quit (window closed / SIGTERM), 0 if it was dismissed by input. */
 int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed);
-int run_picker(SDL_Window *win, SDL_Renderer *r, int settingsFirst);   /* the app window */
+int run_picker(SDL_Window *win, SDL_Renderer *r);   /* the app window */
 int run_settings(SDL_Window *win, SDL_Renderer *r);
 void *settings_create(SDL_Renderer *r, int w, int h);
 void settings_step(void *p, float dt);

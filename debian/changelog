@@ -1,3 +1,17 @@
+toastsaver (1.2.0) stable; urgency=medium
+
+  * One app: you always start by picking a screensaver, and the gear in
+    the corner opens the rest of the settings in the same window. One
+    menu entry instead of two.
+  * Save power: savers draw at 30 frames a second by default (FPS=30);
+    switch it off in settings or set FPS=0 to follow the display.
+  * DICE uses about 5x less CPU per frame, with the same picture.
+  * toastsaver --bench SAVER|all prints how long each saver takes per
+    frame on this machine.
+  * The macOS preview opens the same app with the same settings file.
+
+ -- piyh <10518137+piyh@users.noreply.github.com>  Mon, 19 Oct 2026 05:41:02 +0000
+
 toastsaver (1.1.0) stable; urgency=medium
 
   * New screensavers: RAINBOW (the Waffle Cat flies on a rainbow),

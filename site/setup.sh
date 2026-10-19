@@ -13,4 +13,4 @@ sudo apt-get update
 sudo apt-get install -y toastsaver
 echo
 echo "Installed. It starts automatically the next time you log in."
-echo "Open 'Screensavers' from the menu (hold its gear for settings), or run: toastsaver-idle --restart"
+echo "Open 'Screensavers' from the menu (its gear opens settings), or run: toastsaver-idle --restart"
