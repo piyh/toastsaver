@@ -89,22 +89,6 @@ curl -fsSL https://raw.githubusercontent.com/piyh/toastsaver/main/extras/enable-
 
 [`enable-auto-updates.sh`](extras/enable-auto-updates.sh) adds a small systemd timer; the script's first lines say how to undo it.
 
-#### Switching from a source or USB install
-
-If you installed with `./install.sh` or from a USB stick, this removes that install (keeping your settings), installs the apt package, and turns on automatic updates:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/piyh/toastsaver/main/extras/migrate-to-apt.sh | sh -s -- --auto-updates
-```
-
-Leave off `-s -- --auto-updates` to skip the automatic updates.
-
-The repository is signed with this key (also in [`packaging/toastsaver-archive-keyring.asc`](packaging/toastsaver-archive-keyring.asc)):
-
-```
-01E0 71BE 5AE3 0687 7A69  7699 EDD0 90A6 DE03 BB9F
-```
-
 ### Arch Linux
 
 A [`PKGBUILD`](packaging/aur/PKGBUILD) is included. Build it with `makepkg -si` from that folder. An AUR package is coming.
@@ -117,7 +101,7 @@ cd toastsaver
 ./install.sh
 ```
 
-This installs the build tools, builds, and installs under `/usr/local`. To install offline from a USB stick, copy the folder onto the stick and run `sh /media/$USER/<stick>/toastsaver/extras/deploy-from-usb.sh` on the Pi.
+This installs the build tools, builds, and installs under `/usr/local`.
 
 ### After installing
 
