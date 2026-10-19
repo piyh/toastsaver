@@ -1,8 +1,8 @@
+# Testing and releasing run locally (sh tests/run.sh, sh packaging/release.sh), so this
+# never runs by itself. It's kept for a manual run from the Actions tab if ever wanted.
 name: CI
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   check:

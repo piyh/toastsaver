@@ -1,0 +1,5 @@
+#!/bin/sh
+# Local CI: runs the quick tests (sh tests/run.sh, about 30 s) before anything is pushed.
+# Turn on once per clone:  git config core.hooksPath .githooks
+# Skip for one push:       git push --no-verify
+exec sh "$(git rev-parse --show-toplevel)/tests/run.sh"

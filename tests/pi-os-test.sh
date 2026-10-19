@@ -29,7 +29,7 @@ else
 fi
 echo "--- shellcheck"
 shellcheck -s sh /src/install.sh /src/uninstall.sh /src/extras/*.sh /src/scripts/toastsaver-idle \
-    /src/tests/run.sh /src/packaging/build-deb.sh || { echo "FAIL: shellcheck"; exit 1; }
+    /src/tests/run.sh /src/packaging/build-deb.sh /src/packaging/release.sh /src/.githooks/pre-push || { echo "FAIL: shellcheck"; exit 1; }
 echo "clean"
 
 # A disposable user with passwordless sudo, so installs run unattended (container only).
