@@ -63,6 +63,11 @@ Render a frame to a PNG file without a display (with
 and
 .BI \-\-seconds " N"
 ).
+.TP
+.BI \-\-bench " [SAVER|all] [FRAMES]"
+Diagnostic: print average step and draw time per frame for each saver (1920x1080 unless
+.BI \-\-size
+is given), on a hidden window.
 .SH SAVERS
 toasters, rainbow, pipes, books, dice, aquarium, birds, starfield, mystify, matrix, lava,
 name, and random.
@@ -73,7 +78,8 @@ picks a different saver each time, only from those listed in RANDOM_SAVERS
 .TP
 .I ~/.config/toastsaver.conf
 Settings, in shell syntax: ENABLED, SAVER, NAME, IDLE_MINUTES,
-SCREEN_OFF_MINUTES, CLOCK, CLOCK_24H and RANDOM_SAVERS (a comma-separated
+SCREEN_OFF_MINUTES, CLOCK, CLOCK_24H, FPS (a frame-rate cap; 0 means as fast as the
+display, 30 saves power on a Pi) and RANDOM_SAVERS (a comma-separated
 list of savers for SAVER=random; empty means all, unknown names are ignored).
 Created on first change.
 .SH NOTES

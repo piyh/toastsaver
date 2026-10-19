@@ -166,6 +166,7 @@ IDLE_MINUTES=5          # minutes of no input before the screensaver appears
 SCREEN_OFF_MINUTES=30   # minutes before the display turns off (0 = never)
 CLOCK=0                 # 1 = show a drifting clock over the screensaver
 CLOCK_24H=0             # 1 = 24-hour clock
+FPS=0                   # 0 = as fast as the display; 30 saves power on a Pi
 ```
 
 ## How it works

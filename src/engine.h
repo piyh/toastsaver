@@ -26,6 +26,7 @@ typedef struct {
     int screenOffMinutes;    /* SCREEN_OFF_MINUTES: display off after (0 = never) */
     int clock;               /* CLOCK: 1 shows a drifting clock over any saver */
     int clock24;             /* CLOCK_24H: 1 for 24-hour time */
+    int fps;                 /* FPS: frame-rate cap for savers (0 = as fast as the display) */
     char randomSavers[256];  /* RANDOM_SAVERS: ids SURPRISE picks from ("" = every saver) */
 } Config;
 

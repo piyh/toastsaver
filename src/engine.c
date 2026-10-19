@@ -9,7 +9,7 @@
 
 /* ---------- settings ---------- */
 
-Config g_config = { 1, "toasters", "HELLO", 5, 30, 0, 0, "" };
+Config g_config = { 1, "toasters", "HELLO", 5, 30, 0, 0, 0, "" };
 
 const char *config_path(void) {
     static char path[1024];
@@ -53,6 +53,7 @@ int config_apply(const char *line) {
     else if (!strncmp(line, "SCREEN_OFF_MINUTES=", 19)) g_config.screenOffMinutes = atoi(v) > 0 ? atoi(v) : 0;
     else if (!strncmp(line, "CLOCK=", 6)) g_config.clock = atoi(v) != 0;
     else if (!strncmp(line, "CLOCK_24H=", 10)) g_config.clock24 = atoi(v) != 0;
+    else if (!strncmp(line, "FPS=", 4)) g_config.fps = atoi(v) > 0 ? atoi(v) : 0;
     else if (!strncmp(line, "RANDOM_SAVERS=", 14)) snprintf(g_config.randomSavers, sizeof g_config.randomSavers, "%s", v);
     else return 0;
     return 1;
@@ -67,10 +68,10 @@ void config_load(void) {
 }
 
 /* Every setting we own, with the comment written next to it in a new file. */
-#define NKEYS 8
+#define NKEYS 9
 static const char *const KEYS[NKEYS] = {
     "ENABLED=", "SAVER=", "NAME=", "IDLE_MINUTES=", "SCREEN_OFF_MINUTES=", "CLOCK=", "CLOCK_24H=",
-    "RANDOM_SAVERS=" };
+    "FPS=", "RANDOM_SAVERS=" };
 static const char *const HELP[NKEYS] = {
     "# 0 = turn the screensaver off",
     "# toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava name random",
@@ -79,6 +80,7 @@ static const char *const HELP[NKEYS] = {
     "# minutes before the display turns off (0 = never)",
     "# 1 = show a clock over the screensaver",
     "# 1 = 24-hour clock",
+    "# 0 = as fast as the display; 30 saves power on a Pi",
     "# savers SAVER=random picks from, comma-separated (empty = all)" };
 
 static void format_key(int k, char *out, size_t n) {
@@ -90,6 +92,7 @@ static void format_key(int k, char *out, size_t n) {
     case 4: snprintf(out, n, "SCREEN_OFF_MINUTES=%d", g_config.screenOffMinutes); break;
     case 5: snprintf(out, n, "CLOCK=%d", g_config.clock); break;
     case 6: snprintf(out, n, "CLOCK_24H=%d", g_config.clock24); break;
+    case 7: snprintf(out, n, "FPS=%d", g_config.fps); break;
     default: snprintf(out, n, "RANDOM_SAVERS=%s", g_config.randomSavers); break;
     }
 }
