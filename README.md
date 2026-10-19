@@ -244,11 +244,16 @@ toastsaver --snapshot out.png --size 1280x720 --seconds 5 pipes
 5. settings: `--set` keeps the file's comments, `--restart` switches to the new timings, `ENABLED=0` stops the watcher, the settings window opens and a saver runs with the clock on,
 6. for the `.deb`: `apt remove` and `apt purge` clean up.
 
+`make check` adds a quick check of the dice geometry that needs no display.
+
+[`tests/run.sh`](tests/run.sh) runs it all in parallel, in prepared Docker images ([`tests/Dockerfile`](tests/Dockerfile)) so nothing is downloaded during a run:
+
 ```sh
-docker run --rm -v "$PWD":/src debian:trixie sh /src/tests/pi-os-test.sh
-sh packaging/build-deb.sh arm64          # builds dist/toastsaver_<version>_arm64.deb (also armhf, amd64)
-sh packaging/test-debs.sh                # runs the suite against the built packages
+sh tests/run.sh          # about 30 s: from source on trixie and bookworm, plus the native .deb
+sh tests/run.sh full     # also the .deb on bookworm and the emulated armhf/amd64 packages (minutes)
 ```
+
+The first run builds the images, which takes a few minutes; later runs reuse them. The suite also runs on a plain image, which is what CI does: `docker run --rm -v "$PWD":/src debian:trixie sh /src/tests/pi-os-test.sh`. To build a package by itself: `sh packaging/build-deb.sh arm64` (or `armhf`, `amd64`) writes `dist/toastsaver_<version>_<arch>.deb`.
 
 ### Releases
 
