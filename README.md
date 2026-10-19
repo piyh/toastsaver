@@ -1,7 +1,5 @@
 # toastsaver
 
-[![CI](https://github.com/piyh/toastsaver/actions/workflows/ci.yml/badge.svg)](https://github.com/piyh/toastsaver/actions/workflows/ci.yml)
-
 Retro screensavers for Raspberry Pi OS and other Wayland desktops: flying toasters, a rainbow waffle cat, 3D pipes, a cozy bookshelf, birds in a summer sky and more, with a big friendly picker that a six-year-old can use.
 
 ![toastsaver demo](docs/demo.gif)
@@ -58,8 +56,6 @@ Twelve screensavers, plus a SURPRISE ME button that picks a random one each time
 
 Keep watching the toasters. Every so often a toaster flies by in a **propeller beanie**, a **golden toast** sparkles past, or a **bagel** sneaks in with the toast.
 
-![A toaster, the propeller beanie, toast, golden toast and a bagel](docs/eggs.png)
-
 ## Install
 
 ### Raspberry Pi OS, Debian and Ubuntu (64-bit, 32-bit Pi and x86)
@@ -86,12 +82,14 @@ A [`PKGBUILD`](packaging/aur/PKGBUILD) is included. Build it with `makepkg -si` 
 ### From source
 
 ```sh
+sudo apt install build-essential pkg-config libsdl2-dev swayidle
 git clone https://github.com/piyh/toastsaver.git
 cd toastsaver
-./install.sh
+make && sudo make install
+toastsaver --desktop-icon            # optional: a Screensavers icon on the desktop
 ```
 
-This installs the build tools, builds, and installs under `/usr/local`.
+This installs under `/usr/local`. `wlopm` (if your distribution has it) lets toastsaver turn the display off after a while.
 
 ### After installing
 
@@ -195,7 +193,7 @@ sudo apt remove toastsaver       # keeps the autostart file in /etc (it is ignor
 sudo apt purge toastsaver        # removes everything except your ~/.config/toastsaver.conf
 ```
 
-For a source install, run `./uninstall.sh`.
+For a source install, run `sudo make uninstall` in the source folder.
 
 ## Development
 

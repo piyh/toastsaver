@@ -1,6 +1,6 @@
 #!/bin/sh
 # End-to-end test in a throwaway Debian container (the base of Raspberry Pi OS).
-# Installs toastsaver (from source with install.sh, or a .deb with apt if DEB is
+# Installs toastsaver (from source with make install, or a .deb with apt if DEB is
 # set), starts a headless compositor, and checks that:
 #   1. the screensaver appears after the idle timeout and leaves on a key press
 #   2. an app that inhibits idle (like a playing video) stops it from starting
@@ -25,10 +25,10 @@ else
     # Test tools only. Graphics libraries come from the package's own dependencies (DEB mode).
     apt-get install -y -qq $COMP grim wtype shellcheck procps sudo >/dev/null
     # A source install needs the compiler before the build-warnings check runs.
-    [ -n "$DEB" ] || apt-get install -y -qq build-essential pkgconf libsdl2-dev >/dev/null
+    [ -n "$DEB" ] || apt-get install -y -qq build-essential pkgconf libsdl2-dev swayidle >/dev/null
 fi
 echo "--- shellcheck"
-shellcheck -s sh /src/install.sh /src/uninstall.sh /src/scripts/toastsaver-idle \
+shellcheck -s sh /src/scripts/toastsaver-idle \
     /src/tests/run.sh /src/packaging/build-deb.sh /src/packaging/release.sh /src/.githooks/pre-push || { echo "FAIL: shellcheck"; exit 1; }
 echo "clean"
 
@@ -68,7 +68,8 @@ if [ -z "$DEB" ]; then
     W=$(make 2>&1 | grep -Ei "warning|error" || true)
     if [ -n "$W" ]; then echo "$W" | sed "s/^/WARN /"; else echo "none"; fi
     echo "--- make check"; make -s check 2>&1 | tail -1
-    echo "--- installer"; ./install.sh 2>&1 | grep "==>"
+    echo "--- make install"; sudo make install PREFIX=/usr/local >/dev/null && echo ok
+    toastsaver --desktop-icon
 else
     toastsaver --desktop-icon
 fi

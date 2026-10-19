@@ -1,7 +1,7 @@
 # Debian images with what the tests need already in place, so a run downloads nothing.
 # tests/run.sh builds them (Docker caches them after the first time). Two kinds:
 #   KIND=src  compiler, SDL, debhelper and the test tools all installed; apt's sources
-#             are removed, so install.sh's "apt-get install" finds everything at once.
+#             are removed, so nothing can download during a run.
 #             Used for the from-source suite, building the .deb, and building and
 #             signing the APT repository (packaging/release.sh).
 #   KIND=deb  only the test tools installed. The package's libraries are downloaded into
