@@ -1,3 +1,15 @@
+toastsaver (1.3.0) stable; urgency=medium
+
+  * FISH has new friends: a shark swims by now and then (and the little
+    fish dart out of its way), plus a sea turtle, jellyfish, a crab on
+    the sand, an angelfish, coral and starfish. The fish are shaded and
+    a few hazy ones swim far in the back.
+  * Updates arrive with a plain apt upgrade; the extra update timer and
+    the USB stick installer scripts are gone.
+  * From source is now just make && sudo make install.
+
+ -- piyh <10518137+piyh@users.noreply.github.com>  Mon, 19 Oct 2026 21:20:58 +0000
+
 toastsaver (1.2.0) stable; urgency=medium
 
   * One app: you always start by picking a screensaver, and the gear in
