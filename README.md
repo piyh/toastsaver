@@ -255,9 +255,18 @@ sh tests/run.sh full     # also the .deb on bookworm and the emulated armhf/amd6
 
 The first run builds the images, which takes a few minutes; later runs reuse them. The suite also runs on a plain image, which is what CI does: `docker run --rm -v "$PWD":/src debian:trixie sh /src/tests/pi-os-test.sh`. To build a package by itself: `sh packaging/build-deb.sh arm64` (or `armhf`, `amd64`) writes `dist/toastsaver_<version>_<arch>.deb`.
 
+Before every push, a git hook runs the quick tests. Turn it on once per clone with `git config core.hooksPath .githooks`; skip it for one push with `git push --no-verify`.
+
 ### Releases
 
-Pushing a tag like `v1.0.1` (matching the top entry in `debian/changelog`) makes GitHub Actions build the three packages, run the tests against them, create a GitHub release, and publish the signed APT repository to GitHub Pages.
+Releases are made from a developer machine; no CI service is involved. Add a `debian/changelog` entry, bump `VERSION` in `src/engine.h` and the version in `man/toastsaver.1`, commit, then:
+
+```sh
+sh packaging/release.sh --dry-run    # everything short of publishing (about 90 s)
+sh packaging/release.sh              # publish
+```
+
+[`packaging/release.sh`](packaging/release.sh) runs the full tests (which build the three packages) and builds the Mac app. It then tags and pushes, creates the GitHub release with `gh`, builds and signs the APT repository in a throwaway container and pushes it to the `gh-pages` branch (served by GitHub Pages), and updates the AUR checksum. Finally it checks a fresh install and an upgrade against the live repository. It needs Docker, `gh` signed in, and the APT signing key in a local file (`TOASTSAVER_SIGNING_KEY`) or from a command such as a password manager's CLI (`TOASTSAVER_SIGNING_KEY_CMD`).
 
 ## About
 
