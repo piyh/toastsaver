@@ -28,7 +28,7 @@ else
     [ -n "$DEB" ] || apt-get install -y -qq build-essential pkgconf libsdl2-dev >/dev/null
 fi
 echo "--- shellcheck"
-shellcheck -s sh /src/install.sh /src/uninstall.sh /src/extras/*.sh /src/scripts/toastsaver-idle \
+shellcheck -s sh /src/install.sh /src/uninstall.sh /src/scripts/toastsaver-idle \
     /src/tests/run.sh /src/packaging/build-deb.sh /src/packaging/release.sh /src/.githooks/pre-push || { echo "FAIL: shellcheck"; exit 1; }
 echo "clean"
 

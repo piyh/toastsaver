@@ -77,17 +77,7 @@ echo "deb [signed-by=/etc/apt/keyrings/toastsaver.gpg] https://piyh.github.io/to
 sudo apt update && sudo apt install toastsaver
 ```
 
-Updates then arrive with your normal system updates. You can also download a `.deb` from the [releases page](https://github.com/piyh/toastsaver/releases) and install it with `sudo apt install ./toastsaver_*.deb`.
-
-#### Automatic updates
-
-To have toastsaver update itself (handy on a kid's computer nobody runs `apt upgrade` on), turn on a once-a-day check. It refreshes only the toastsaver repository and upgrades only toastsaver; nothing else on the system changes:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/piyh/toastsaver/main/extras/enable-auto-updates.sh | sh
-```
-
-[`enable-auto-updates.sh`](extras/enable-auto-updates.sh) adds a small systemd timer; the script's first lines say how to undo it.
+Updates then arrive with your normal system updates (`sudo apt update && sudo apt upgrade`, or the updater in the Raspberry Pi OS taskbar). You can also download a `.deb` from the [releases page](https://github.com/piyh/toastsaver/releases) and install it with `sudo apt install ./toastsaver_*.deb`.
 
 ### Arch Linux
 
