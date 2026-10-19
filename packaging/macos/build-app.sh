@@ -21,13 +21,10 @@ chmod u+w "$APP/Contents/Frameworks/"*.dylib
 install_name_tool -id @rpath/libSDL2-2.0.0.dylib "$APP/Contents/Frameworks/libSDL2-2.0.0.dylib"
 install_name_tool -change "$SDL2" @executable_path/../Frameworks/libSDL2-2.0.0.dylib "$APP/Contents/MacOS/toastsaver-bin"
 
-# Launcher: keep the demo's settings out of the home folder.
+# Launcher: opens the same app as the Screensavers menu entry on Linux, with the same
+# settings file (~/.config/toastsaver.conf).
 cat > "$APP/Contents/MacOS/Toastsaver" <<'SH'
 #!/bin/sh
-export XDG_CONFIG_HOME="${TMPDIR:-/tmp}/toastsaver-demo"
-mkdir -p "$XDG_CONFIG_HOME"
-# The demo has no Settings window, so show the clock (off by default on the Pi).
-"$(dirname "$0")/toastsaver-bin" --set CLOCK=1 >/dev/null
 exec "$(dirname "$0")/toastsaver-bin" --picker
 SH
 chmod 755 "$APP/Contents/MacOS/Toastsaver"

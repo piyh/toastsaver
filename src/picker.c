@@ -1,13 +1,16 @@
-/* The picker: big live tiles a six-year-old can use. Tap a tile to choose it
-   (saved immediately), tap it again or press TRY IT to watch it. SURPRISE ME
-   (below the tiles) switches to a random saver each time; while it is on, tapping
-   a tile puts it in or takes it out of the surprise mix. */
+/* The picker, the app's front page: big live tiles a six-year-old can use. Tap a tile to
+   choose it (saved immediately), tap it again or press TRY IT to watch it. SURPRISE ME
+   (below the tiles) switches to a random saver each time; while it is on, tapping a
+   tile puts it in or takes it out of the surprise mix. The gear in the top-left corner
+   opens the settings page in the same window, but only when held for a moment, so a
+   quick tap from a small hand just shows "HOLD FOR SETTINGS". */
 #include "engine.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define MAX_TILES 16
+#define GEAR_HOLD 0.8f   /* seconds the gear must be held to open settings */
 #define TILES SAVER_COUNT
 
 typedef struct {
@@ -24,8 +27,11 @@ typedef struct {
     Tile tile[MAX_TILES];
     int cols;
     SDL_Rect tryBtn, nameBox, surpriseBtn;
-    SDL_Point closeC;
+    SDL_Point closeC, gearC;
     int closeR;
+    float gearHold;        /* seconds the gear has been held; -1 while it isn't */
+    float hint;            /* seconds left showing "HOLD FOR SETTINGS" */
+    int openSettings;
 } Picker;
 
 static int name_selected(const Picker *p) { return !p->surprise && p->tile[p->sel].sv == &saver_name; }
@@ -62,6 +68,7 @@ static void layout(Picker *p) {
     p->nameBox = (SDL_Rect){ W * 68 / 100, by, W * 28 / 100, bh };
     p->closeR = (int)(p->titleH * 0.3f);
     p->closeC = (SDL_Point){ W - m - p->closeR, (int)(p->titleH / 2) };
+    p->gearC = (SDL_Point){ m + p->closeR, (int)(p->titleH / 2) };
 }
 
 static void save_choice(Picker *p) {
@@ -114,6 +121,7 @@ void *picker_create(SDL_Renderer *r, int w, int h) {
     p->w = w;
     p->h = h;
     p->hover = -1;
+    p->gearHold = -1;
     layout(p);
     p->surprise = !strcmp(g_config.saver, "random");
     for (int i = 0; i < SAVER_COUNT; i++)
@@ -130,6 +138,8 @@ void picker_step(void *v, float dt) {
     Picker *p = v;
     p->t += dt;
     p->bump = p->bump > 0 ? p->bump - dt * 3 : 0;
+    p->hint = p->hint > 0 ? p->hint - dt : 0;
+    if (p->gearHold >= 0 && (p->gearHold += dt) >= GEAR_HOLD) { p->gearHold = -1; p->openSettings = 1; }
     for (int i = 0; i < TILES; i++)
         if (p->tile[i].st) p->tile[i].sv->step(p->tile[i].st, dt);
 }
@@ -221,6 +231,33 @@ static void draw_tile(Picker *p, SDL_Renderer *r, int i) {
     else if (p->surprise) empty_badge(r, bx, by, br);
 }
 
+/* The settings gear: quiet colours, and a ring that fills while it's held. */
+static void draw_gear(Picker *p, SDL_Renderer *r) {
+    float cx = (float)p->gearC.x, cy = (float)p->gearC.y, rad = p->closeR * 0.95f;
+    SDL_Color c = hexcol(0xB8C4FF);
+    for (int k = 0; k < 8; k++) {
+        float a = k * PI_F / 4;
+        thick_line(r, cx + cosf(a) * rad * 0.5f, cy + sinf(a) * rad * 0.5f,
+                   cx + cosf(a) * rad, cy + sinf(a) * rad, rad * 0.3f, c);
+    }
+    fill_circle(r, cx, cy, rad * 0.72f, c);
+    fill_circle(r, cx, cy, rad * 0.3f, hexcol(0x3A1C71));
+    if (p->gearHold > 0) {
+        float k = p->gearHold / GEAR_HOLD, R = rad * 1.3f;
+        int n = (int)(k * 32) + 1;
+        for (int i = 0; i < n; i++) {
+            float a0 = -PI_F / 2 + 2 * PI_F * i / 32, a1 = -PI_F / 2 + 2 * PI_F * (i + 1 < n ? i + 1 : k * 32) / 32;
+            thick_line(r, cx + cosf(a0) * R, cy + sinf(a0) * R, cx + cosf(a1) * R, cy + sinf(a1) * R,
+                       rad * 0.22f, hexcol(0xFFE45C));
+        }
+    }
+    if (p->hint > 0) {
+        int sc = (int)(p->titleH * 0.14f / FONT_H);
+        if (sc < 1) sc = 1;
+        draw_text_shadow(r, "HOLD FOR SETTINGS", (int)(cx - rad), (int)(cy + rad * 1.5f), sc, hexcol(0xFFFFFF));
+    }
+}
+
 void picker_draw(void *v, SDL_Renderer *r) {
     Picker *p = v;
     SDL_RenderSetViewport(r, NULL);
@@ -237,6 +274,7 @@ void picker_draw(void *v, SDL_Renderer *r) {
     thick_line(r, p->closeC.x - k, p->closeC.y + k, p->closeC.x + k, p->closeC.y - k, p->closeR * 0.28f, hexcol(0xFFFFFF));
 
     for (int i = 0; i < TILES; i++) draw_tile(p, r, i);
+    draw_gear(p, r);
     place_footer(p);
 
     /* SURPRISE ME: a toggle. On, it glows like a chosen tile and its die rolls. */
@@ -292,6 +330,8 @@ static void try_it(Picker *p, SDL_Window *win) {
 static void click(Picker *p, SDL_Window *win, int x, int y) {
     int dx = x - p->closeC.x, dy = y - p->closeC.y;
     if (dx * dx + dy * dy <= p->closeR * p->closeR * 1.6f) { p->quit = 1; return; }
+    dx = x - p->gearC.x; dy = y - p->gearC.y;
+    if (dx * dx + dy * dy <= p->closeR * p->closeR * 1.6f) { p->gearHold = 0; return; }   /* start holding */
     place_footer(p);
     if (hit(p->tryBtn, x, y)) { try_it(p, win); return; }
     if (hit(p->surpriseBtn, x, y)) { toggle_surprise(p); return; }
@@ -304,10 +344,11 @@ static void click(Picker *p, SDL_Window *win, int x, int y) {
         }
 }
 
-int run_picker(SDL_Window *win, SDL_Renderer *r) {
+int run_picker(SDL_Window *win, SDL_Renderer *r, int settingsFirst) {
     int w, h;
     SDL_GetRendererOutputSize(r, &w, &h);
     Picker *p = picker_create(r, w, h);
+    p->openSettings = settingsFirst;
     int ww, wh;
     SDL_GetWindowSize(win, &ww, &wh);
     float sx = (float)w / ww, sy = (float)h / wh;   /* mouse is in window units, drawing in pixels */
@@ -326,6 +367,9 @@ int run_picker(SDL_Window *win, SDL_Renderer *r) {
             }
             case SDL_MOUSEBUTTONDOWN:
                 if (e.button.button == SDL_BUTTON_LEFT) click(p, win, (int)(e.button.x * sx), (int)(e.button.y * sy));
+                break;
+            case SDL_MOUSEBUTTONUP:
+                if (p->gearHold >= 0) { p->gearHold = -1; p->hint = 2.5f; }   /* let go too soon */
                 break;
             case SDL_TEXTINPUT:
                 if (name_selected(p)) {
@@ -370,6 +414,15 @@ int run_picker(SDL_Window *win, SDL_Renderer *r) {
         last = now;
         if (dt > 0.1f) dt = 0.1f;
         picker_step(p, dt);
+        if (p->openSettings) {
+            p->openSettings = 0;
+            SDL_StopTextInput();
+            run_settings(win, r);
+            SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
+            if (name_selected(p)) SDL_StartTextInput();
+            last = SDL_GetPerformanceCounter();
+            continue;
+        }
         picker_draw(p, r);
         SDL_RenderPresent(r);
         SDL_Delay(10);

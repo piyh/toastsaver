@@ -9,7 +9,7 @@
 
 /* ---------- settings ---------- */
 
-Config g_config = { 1, "toasters", "HELLO", 5, 30, 0, 0, 0, "" };
+Config g_config = { 1, "toasters", "HELLO", 5, 30, 0, 0, 30, "" };
 
 const char *config_path(void) {
     static char path[1024];
@@ -80,7 +80,7 @@ static const char *const HELP[NKEYS] = {
     "# minutes before the display turns off (0 = never)",
     "# 1 = show a clock over the screensaver",
     "# 1 = 24-hour clock",
-    "# 0 = as fast as the display; 30 saves power on a Pi",
+    "# frames per second; 30 saves power, 0 = as fast as the display",
     "# savers SAVER=random picks from, comma-separated (empty = all)" };
 
 static void format_key(int k, char *out, size_t n) {
@@ -115,7 +115,7 @@ int config_save(void) {
     if (slash) { *slash = 0; mkdir(dir, 0755); }   /* make sure ~/.config exists */
     FILE *in = fopen(path, "r"), *out = fopen(tmp, "w");
     if (!out) { if (in) fclose(in); return -1; }
-    if (!in) fputs("# toastsaver settings. Screensaver Settings and the Screensavers picker change these for you.\n", out);
+    if (!in) fputs("# toastsaver settings. The Screensavers app (and its settings page) change these for you.\n", out);
     while (in && fgets(line, sizeof line, in)) {
         int k = 0;
         while (k < NKEYS && strncmp(line, KEYS[k], strlen(KEYS[k]))) k++;

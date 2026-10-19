@@ -23,6 +23,6 @@ Description: retro screensavers for Wayland desktops
  apps that inhibit idle (such as video players) keep it from starting.
  .
  Includes a fullscreen picker with big tiles that young children can use,
- and a settings window for timings, an optional drifting clock and an
- on/off switch. Works with labwc (Raspberry Pi OS), Wayfire, sway and
+ with a settings page behind it (hold the gear) for timings, an optional
+ drifting clock, power saving and an on/off switch. Works with labwc (Raspberry Pi OS), Wayfire, sway and
  other wlroots-based compositors.

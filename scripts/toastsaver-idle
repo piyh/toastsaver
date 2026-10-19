@@ -5,7 +5,7 @@
 #   toastsaver-idle                run the idle watcher (normally done at login)
 #   toastsaver-idle --now [SAVER]  show the chosen saver (or SAVER) right now
 #   toastsaver-idle --check        explain what is and isn't working
-#   toastsaver-idle --restart      apply new settings now (Screensaver Settings does this)
+#   toastsaver-idle --restart      apply new settings now (the settings page does this)
 #   toastsaver-idle --stop         stop the watcher
 
 BIN="@BINDIR@/toastsaver"       # filled in by 'make install'
@@ -45,10 +45,10 @@ check() {
     comp=$(pgrep -l -x 'labwc|wayfire|sway|Hyprland|river' | awk '{print $2}' | head -n1)
     if [ -n "$comp" ]; then ok "compositor: $comp"; else note "no labwc/wayfire/sway/Hyprland/river found; other desktops may not support idle detection"; fi
     if first_file /etc/xdg/autostart/toastsaver.desktop "$HOME/.config/autostart/toastsaver.desktop" >/dev/null; then ok "starts at login"; else bad "autostart entry missing"; fi
-    if [ "$ENABLED" = 0 ]; then note "turned OFF in Screensaver Settings (ENABLED=0)"
+    if [ "$ENABLED" = 0 ]; then note "turned OFF in settings (ENABLED=0)"
     elif [ -n "$(watcher_pids)" ]; then ok "idle watcher running"
     else bad "idle watcher not running (log out and back in, or run: toastsaver-idle --restart)"; fi
-    if first_file /usr/share/applications/toastsaver-picker.desktop /usr/local/share/applications/toastsaver-picker.desktop >/dev/null; then ok "Screensavers and Screensaver Settings in the app menu"; else bad "menu entries missing"; fi
+    if first_file /usr/share/applications/toastsaver-picker.desktop /usr/local/share/applications/toastsaver-picker.desktop >/dev/null; then ok "Screensavers in the app menu"; else bad "menu entries missing"; fi
     if command -v wlopm >/dev/null; then ok "wlopm available (screen off after $SCREEN_OFF_MINUTES min)"; else note "wlopm not installed; display won't be turned off by toastsaver"; fi
     echo "  settings: '$SAVER' after $IDLE_MINUTES min, clock $CLOCK ($CONF)"
 }
@@ -71,7 +71,7 @@ case "${1:-}" in
     *) echo "usage: toastsaver-idle [--now [SAVER]|--check|--restart|--stop]" >&2; exit 2 ;;
 esac
 
-[ "$ENABLED" = 0 ] && exit 0                     # switched off in Screensaver Settings
+[ "$ENABLED" = 0 ] && exit 0                     # switched off in settings
 if [ -z "${WAYLAND_DISPLAY:-}" ]; then
     echo "toastsaver-idle: needs a Wayland session" >&2
     exit 0                                       # quietly do nothing on X11 logins

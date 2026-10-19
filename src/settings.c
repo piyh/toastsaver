@@ -1,6 +1,8 @@
-/* Settings window for grown-ups: on/off, timings, clock, and shortcuts to the picker
-   and a test run. Every change is saved at once; timing changes restart the
-   idle watcher when the window closes so they apply without logging out. */
+/* The settings page, reached from the picker's gear (held down, so kids don't wander in)
+   or with toastsaver-settings: on/off, timings, clock, power saving and a test run.
+   Every change is saved at once; timing changes restart the idle watcher when the page
+   closes so they apply without logging out. The rows that need the idle watcher are
+   greyed out where it isn't installed (the Mac preview), instead of doing nothing. */
 #define _POSIX_C_SOURCE 200809L
 #include "engine.h"
 #include <stdio.h>
@@ -15,10 +17,12 @@ static const int OFF_OPTS[] = { 0, 5, 10, 15, 20, 30, 45, 60, 90, 120 };
 
 typedef struct {
     SDL_Renderer *r;
-    int w, h, quit, timingChanged, hover;
+    int w, h, quit, timingChanged, hover, watcher;
     float t, rowH;
-    SDL_Rect row[ROWS], minus[ROWS], plus[ROWS], toggle[ROWS], change, test, done;
+    SDL_Rect row[ROWS], minus[ROWS], plus[ROWS], toggle[ROWS], test, done;
 } Settings;
+
+enum { R_ENABLED, R_IDLE, R_OFF, R_CLOCK, R_CLOCK24, R_POWER };   /* row order */
 
 static void layout(Settings *s) {
     float top = s->h * 0.15f, bottom = s->h * 0.81f;
@@ -33,7 +37,6 @@ static void layout(Settings *s) {
         s->toggle[i] = (SDL_Rect){ (int)(s->w * 0.56f), cy, btn * 2, btn };
     }
     int bh = (int)(s->h * 0.11f), bw = s->w / 4, by = (int)(s->h * 0.84f);
-    s->change = (SDL_Rect){ (int)(s->w * 0.70f), s->plus[1].y, (int)(s->w * 0.22f), s->plus[1].h };
     s->test = (SDL_Rect){ s->w / 2 - bw - s->w / 40, by, bw, bh };
     s->done = (SDL_Rect){ s->w / 2 + s->w / 40, by, bw, bh };
 }
@@ -44,6 +47,7 @@ void *settings_create(SDL_Renderer *r, int w, int h) {
     s->w = w;
     s->h = h;
     s->hover = -1;
+    s->watcher = access(TOASTSAVER_BINDIR "/toastsaver-idle", X_OK) == 0;
     layout(s);
     return s;
 }
@@ -69,7 +73,7 @@ static void fix_order(int idleChanged) {
 }
 
 static void stepper(int row, int dir) {
-    if (row == 2) {
+    if (row == R_IDLE) {
         int i = index_of(IDLE_OPTS, g_config.idleMinutes) + dir;
         if (i < 0 || i >= NOPTS) return;
         g_config.idleMinutes = IDLE_OPTS[i];
@@ -116,11 +120,11 @@ void settings_draw(void *p, SDL_Renderer *r) {
     SDL_RenderSetViewport(r, NULL);
     vgradient(r, s->w, s->h, hexcol(0x0B3D5C), hexcol(0x10233A));
     int tsc = (int)(s->h * 0.06f / FONT_H);
-    while (tsc > 1 && text_width("SCREENSAVER SETTINGS", tsc) > s->w * 0.9f) tsc--;
-    text_at(r, "SCREENSAVER SETTINGS", (s->w - text_width("SCREENSAVER SETTINGS", tsc)) / 2,
+    while (tsc > 1 && text_width("SETTINGS", tsc) > s->w * 0.9f) tsc--;
+    text_at(r, "SETTINGS", (s->w - text_width("SETTINGS", tsc)) / 2,
             (int)(s->h * 0.08f), tsc, hexcol(0xFFE45C));
 
-    static const char *const labels[ROWS] = { "SCREENSAVER", "CHOSEN", "START AFTER", "SCREEN OFF AFTER", "SHOW CLOCK", "CLOCK STYLE" };
+    static const char *const labels[ROWS] = { "SCREENSAVER", "START AFTER", "SCREEN OFF AFTER", "SHOW CLOCK", "CLOCK STYLE", "SAVE POWER" };
     int sc = (int)(s->rowH * 0.3f / FONT_H);
     if (sc < 1) sc = 1;
     while (sc > 1 && text_width("SCREEN OFF AFTER", sc) > s->w * 0.46f) sc--;
@@ -129,55 +133,56 @@ void settings_draw(void *p, SDL_Renderer *r) {
         SDL_Rect rw = s->row[i];
         fill_rrect(r, rw, rw.h / 4, i == s->hover ? hexcol(0x1D5578) : hexcol(0x163F5E));
         int cy = rw.y + rw.h / 2;
-        /* Rows that don't matter right now are drawn dimmed. */
-        int dim = (i == 5 && !g_config.clock) || (i >= 1 && !g_config.enabled);
+        /* Rows that don't matter right now, or can't work here, are drawn dimmed. */
+        int dim = (i == R_CLOCK24 && !g_config.clock) || (i >= R_IDLE && i <= R_CLOCK24 && !g_config.enabled)
+                  || (i <= R_OFF && !s->watcher);
         text_at(r, labels[i], rw.x + rw.h / 3, cy, sc, dim ? hexcol(0x7F93A6) : hexcol(0xFFFFFF));
-        if (i == 1) {
-            const Saver *sv = saver_find(g_config.saver);
-            text_at(r, sv ? sv->label : "SURPRISE", s->minus[1].x, cy, sc, dim ? hexcol(0x7F93A6) : hexcol(0xFFE45C));
-            button(r, s->change, "CHANGE", 0x8E24AA, 0x5E1675);
-        } else if (i == 2 || i == 3) {
-            int v = i == 2 ? g_config.idleMinutes : g_config.screenOffMinutes;
+        if (i == R_IDLE || i == R_OFF) {
+            int v = i == R_IDLE ? g_config.idleMinutes : g_config.screenOffMinutes;
             if (v == 0) snprintf(val, sizeof val, "NEVER");
             else snprintf(val, sizeof val, "%d MIN", v);
-            int lo = i == 2 ? v > IDLE_OPTS[0] : v != 0;
-            int hi = i == 2 ? v < IDLE_OPTS[NOPTS - 1] : v < OFF_OPTS[NOPTS - 1];
+            int lo = i == R_IDLE ? v > IDLE_OPTS[0] : v != 0;
+            int hi = i == R_IDLE ? v < IDLE_OPTS[NOPTS - 1] : v < OFF_OPTS[NOPTS - 1];
             round_button(r, s->minus[i], 0, lo && !dim);
             round_button(r, s->plus[i], 1, hi && !dim);
             int mid = (s->minus[i].x + s->minus[i].w + s->plus[i].x) / 2;
             text_at(r, val, mid - text_width(val, sc) / 2, cy, sc, dim ? hexcol(0x7F93A6) : hexcol(0xFFFFFF));
         } else {
-            int on = i == 0 ? g_config.enabled : i == 4 ? g_config.clock : g_config.clock24;
+            int on = i == R_ENABLED ? g_config.enabled : i == R_CLOCK ? g_config.clock
+                   : i == R_CLOCK24 ? g_config.clock24 : g_config.fps > 0;
             toggle_switch(r, s->toggle[i], on, !dim, s->t);
-            const char *t = i == 5 ? (on ? "24 HOUR" : "12 HOUR") : (on ? "ON" : "OFF");
+            const char *t = i == R_CLOCK24 ? (on ? "24 HOUR" : "12 HOUR")
+                          : i == R_POWER ? (on ? "30 FPS" : "OFF") : (on ? "ON" : "OFF");
             text_at(r, t, s->toggle[i].x + s->toggle[i].w + rw.h / 3, cy, sc, dim ? hexcol(0x7F93A6) : hexcol(0xFFFFFF));
         }
     }
     button(r, s->test, "TEST IT", 0x43A047, 0x1B5E20);
-    button(r, s->done, "DONE", 0x1E88E5, 0x0D4C8C);
-    int nsc = sc / 2 > 1 ? sc / 2 : 1;
-    const char *note = "CHANGES ARE SAVED RIGHT AWAY";
+    button(r, s->done, "BACK", 0x1E88E5, 0x0D4C8C);
+    int nsc = sc * 2 / 3 > 1 ? sc * 2 / 3 : 1;
+    const char *note = s->watcher ? "CHANGES ARE SAVED RIGHT AWAY"
+                                  : "STARTING BY ITSELF WHEN IDLE WORKS ON LINUX ONLY";
+    while (nsc > 1 && text_width(note, nsc) > s->w * 0.95f) nsc--;
     text_at(r, note, (s->w - text_width(note, nsc)) / 2, s->h - nsc * 8, nsc, hexcol(0x9FB6CC));
 }
 
 static int hit(SDL_Rect rc, int x, int y) { return x >= rc.x && y >= rc.y && x < rc.x + rc.w && y < rc.y + rc.h; }
 
 static void click(Settings *s, SDL_Window *win, int x, int y) {
-    if (hit(s->row[0], x, y)) {                    /* the master on/off switch */
+    if (hit(s->row[R_POWER], x, y)) { g_config.fps = g_config.fps > 0 ? 0 : 30; config_save(); return; }
+    if (s->watcher && hit(s->row[R_ENABLED], x, y)) {   /* the master on/off switch */
         g_config.enabled = !g_config.enabled;
         s->timingChanged = 1;
         config_save();
         return;
     }
     if (g_config.enabled) {
-        for (int i = 2; i <= 3; i++) {
+        for (int i = R_IDLE; s->watcher && i <= R_OFF; i++) {
             if (hit(s->minus[i], x, y)) { stepper(i, -1); s->timingChanged = 1; config_save(); return; }
             if (hit(s->plus[i], x, y)) { stepper(i, +1); s->timingChanged = 1; config_save(); return; }
         }
-        if (hit(s->row[4], x, y)) { g_config.clock = !g_config.clock; config_save(); return; }
-        if (hit(s->row[5], x, y) && g_config.clock) { g_config.clock24 = !g_config.clock24; config_save(); return; }
+        if (hit(s->row[R_CLOCK], x, y)) { g_config.clock = !g_config.clock; config_save(); return; }
+        if (hit(s->row[R_CLOCK24], x, y) && g_config.clock) { g_config.clock24 = !g_config.clock24; config_save(); return; }
     }
-    if (hit(s->change, x, y)) { run_picker(win, s->r); SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT); return; }
     if (hit(s->test, x, y)) {
         if (run_saver(win, s->r, saver_resolve(g_config.saver), 0) == 1) s->quit = 1;
         SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);

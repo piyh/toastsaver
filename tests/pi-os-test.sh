@@ -7,7 +7,7 @@
 #   3. a screensaver over the picker can be dismissed without closing the picker
 #   4. toastsaver-idle --now pipes starts that saver
 #   5. settings: --set keeps the file's comments, --restart swaps the watcher,
-#      ENABLED=0 stops it, the settings window opens, a saver runs with the clock on
+#      ENABLED=0 stops it, the app opens on its settings page, a saver runs with the clock on
 # Usually run through tests/run.sh, which uses prepared images (tests/Dockerfile) and
 # runs the suites in parallel. It also works on a plain Debian image, as CI does:
 #   docker run --rm -v "$PWD":/src debian:trixie sh /src/tests/pi-os-test.sh
@@ -73,7 +73,7 @@ else
     toastsaver --desktop-icon
 fi
 ls /etc/xdg/autostart/toastsaver.desktop $PREFIX/share/applications/toastsaver-picker.desktop \
-   $PREFIX/share/applications/toastsaver-settings.desktop $PREFIX/bin/toastsaver-settings \
+   $PREFIX/bin/toastsaver-settings \
    $PREFIX/bin/toastsaver-picker $PREFIX/share/icons/hicolor/128x128/apps/toastsaver.png \
    ~/Desktop/Screensavers.desktop >/dev/null
 grep -q "Exec=$PREFIX/bin/toastsaver-idle" /etc/xdg/autostart/toastsaver.desktop || fail "autostart has wrong path"
@@ -150,12 +150,12 @@ echo "ENABLED switch: ok"
 pkill -x toastsaver || true
 toastsaver-settings &
 SET=$!; sleep 1
-kill -0 $SET 2>/dev/null || fail "settings window did not stay open"
+kill -0 $SET 2>/dev/null || fail "settings page did not stay open"
 kill $SET
 toastsaver-idle --now aquarium &
 until_ 5 running aquarium || fail "saver with clock did not run"
 pkill -x toastsaver || true
-echo "settings window and clock: ok"
+echo "settings page and clock: ok"
 
 toastsaver-idle --check
 '

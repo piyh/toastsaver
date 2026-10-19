@@ -125,9 +125,9 @@ Log out and back in (or run `toastsaver-idle --restart`). The screensaver now st
 
 ## Using it
 
-### The picker (for kids)
+### The app
 
-Open **Screensavers** from the app menu. To put an icon on the desktop too, run `toastsaver --desktop-icon`.
+Open **Screensavers** from the app menu. To put an icon on the desktop too, run `toastsaver --desktop-icon`. The front page is made for kids; the settings are one step behind it.
 
 ![The picker](docs/picker.png)
 
@@ -136,23 +136,23 @@ Open **Screensavers** from the app menu. To put an icon on the desktop too, run 
 - **Move the mouse, touch the screen, or press any key** to go back to the picker.
 - **SURPRISE ME!** (under the tiles) shows a different saver each time. While it is on, the tiles show which savers are **in the mix**: tap a tile to put it in (green check) or take it out (dimmed). At least one always stays in. Tap **SURPRISE ME!** again to turn it off and choose a single tile.
 - **NAME**: when it is chosen, type your name on the keyboard.
-- The **big red X** closes the picker.
+- The **big red X** closes the app.
 
 On a keyboard, use the arrow keys to move, **Enter** to try, **Tab** to turn SURPRISE ME on or off, **Space** to put the highlighted saver in or out of the mix, and **Esc** to close.
 
-### Screensaver Settings (for grown-ups)
+### Settings (for grown-ups)
 
-Open **Screensaver Settings** from the app menu. Changes are saved right away, and new timings take effect as soon as you close the window.
+**Hold the gear** in the top-left corner for about a second; a ring fills up and the settings page opens. A quick tap just says "hold for settings", so curious fingers don't wander in. `toastsaver-settings` opens the app straight on this page. Changes are saved right away, and new timings take effect as soon as you go back.
 
-![Screensaver Settings](docs/settings.png)
+![Settings](docs/settings.png)
 
 - **Screensaver**: turn it on or off.
-- **Chosen**: the current screensaver, or **SURPRISE**. **Change** opens the picker, where you also pick the surprise mix.
 - **Start after**: how long the computer waits before showing the screensaver.
 - **Screen off after**: when the display turns off, or **NEVER**. It is always later than the screensaver.
 - **Show clock**: puts the time over any screensaver. It drifts to a new spot about once a minute, so it never sits in one place.
 - **Clock style**: 12-hour or 24-hour.
-- **Test it** shows the current screensaver.
+- **Save power**: draws savers at 30 frames a second instead of as fast as the display can, which roughly halves the work and looks the same for these savers. On by default.
+- **Test it** shows the current screensaver; **Back** returns to the tiles.
 
 ![The clock over the aquarium](docs/clock.png)
 
@@ -160,8 +160,8 @@ Open **Screensaver Settings** from the app menu. Changes are saved right away, a
 
 | Command | What it does |
 | --- | --- |
-| `toastsaver-picker` | Open the picker |
-| `toastsaver-settings` | Open Screensaver Settings |
+| `toastsaver-picker` | Open the app |
+| `toastsaver-settings` | Open the app on its settings page |
 | `toastsaver-idle --now` | Show your chosen saver now |
 | `toastsaver-idle --now pipes` | Show a specific saver now |
 | `toastsaver-idle --check` | Check that everything is set up and running |
@@ -175,7 +175,7 @@ See `man toastsaver` for everything.
 
 ### Settings file
 
-Settings live in `~/.config/toastsaver.conf`. The picker and Screensaver Settings edit it for you and keep your comments.
+Settings live in `~/.config/toastsaver.conf`. The app edits it for you and keeps your comments.
 
 ```sh
 ENABLED=1               # 0 = turn the screensaver off
@@ -186,7 +186,7 @@ IDLE_MINUTES=5          # minutes of no input before the screensaver appears
 SCREEN_OFF_MINUTES=30   # minutes before the display turns off (0 = never)
 CLOCK=0                 # 1 = show a drifting clock over the screensaver
 CLOCK_24H=0             # 1 = 24-hour clock
-FPS=0                   # 0 = as fast as the display; 30 saves power on a Pi
+FPS=30                  # frames per second; 30 saves power, 0 = as fast as the display
 ```
 
 ## How it works
@@ -241,7 +241,7 @@ toastsaver --snapshot out.png --size 1280x720 --seconds 5 pipes
 2. an app that inhibits idle (like a playing video) stops it from starting, and it starts again once that app closes,
 3. dismissing a saver that pops up over the picker leaves the picker open,
 4. `toastsaver-idle --now pipes` starts that saver,
-5. settings: `--set` keeps the file's comments, `--restart` switches to the new timings, `ENABLED=0` stops the watcher, the settings window opens and a saver runs with the clock on,
+5. settings: `--set` keeps the file's comments, `--restart` switches to the new timings, `ENABLED=0` stops the watcher, the app opens on its settings page and a saver runs with the clock on,
 6. for the `.deb`: `apt remove` and `apt purge` clean up.
 
 `make check` adds a quick check of the dice geometry that needs no display.

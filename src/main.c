@@ -3,7 +3,8 @@
  *
  *   toastsaver                 run the saver chosen in the settings (fullscreen)
  *   toastsaver pipes           run a specific saver
- *   toastsaver --picker        open the kid-friendly picker (also: toastsaver-picker)
+ *   toastsaver --picker        open the app: the picker, with settings behind its gear
+ *                              (also: toastsaver-picker; toastsaver-settings opens on settings)
  */
 #include "engine.h"
 #include <stdio.h>
@@ -288,8 +289,8 @@ static int write_icon(const char *path) {
 static void usage(void) {
     printf("toastsaver %s - screensavers\n\n"
            "  toastsaver [SAVER]          run fullscreen (default: the one in %s)\n"
-           "  toastsaver --picker         open the picker (big tiles, for kids)\n"
-           "  toastsaver --settings       open the settings window (for grown-ups)\n"
+           "  toastsaver --picker         open the app: big tiles to pick a saver; hold the gear for settings\n"
+           "  toastsaver --settings       open the app on its settings page\n"
            "  toastsaver --set KEY=VALUE  change a setting, e.g. --set CLOCK=1\n"
            "  toastsaver --desktop-icon   put a Screensavers icon on the desktop\n"
            "  toastsaver --list           list savers\n"
@@ -387,7 +388,7 @@ int main(int argc, char **argv) {
     if (inhibit) SDL_DisableScreenSaver();
 
     Uint32 flags = SDL_WINDOW_SHOWN | (windowed ? SDL_WINDOW_RESIZABLE : SDL_WINDOW_FULLSCREEN_DESKTOP);
-    const char *title = picker ? "Screensavers" : settings ? "Screensaver Settings" : "toastsaver";
+    const char *title = picker || settings ? "Screensavers" : "toastsaver";
     SDL_Window *win = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 800, flags);
     if (!win) {
         fprintf(stderr, "toastsaver: cannot open window: %s\n", SDL_GetError());
@@ -403,8 +404,7 @@ int main(int argc, char **argv) {
     }
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
 
-    if (settings) run_settings(win, r);
-    else if (picker) run_picker(win, r);
+    if (picker || settings) run_picker(win, r, settings);
     else run_saver(win, r, saver_resolve(which ? which : g_config.saver), windowed);
 
     SDL_DestroyRenderer(r);

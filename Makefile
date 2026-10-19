@@ -39,7 +39,6 @@ install: all
 	chmod 755 $(DESTDIR)$(BINDIR)/toastsaver-idle
 	$(SUBST) data/toastsaver-autostart.desktop > $(DESTDIR)$(SYSCONFDIR)/xdg/autostart/toastsaver.desktop
 	$(SUBST) data/toastsaver-picker.desktop > $(DESTDIR)$(DATADIR)/applications/toastsaver-picker.desktop
-	$(SUBST) data/toastsaver-settings.desktop > $(DESTDIR)$(DATADIR)/applications/toastsaver-settings.desktop
 	install -Dm644 bin/toastsaver.png $(DESTDIR)$(DATADIR)/icons/hicolor/128x128/apps/toastsaver.png
 	install -Dm644 man/toastsaver.1 $(DESTDIR)$(DATADIR)/man/man1/toastsaver.1
 	for m in toastsaver-picker toastsaver-settings toastsaver-idle; do \
