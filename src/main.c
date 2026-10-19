@@ -103,6 +103,11 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed) {
         }
         SDL_RenderPresent(r);
         SDL_Delay(8); /* vsync paces us when available; this keeps CPU sane otherwise */
+        if (g_config.fps > 0) {   /* FPS cap: dt above is still the real elapsed time */
+            double spent = (double)(SDL_GetPerformanceCounter() - now) * 1000.0 / (double)freq;
+            double wait = 1000.0 / g_config.fps - spent;
+            if (wait > 0) SDL_Delay((Uint32)wait);
+        }
     }
     sv->destroy(st);
     SDL_ShowCursor(SDL_ENABLE);
@@ -199,6 +204,49 @@ static int snapshot(const char *path, const char *what, int w, int h, float seco
     return rc == 0 ? 0 : 1;
 }
 
+/* Diagnostic (not in --help): average step/draw time per saver on a hidden window. */
+static int bench(const char *which, int w, int h, int frames) {
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) { fprintf(stderr, "bench: %s\n", SDL_GetError()); return 1; }
+    SDL_Window *win = SDL_CreateWindow("bench", 0, 0, 64, 64, SDL_WINDOW_HIDDEN);
+    SDL_Renderer *r = win ? SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_TARGETTEXTURE) : NULL;
+    if (win && !r) r = SDL_CreateRenderer(win, -1, 0);
+    SDL_Texture *target = r ? SDL_CreateTexture(r, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, w, h) : NULL;
+    if (!target || SDL_SetRenderTarget(r, target) != 0) {
+        fprintf(stderr, "bench: no render target: %s\n", SDL_GetError());
+        SDL_Quit();
+        return 1;
+    }
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+
+    const double msPerTick = 1000.0 / (double)SDL_GetPerformanceFrequency();
+    for (int k = 0; k < SAVER_COUNT; k++) {
+        const Saver *sv = SAVERS[k];
+        if (strcmp(which, "all") && strcmp(which, sv->id)) continue;
+        srand(1);
+        void *st = sv->create(r, w, h);
+        double stepMs = 0, drawMs = 0, worstMs = 0;
+        for (int f = 0; f < frames; f++) {
+            Uint64 t0 = SDL_GetPerformanceCounter();
+            sv->step(st, 1 / 60.0f);
+            Uint64 t1 = SDL_GetPerformanceCounter();
+            sv->draw(st, r);
+            SDL_RenderFlush(r);
+            Uint64 t2 = SDL_GetPerformanceCounter();
+            stepMs += (t1 - t0) * msPerTick;
+            drawMs += (t2 - t1) * msPerTick;
+            if ((t2 - t0) * msPerTick > worstMs) worstMs = (t2 - t0) * msPerTick;
+        }
+        sv->destroy(st);
+        printf("%-10s step %6.3f  draw %6.3f  worst %6.2f ms/frame\n",
+               sv->id, stepMs / frames, drawMs / frames, worstMs);
+    }
+    SDL_DestroyTexture(target);
+    SDL_DestroyRenderer(r);
+    SDL_DestroyWindow(win);
+    SDL_Quit();
+    return 0;
+}
+
 /* Copies the Screensavers menu entry onto the user's desktop (packages can't do this). */
 static int desktop_icon(void) {
     const char *home = getenv("HOME");
@@ -256,7 +304,7 @@ int main(int argc, char **argv) {
     int windowed = 0, picker = 0, settings = 0, inhibit = 0, sw = 1280, sh = 720;
     float seconds = 4;
     const char *snap = NULL, *which = NULL, *icon = NULL, *frameDir = NULL;
-    int frames = 0, fps = 15;
+    int frames = 0, fps = 15, bench_mode = 0, benchFrames = 600, sizeSet = 0;
     const char *base = strrchr(argv[0], '/');
     base = base ? base + 1 : argv[0];
     if (!strcmp(base, "toastsaver-picker")) picker = 1;
@@ -288,7 +336,12 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--snapshot") && i + 1 < argc) snap = argv[++i];
         else if (!strcmp(a, "--frames") && i + 2 < argc) { frameDir = argv[++i]; frames = atoi(argv[++i]); }
         else if (!strcmp(a, "--fps") && i + 1 < argc) fps = atoi(argv[++i]);
-        else if (!strcmp(a, "--size") && i + 1 < argc) sscanf(argv[++i], "%dx%d", &sw, &sh);
+        else if (!strcmp(a, "--size") && i + 1 < argc) { sscanf(argv[++i], "%dx%d", &sw, &sh); sizeSet = 1; }
+        else if (!strcmp(a, "--bench")) {   /* --bench [SAVER|all] [FRAMES] */
+            bench_mode = 1;
+            if (i + 1 < argc && argv[i + 1][0] != '-') which = argv[++i];
+            if (i + 1 < argc && argv[i + 1][0] != '-') benchFrames = atoi(argv[++i]);
+        }
         else if (!strcmp(a, "--seconds") && i + 1 < argc) seconds = (float)atof(argv[++i]);
         else if (!strcmp(a, "--name") && i + 1 < argc) config_set_name(argv[++i]);
         else if (!strcmp(a, "--write-icon") && i + 1 < argc) icon = argv[++i];
@@ -308,6 +361,15 @@ int main(int argc, char **argv) {
         int rc = snapshot(snap, picker ? "picker" : settings ? "settings" : (which ? which : "toasters"), sw, sh, seconds);
         SDL_Quit();
         return rc;
+    }
+    if (bench_mode) {
+        if (which && strcmp(which, "all") && !saver_find(which)) {
+            fprintf(stderr, "toastsaver: unknown saver '%s' (try --list)\n", which);
+            return 2;
+        }
+        setvbuf(stdout, NULL, _IONBF, 0);
+        if (benchFrames < 1) benchFrames = 1;
+        return bench(which ? which : "all", sizeSet ? sw : 1920, sizeSet ? sh : 1080, benchFrames);
     }
     if (which && strcmp(which, "random") && !saver_find(which)) {
         fprintf(stderr, "toastsaver: unknown saver '%s' (try --list)\n", which);
