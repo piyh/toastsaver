@@ -79,6 +79,26 @@ sudo apt update && sudo apt install toastsaver
 
 Updates then arrive with your normal system updates. You can also download a `.deb` from the [releases page](https://github.com/piyh/toastsaver/releases) and install it with `sudo apt install ./toastsaver_*.deb`.
 
+#### Automatic updates
+
+To have toastsaver update itself (handy on a kid's computer nobody runs `apt upgrade` on), turn on a once-a-day check. It refreshes only the toastsaver repository and upgrades only toastsaver; nothing else on the system changes:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/piyh/toastsaver/main/extras/enable-auto-updates.sh | sh
+```
+
+[`enable-auto-updates.sh`](extras/enable-auto-updates.sh) adds a small systemd timer; the script's first lines say how to undo it.
+
+#### Switching from a source or USB install
+
+If you installed with `./install.sh` or from a USB stick, this removes that install (keeping your settings), installs the apt package, and turns on automatic updates:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/piyh/toastsaver/main/extras/migrate-to-apt.sh | sh -s -- --auto-updates
+```
+
+Leave off `-s -- --auto-updates` to skip the automatic updates.
+
 The repository is signed with this key (also in [`packaging/toastsaver-archive-keyring.asc`](packaging/toastsaver-archive-keyring.asc)):
 
 ```
