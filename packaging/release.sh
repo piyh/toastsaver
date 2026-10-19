@@ -39,7 +39,7 @@ if [ "$DRY" = 0 ]; then
     git fetch -q origin
     [ -z "$(git ls-remote --tags origin "$TAG")" ] || die "$TAG is already on GitHub"
     [ "$(git rev-list --count HEAD..origin/main)" = 0 ] || die "origin/main has commits this checkout doesn't"
-    command -v gh >/dev/null && gh auth status >/dev/null 2>&1 || die "gh isn't signed in (gh auth login)"
+    if ! { command -v gh >/dev/null && gh auth status >/dev/null 2>&1; }; then die "gh isn't signed in (gh auth login)"; fi
 fi
 KEYFILE="$WORK/signing-key.asc"
 if [ -n "${TOASTSAVER_SIGNING_KEY_CMD:-}" ]; then
@@ -132,5 +132,7 @@ docker run --rm debian:bookworm sh -c "
     apt-get install -y -qq --allow-downgrades toastsaver=$PREV >/dev/null 2>&1
     apt-get upgrade -y -qq >/dev/null 2>&1
     echo \"upgrade from $PREV: \$(dpkg-query -W -f='\${Version}' toastsaver)\"" | tee "$WORK/check"
-grep -q "fresh install: $V" "$WORK/check" && grep -q "upgrade from $PREV: $V" "$WORK/check" || die "live check failed"
+if ! { grep -q "fresh install: $V" "$WORK/check" && grep -q "upgrade from $PREV: $V" "$WORK/check"; }; then
+    die "live check failed"
+fi
 say "released $TAG"
