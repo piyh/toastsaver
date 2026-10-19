@@ -456,6 +456,10 @@ typedef struct {
     unsigned char *mark;
     Canvas fine;                  /* the dice themselves, at FINE times the resolution */
     unsigned char *fineMark;
+    SDL_Rect fineUsed;            /* the part of `fine` the last redraw touched */
+    float fineSig[MAXDICE * 16 + 1]; /* what the dice looked like then, to skip redrawing still dice */
+    int fineSigN;
+    int topInk;                   /* something was drawn on `top` last frame */
     SDL_Texture *felt, *underTex, *topTex, *fineTex;
 } Dice;
 
@@ -1233,18 +1237,64 @@ static void cloud(Canvas *c, float x, float y, float s) {
     }
 }
 
-/* A dark outline around everything drawn on a layer (mark is scratch, one byte per pixel). */
-static void outline_layer(Canvas *c, unsigned char *mark) {
+/* A dark outline around everything drawn inside rect `a` of a layer (mark is scratch,
+   one byte per pixel of the layer). */
+static void outline_rect(Canvas *c, unsigned char *mark, SDL_Rect a) {
     int W = c->w, H = c->h;
     uint32_t *px = c->px;
-    for (int y = 0; y < H; y++)
-        for (int x = 0; x < W; x++) {
+    for (int y = a.y; y < a.y + a.h; y++)
+        for (int x = a.x; x < a.x + a.w; x++) {
             int i = y * W + x;
             mark[i] = !px[i] && ((x > 0 && px[i - 1]) || (x < W - 1 && px[i + 1]) ||
                                  (y > 0 && px[i - W]) || (y < H - 1 && px[i + W]));
         }
-    for (int i = 0; i < W * H; i++)
-        if (mark[i]) px[i] = rgb(0x1A1410);
+    for (int y = a.y; y < a.y + a.h; y++)
+        for (int x = a.x; x < a.x + a.w; x++)
+            if (mark[y * W + x]) px[y * W + x] = rgb(0x1A1410);
+}
+
+static void outline_layer(Canvas *c, unsigned char *mark) {
+    outline_rect(c, mark, (SDL_Rect){ 0, 0, c->w, c->h });
+}
+
+/* The dice layer is big (FINE x FINE the tray) but the dice cover a small part of it and
+   often sit still for seconds, so it is only redrawn where the dice are and only when
+   they've moved. Returns 1 if the dice look exactly as they did last frame. */
+static int dice_unchanged(Dice *d, int active) {
+    float sig[MAXDICE * 16 + 1];
+    int n = 0;
+    sig[n++] = (float)(active ? d->n : 0);
+    for (int i = 0; active && i < d->n; i++) {
+        const Die *e = &d->die[i];
+        if (e->u < 0) { sig[n++] = -1; continue; }
+        sig[n++] = e->x; sig[n++] = e->y; sig[n++] = e->z; sig[n++] = e->tint;
+        sig[n++] = (float)e->tintCol + (e->settled ? 0.5f : 0);
+        for (int j = 0; j < 9; j++) sig[n++] = e->orient.m[j / 3][j % 3];
+    }
+    int same = n == d->fineSigN && !memcmp(sig, d->fineSig, n * sizeof *sig);
+    memcpy(d->fineSig, sig, n * sizeof *sig);
+    d->fineSigN = n;
+    return same;
+}
+
+/* The part of the dice layer a die can touch this frame, outline included. */
+static SDL_Rect die_rect(const Dice *d, const Die *e) {
+    float r = 1.1f * d->R * FINE + FINE + 2, cx = e->x * FINE, cy = (e->y - e->z * 0.85f) * FINE;
+    return (SDL_Rect){ (int)floorf(cx - r), (int)floorf(cy - r), (int)ceilf(2 * r) + 1, (int)ceilf(2 * r) + 1 };
+}
+
+static SDL_Rect rect_union(SDL_Rect a, SDL_Rect b) {
+    if (a.w <= 0 || a.h <= 0) return b;
+    if (b.w <= 0 || b.h <= 0) return a;
+    int x0 = a.x < b.x ? a.x : b.x, y0 = a.y < b.y ? a.y : b.y;
+    int x1 = a.x + a.w > b.x + b.w ? a.x + a.w : b.x + b.w, y1 = a.y + a.h > b.y + b.h ? a.y + a.h : b.y + b.h;
+    return (SDL_Rect){ x0, y0, x1 - x0, y1 - y0 };
+}
+
+static SDL_Rect rect_clip(SDL_Rect a, int w, int h) {
+    int x0 = a.x < 0 ? 0 : a.x, y0 = a.y < 0 ? 0 : a.y;
+    int x1 = a.x + a.w > w ? w : a.x + a.w, y1 = a.y + a.h > h ? h : a.y + a.h;
+    return x1 > x0 && y1 > y0 ? (SDL_Rect){ x0, y0, x1 - x0, y1 - y0 } : (SDL_Rect){ 0, 0, 0, 0 };
 }
 
 static void frect(SDL_Renderer *r, float x, float y, float w, float h, SDL_Color c) {
@@ -1270,9 +1320,21 @@ static void draw(void *p, SDL_Renderer *r) {
 
     Canvas *un = &d->under, *top = &d->top;
     memset(un->px, 0, sizeof(uint32_t) * un->w * un->h);
-    memset(top->px, 0, sizeof(uint32_t) * top->w * top->h);
-    memset(d->fine.px, 0, sizeof(uint32_t) * d->fine.w * d->fine.h);
+    /* `top` holds only flying tallies, popups and the rain cloud: usually empty, so it is
+       only cleared, outlined and uploaded on frames that use it (and the one after). */
+    int topWas = d->topInk, topInk = 0;
+    if (topWas) memset(top->px, 0, sizeof(uint32_t) * top->w * top->h);
     int active = d->state != GAP;
+    /* Redraw the dice layer only where dice were or are, and only if they changed. */
+    int redrawDice = !dice_unchanged(d, active);
+    SDL_Rect diceRect = { 0, 0, 0, 0 };
+    if (redrawDice) {
+        for (int i = 0; active && i < d->n; i++)
+            if (d->die[i].u >= 0) diceRect = rect_union(diceRect, die_rect(d, &d->die[i]));
+        diceRect = rect_clip(rect_union(diceRect, d->fineUsed), d->fine.w, d->fine.h);
+        for (int y = diceRect.y; y < diceRect.y + diceRect.h; y++)
+            memset(d->fine.px + y * d->fine.w + diceRect.x, 0, sizeof(uint32_t) * diceRect.w);
+    }
     float fade = d->state == EXIT ? clampf(1 - d->stateT / 0.5f, 0, 1) : (d->state == GAP ? 0 : 1);
 
     /* Chalkboard text */
@@ -1331,7 +1393,7 @@ static void draw(void *p, SDL_Renderer *r) {
                          rgba(0x06180C, (int)(110 * zf)));
 
             /* Render the true 3D die */
-            draw_3d_die(d, e, e->x, e->y);
+            if (redrawDice) draw_3d_die(d, e, e->x, e->y);
 
             /* Chalk label on felt */
             if (e->settled && d->state != EXIT && !d->small && d->rows == 1) {
@@ -1344,6 +1406,7 @@ static void draw(void *p, SDL_Renderer *r) {
             if (e->settled && e->react == FAIL && d->state != EXIT) {
                 float st = e->st, s = ease((st - 0.2f) / 0.35f) * (1 - ease((st - 2.7f) / 0.4f)) * 1.25f * (R / 14.0f);
                 cloud(top, e->x, e->y - R * 2.1f + sinf(d->t * 2.5f) * 1.2f, s);
+                topInk |= s > 0.05f;
             }
         }
     }
@@ -1359,6 +1422,7 @@ static void draw(void *p, SDL_Renderer *r) {
         snprintf(s, sizeof s, "+%d", f->value);
         int sc = f->t < 0.75f ? 2 : 1;
         glyphs(top, s, (int)(x - glyphs_w(s, sc) / 2.0f), (int)(y - FONT_H * sc / 2.0f), sc, rgb(0xFFFFFF));
+        topInk = 1;
     }
 
     /* CRIT! and WOMP popups */
@@ -1374,16 +1438,24 @@ static void draw(void *p, SDL_Renderer *r) {
         float bob = (1 - in) * 6 + (q->sc == 2 ? sinf(q->t * 9) * 1.2f : 0);
         if (sc == 2) glyphs(top, q->txt, (int)(q->x - w / 2.0f), (int)(y + bob) + 1, sc, rgb(0xC08A20));
         glyphs(top, q->txt, (int)(q->x - w / 2.0f), (int)(y + bob), sc, rgb(q->col));
+        topInk = 1;
     }
-    outline_layer(top, d->mark);
-    for (int k = 0; k < FINE; k++) outline_layer(&d->fine, d->fineMark);   /* same weight as the tray's */
+    if (topInk) outline_layer(top, d->mark);
+    if (redrawDice) {
+        for (int k = 0; k < FINE; k++) outline_rect(&d->fine, d->fineMark, diceRect);   /* same weight as the tray's */
+        if (diceRect.w > 0)
+            SDL_UpdateTexture(d->fineTex, &diceRect, d->fine.px + diceRect.y * d->fine.w + diceRect.x, d->fine.w * 4);
+        d->fineUsed = (SDL_Rect){ 0, 0, 0, 0 };
+        for (int i = 0; active && i < d->n; i++)
+            if (d->die[i].u >= 0) d->fineUsed = rect_union(d->fineUsed, die_rect(d, &d->die[i]));
+    }
 
     SDL_UpdateTexture(d->underTex, NULL, un->px, un->w * 4);
-    SDL_UpdateTexture(d->topTex, NULL, top->px, top->w * 4);
-    SDL_UpdateTexture(d->fineTex, NULL, d->fine.px, d->fine.w * 4);
+    if (topInk || topWas) SDL_UpdateTexture(d->topTex, NULL, top->px, top->w * 4);
+    d->topInk = topInk;
     SDL_RenderCopy(r, d->underTex, NULL, &full);
     SDL_RenderCopy(r, d->fineTex, NULL, &full);
-    SDL_RenderCopy(r, d->topTex, NULL, &full);
+    if (topInk) SDL_RenderCopy(r, d->topTex, NULL, &full);
 
     for (int i = 0; i < PARTS; i++) {
         Part *q = &d->parts[i];
@@ -1450,6 +1522,8 @@ static void *create(SDL_Renderer *r, int w, int h) {
     d->fineTex = SDL_CreateTexture(r, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, d->fine.w, d->fine.h);
     d->underTex = SDL_CreateTexture(r, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, d->W, d->H);
     d->topTex = SDL_CreateTexture(r, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, d->W, d->H);
+    SDL_UpdateTexture(d->fineTex, NULL, d->fine.px, d->fine.w * 4);   /* starts clear */
+    d->fineSigN = -1;
     SDL_Texture *ts[3] = { d->underTex, d->topTex, d->fineTex };
     for (int i = 0; i < 3; i++) {
         SDL_SetTextureBlendMode(ts[i], SDL_BLENDMODE_BLEND);
