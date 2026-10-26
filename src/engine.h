@@ -90,6 +90,7 @@ void clock_draw(SDL_Renderer *r, int w, int h);
 
 /* Windowed mode: I toggles a read-out of what the saver is doing (savers may draw it). */
 extern int g_show_info;
+extern int g_force_egg;    /* windowed: E asks the saver to show an easter egg now (it clears this) */
 
 /* ---------- screensavers ---------- */
 

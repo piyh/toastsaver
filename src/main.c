@@ -48,7 +48,8 @@ const Saver *saver_resolve(const char *id) {
 
 /* ---------- fullscreen runner ---------- */
 
-int g_show_info;   /* windowed: I toggles a little read-out of what the saver is doing */
+int g_show_info;
+int g_force_egg;   /* windowed: I toggles a little read-out of what the saver is doing */
 
 /* Speed slider geometry (windowed mode): the knob position is log2(speed), -2..5 = 0.25x..32x. */
 #define SPEED_MIN_LOG (-2.0f)
@@ -92,7 +93,7 @@ static void draw_speed_ui(SDL_Renderer *r, int w, int h, float lg, int paused) {
     SDL_SetRenderDrawColor(r, 255, 255, 255, 200);
     SDL_RenderDrawRect(r, &rb);
     draw_text_shadow(r, "RESET", rb.x + 4 * sc, rb.y + 2 * sc, sc, (SDL_Color){ 255, 255, 255, 255 });
-    draw_text_shadow(r, "[ ] SPEED   1 NORMAL SPEED   R RESTART   SPACE PAUSE   S SHOT   I INFO", t.x + t.w / 2 - text_width("[ ] SPEED   1 NORMAL SPEED   R RESTART   SPACE PAUSE   S SHOT   I INFO", 1) / 2,
+    draw_text_shadow(r, "[ ] SPEED   1 NORMAL SPEED   R RESTART   E EGG   SPACE PAUSE   S SHOT   I INFO", t.x + t.w / 2 - text_width("[ ] SPEED   1 NORMAL SPEED   R RESTART   E EGG   SPACE PAUSE   S SHOT   I INFO", 1) / 2,
                      t.y + t.h + 8, 1, (SDL_Color){ 220, 220, 220, 255 });
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
@@ -130,6 +131,7 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed) {
     if (!windowed) SDL_ShowCursor(SDL_DISABLE);
     clock_reset(w, h);
 
+    g_force_egg = 0;
     const Uint64 freq = SDL_GetPerformanceFrequency();
     Uint64 last = SDL_GetPerformanceCounter();
     const Uint32 started = SDL_GetTicks();
@@ -164,6 +166,8 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed) {
                     g_show_info = !g_show_info;
                 } else if (k == SDLK_r) {
                     reset = 1;
+                } else if (k == SDLK_e) {
+                    g_force_egg = 1;
                 }
                 if (windowed) uiT = 3;
                 break;
@@ -316,6 +320,7 @@ static int snapshot(const char *path, const char *what, int w, int h, float seco
     SDL_Renderer *r = surf ? SDL_CreateSoftwareRenderer(surf) : NULL;
     if (!r) { fprintf(stderr, "snapshot: %s\n", SDL_GetError()); return 1; }
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    g_force_egg = getenv("TOASTSAVER_EGG") != NULL;
     g_show_info = getenv("TOASTSAVER_INFO") != NULL;   /* for snapshots: draws the saver's read-out */
     const float dt = 1.0f / 30;
     if (!strcmp(what, "sprites")) {                       /* scaled-up sprite sheet, own size */
@@ -452,7 +457,7 @@ static void usage(void) {
            "  toastsaver --list           list savers\n"
            "  toastsaver --windowed ...   use a window: clicks and keys no longer quit it. S = screenshot\n"
            "                              (saved to ~/Pictures), Space = pause, [ ] = slower/faster (or drag the\n"
-           "                              slider), R = restart, I = info, Esc or Q = quit\n\n"
+           "                              slider), R = restart, E = easter egg, I = info, Esc or Q = quit\n\n"
            "Savers: random", VERSION, config_path());
     for (int i = 0; i < SAVER_COUNT; i++) printf(", %s", SAVERS[i]->id);
     printf("\n\nrandom picks a different saver each time from RANDOM_SAVERS, e.g.\n"

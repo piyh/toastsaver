@@ -32,6 +32,8 @@ typedef struct {
     int seaY, floorY, ventX, peakMin;
     int tipX, tipY;                       /* where the open channel ends: lava leaves from here */
     int pstate, ncond, chX0, chX1, cw, ch, heatTick;   /* plumbing */
+    int whale, finStage;                  /* easter egg: a whale; the finale: 1 = building up, 2 = after the blast */
+    float whX, whY, whDir, whDepth, whU0, eggT, wmax, finT;
     int chTop, chBot, nChamber;           /* the chamber's extent, for drawing how full it is */
     float mass;                           /* lava the plumbing owes the surface this tick (cells); bombs and flows share it */
     float pressure, trigger, pstateT, crackX, crackY, crackA, wander, tgtX, stepAcc, meanderPh;
@@ -62,6 +64,7 @@ static int inside(const Volcano *s, int x, int y) { return x >= 0 && x < s->gw &
 
 static float swell(const Volcano *s, float x);
 static void heat_update(Volcano *s);
+static uint32_t pack(float r, float g, float b);
 
 /* The sea surface at x: swells and splashes included. Everything that cares whether something
    is "in the water" (grid, steam, bubbles, glow) uses this, not the flat sea level. */
@@ -216,6 +219,8 @@ static void *create(SDL_Renderer *r, int w, int h) {
     s->px = calloc(n, 4);
     s->tex = SDL_CreateTexture(r, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, s->gw, s->gh);
     if (s->tex) SDL_SetTextureScaleMode(s->tex, SDL_ScaleModeNearest);
+    s->eggT = frand(90, 150);
+    s->wmax = 4 * s->k;
     build_world(s);
     s->fade = 1;                                    /* fades in from black */
     s->fadeDir = -1;
@@ -603,16 +608,155 @@ static void slump(Volcano *s) {
     }
 }
 
+/* ---------- the finale: the mountain blows itself apart ---------- */
+
+static void blast(Volcano *s) {
+    float K = s->k;
+    int cx = s->ventX, cy = s->seaY - (int)(0.04f * s->gh), R = (int)(0.33f * s->gh);
+    for (int y = cy - R; y <= cy + R; y++)
+        for (int x = cx - R; x <= cx + R; x++) {
+            float rr = R * (0.9f + 0.2f * (hash2(x >> 1, y >> 1) % 100) / 100.0f);   /* a ragged rim, not a perfect bowl */
+            if (!inside(s, x, y) || (x - cx) * (x - cx) + (y - cy) * (y - cy) > rr * rr) continue;
+            int m = AT(s, x, y);
+            if (SOLID(m) || m == LAVA) {
+                AT(s, x, y) = (float)y >= sea_top(s, (float)x) ? WATER : AIR;
+                s->heat[y * s->gw + x] = 0;
+            }
+        }
+    s->ncond = 0;
+    for (int i = 0; i < 110; i++) {
+        float a = frand(-1.3f, 1.3f), v = frand(40, 120) * K;
+        int chunk = irand(3) == 0;
+        add_part(s, chunk ? P_CHUNK : P_BOMB, cx + frand(-R / 3.0f, R / 3.0f), (float)cy - R * 0.2f, sinf(a) * v, -cosf(a) * v,
+                 frand(6, 11), K * (chunk ? frand(2, 4.5f) : frand(1.2f, 2.4f)));
+    }
+    for (int i = 0; i < 50; i++)
+        add_part(s, P_STEAM, cx + frand(-R, R), sea_top(s, (float)cx) - 1, frand(-10, 10) * K, -frand(10, 30) * K, frand(2, 4), frand(2, 5) * K);
+    for (int i = 0; i < 70; i++)
+        add_smoke(s, cx + frand(-R, R) * 0.5f, (float)cy - frand(0, R) * 0.6f, frand(-12, 12) * K, -frand(10, 35) * K,
+                  K * frand(4, 9), frand(0.5f, 1), frand(7, 12));
+    s->wmax = 20 * K;                               /* a tsunami: a big hump of water that rolls out both ways */
+    int span = (int)(34 * K);
+    for (int dx = -span; dx <= span; dx++)
+        if (inside(s, cx + dx, 0)) s->wv[cx + dx] -= 2.4f * K * (1.0f - (float)abs(dx) / (span + 1));
+    s->flash = 1.2f;
+    recompute_tops(s);
+}
+
+static void finale(Volcano *s) {
+    s->finT += TICK;
+    s->pressure = 1;
+    s->mass = 0;
+    if (s->finStage == 1) {                          /* the last, building eruptions, with the chamber glowing */
+        s->eruptLeft = 8;
+        if (irand(100) < 60) erupt_burst(s, 1.0f);
+        if (irand(100) < 40) s->flash = 0.3f;
+        if (s->finT > 4.0f) {
+            blast(s);
+            s->finStage = 2;
+            s->finT = 0;
+        }
+    } else {
+        s->eruptLeft = 0;
+        if (s->finT > 10.0f) {                       /* let the wave cross the sea, then start a new island */
+            s->fadeDir = 1;
+            s->finStage = 0;
+        }
+    }
+}
+
+/* ---------- easter egg: a whale crosses the sea about every three minutes ---------- */
+
+static void egg_tick(Volcano *s) {
+    float K = s->k, L = 34 * K, H = 12 * K;
+    if (!s->whale) {
+        if (s->finStage || s->fadeDir) return;          /* not during the finale; a forced egg waits */
+        s->eggT -= TICK;
+        if (s->eggT <= 0 || g_force_egg) {
+            s->whale = 1;
+            s->whDir = irand(2) ? 1.0f : -1.0f;
+            s->whX = s->whDir > 0 ? -0.6f * L : s->gw + 0.6f * L;
+            s->whDepth = s->seaY + s->gh * frand(0.10f, 0.17f);
+            s->whU0 = frand(0.3f, 0.65f);
+            s->whY = s->whDepth;
+            s->eggT = frand(150, 210);
+        }
+        g_force_egg = 0;
+        return;
+    }
+    g_force_egg = 0;
+    s->whX += s->whDir * 8.0f * K * TICK;
+    float u = (s->whX + 0.6f * L) / (s->gw + 1.2f * L);
+    if (s->whDir < 0) u = 1 - u;
+    if (u > 1.0f || u < -0.05f || s->finStage) { s->whale = 0; return; }
+    float top = sea_top(s, s->whX), surfY = top + 0.3f * H, dive = expf(-((u - s->whU0) / 0.07f) * ((u - s->whU0) / 0.07f));
+    float prevY = s->whY;
+    s->whY = s->whDepth + (surfY - s->whDepth) * dive;
+    float bx = s->whX + s->whDir * 0.2f * L;
+    if (dive > 0.8f && (s->tick % 14) < 2)           /* the spout */
+        add_part(s, P_STEAM, bx, s->whY - 0.5f * H, frand(-2, 2) * K, -frand(26, 38) * K, frand(1.2f, 1.9f), frand(1.5f, 2.5f) * K);
+    if ((prevY - top - 0.5f * H) * (s->whY - top - 0.5f * H) < 0)   /* the back breaks the surface or goes under */
+        splash(s, s->whX, 0.8f * K);
+}
+
+static void paint_whale(Volcano *s) {
+    if (!s->whale) return;
+    float K = s->k, L = 34 * K, H = 12 * K, d = s->whDir, wob = 0.14f * H * sinf(s->t * 3.0f);
+    for (int y = (int)(s->whY - H); y <= (int)(s->whY + H); y++)
+        for (int x = (int)(s->whX - 0.62f * L); x <= (int)(s->whX + 0.62f * L); x++) {
+            if (!inside(s, x, y)) continue;
+            int m = AT(s, x, y);
+            if (m != WATER && m != AIR) continue;
+            float lx = (x - s->whX) * d, ly = y - s->whY;
+            float bx = lx / (0.42f * L), by = ly / (0.5f * H);
+            int body = bx * bx + by * by <= 1;
+            float tx = (lx + 0.38f * L) / (0.17f * L), ty = (ly - wob) / (0.22f * H);
+            int stock = lx < -0.2f * L && tx * tx + ty * ty <= 1;
+            float fx1 = (lx + 0.53f * L) / (0.05f * L), fa = (ly - wob + 0.2f * H) / (0.19f * H), fb = (ly - wob - 0.2f * H) / (0.19f * H);
+            int fluke = fx1 * fx1 + fa * fa <= 1 || fx1 * fx1 + fb * fb <= 1;
+            float px = (lx - 0.08f * L) / (0.10f * L), py = (ly - 0.30f * H) / (0.07f * H);
+            int flipper = px * px + py * py <= 1;
+            if (!(body || stock || fluke || flipper)) continue;
+            float r = 63, g = 95, b = 126;                     /* back */
+            if (ly < -0.2f * H) { r = 50; g = 80; b = 108; }
+            if (body && ly > 0.12f * H) { r = 168; g = 190; b = 208; }   /* belly */
+            if (flipper || fluke) { r = 42; g = 63; b = 85; }
+            if (fabsf(lx - 0.30f * L) <= 0.04f * L + 1 && fabsf(ly + 0.06f * H) <= 0.05f * H + 1) { r = 11; g = 16; b = 24; }   /* eye */
+            if ((float)y > s->wtop[x]) { r *= 0.8f; g *= 0.88f; b = b * 0.92f + 8; }                                        /* under the water */
+            s->px[y * s->gw + x] = pack(r, g, b);
+        }
+}
+
+/* Tumbling rubble can leave little voids inside the cone, and the sea or sky shows through
+   them. Water or air that is boxed in by rock (a pocket, a one-cell shaft or a one-cell
+   tunnel) gets filled, a sample of cells per tick. */
+static void close_gaps(Volcano *s) {
+    int gw = s->gw, gh = s->gh;
+    for (int n = gw * gh / 40; n > 0; n--) {
+        int x = 1 + irand(gw - 2), y = 1 + irand(gh - 2), m = AT(s, x, y);
+        if ((m != WATER && m != AIR) || y <= s->top[x]) continue;
+        int u = AT(s, x, y - 1), d = AT(s, x, y + 1), l = AT(s, x - 1, y), r = AT(s, x + 1, y);
+        int su = SOLID(u) || u == LAVA, sd = SOLID(d) || d == LAVA, sl = SOLID(l) || l == LAVA, sr = SOLID(r) || r == LAVA;
+        if (su + sd + sl + sr >= 3 || (su && sd) || (su && sl && sr)) {
+            s->m[y * gw + x] = RUBBLE;
+            s->heat[y * gw + x] = 0;
+            s->age[y * gw + x] = 0;
+            s->stamp[y * gw + x] = (uint8_t)s->tick;
+        }
+    }
+}
+
 static void tick_world(Volcano *s) {
     float K = s->k;
     s->t += TICK;
     s->cycleT += TICK;
     for (int x = 0; x < s->gw; x++) {              /* a row of springs: the sea surface */
         float l = s->wh[x > 0 ? x - 1 : x], r2 = s->wh[x + 1 < s->gw ? x + 1 : x];
-        s->wv[x] += 0.2f * ((l + r2) * 0.5f - s->wh[x]) - 0.02f * s->wh[x];
+        s->wv[x] += 0.35f * ((l + r2) * 0.5f - s->wh[x]) - 0.02f * s->wh[x];
         s->wv[x] *= 0.985f;
     }
-    for (int x = 0; x < s->gw; x++) s->wh[x] = clampf(s->wh[x] + s->wv[x], -4 * K, 4 * K);
+    for (int x = 0; x < s->gw; x++) s->wh[x] = clampf(s->wh[x] + s->wv[x], -s->wmax, s->wmax);
+    s->wmax = 4 * K + (s->wmax - 4 * K) * 0.998f;
     update_sea(s);
     s->wind += frand(-0.4f, 0.4f) * TICK;
     s->wind = clampf(s->wind, -1.5f, 1.5f);
@@ -622,8 +766,10 @@ static void tick_world(Volcano *s) {
         if (x >= 0 && x < s->gw && s->top[x] < peak) peak = s->top[x];
     int tall = peak <= s->peakMin;
     s->phase = clampf((float)(s->floorY - peak) / (s->floorY - s->peakMin), 0, 1);   /* progress to the finale */
-    if (s->fadeDir == 0) plumb(s);
+    if (s->finStage) finale(s);
+    else if (s->fadeDir == 0) plumb(s);
     else s->eruptLeft = 0;
+    egg_tick(s);
     s->spill -= TICK;
     if (s->spill <= 0) {                           /* the main flow switches to another side now and then */
         s->spillDir = irand(100) < 55 ? -1 : 1;
@@ -635,7 +781,7 @@ static void tick_world(Volcano *s) {
     float vigor = erupting ? clampf((s->pressure - 0.2f) / 0.6f, 0, 1) : 0, power = vigor;
 
     if (s->fadeDir == 0) {
-        if (erupting) {
+        if (erupting && s->finStage == 0) {
             s->mass += 8.0f * (0.08f + 0.92f * vigor) * K;     /* the same supply above and below the waves */
             if (s->mass > 120 * K) s->mass = 120 * K;
             int want = s->mass > 0 ? (int)s->mass : 0, put = emit_lava(s, want);
@@ -649,6 +795,7 @@ static void tick_world(Volcano *s) {
 
     for (int k = 0; k < s->sub; k++) ca_pass(s);
     slump(s);
+    close_gaps(s);
 
     /* keep the sea level: water that rubble pushed aside (or that rock displaced) fills back in */
     for (int n = 0; n < s->gw / 4; n++) {
@@ -750,13 +897,12 @@ static void tick_world(Volcano *s) {
     }
 
     /* the island is complete: one huge eruption, then a new island */
-    if (s->fadeDir == 0 && tall && s->pstate != ST_CRACK) {
-        s->fadeDir = 1;
-        for (int k = 0; k < 40; k++) erupt_burst(s, 1.2f);
+    if (s->fadeDir == 0 && s->finStage == 0 && tall && s->pstate != ST_CRACK) {
+        s->finStage = 1;
+        s->finT = 0;
     }
     if (s->fadeDir > 0) {
         s->fade += TICK * 0.55f;
-        if (irand(100) < 80) erupt_burst(s, 1.0f);
         if (s->fade >= 1) {
             build_world(s);
             s->fadeDir = -1;
@@ -939,6 +1085,7 @@ static void paint(Volcano *s) {
     }
     free(colLit);
     free(colW);
+    paint_whale(s);
     free(rowBand);
     free(rowFeed);
     free(rowStrata);
