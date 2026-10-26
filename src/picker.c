@@ -39,23 +39,33 @@ static void destroy_previews(Picker *p) {
 
 static void layout(Picker *p) {
     destroy_previews(p);
-    int W = p->w, H = p->h, m = H / 32 > 6 ? H / 32 : 6;
-    p->titleH = H * 0.13f;
-    float bottomH = H * 0.17f, gridTop = p->titleH, gridBottom = H - bottomH;
-    /* 3 columns while it fits in a 3x3 grid, then 4. The last row is centered. */
-    p->cols = TILES > 9 ? 4 : 3;
+    int W = p->w, H = p->h, m = H / 56 > 4 ? H / 56 : 4;
+    p->titleH = H * 0.12f;
+    float bottomH = H * 0.16f, gridTop = p->titleH, gridBottom = H - bottomH;
+    /* Every preview is 16:9, like the screen it stands for. Try each column count and keep
+       the one that gives the biggest previews; the last, shorter row is centered. */
+    int pad = H / 150 > 3 ? H / 150 : 3, label = (int)(H * 0.034f);
+    int bestCols = 3, bestPw = 0, bestPh = 0;
+    for (int c = 2; c <= 8; c++) {
+        int rows = (TILES + c - 1) / c;
+        int pwMax = (W - (c + 1) * m) / c - 2 * pad;
+        int phMax = ((int)(gridBottom - gridTop) - (rows - 1) * m) / rows - pad - label;
+        int ph = pwMax * 9 / 16 < phMax ? pwMax * 9 / 16 : phMax, pw = ph * 16 / 9;
+        if (pw * ph > bestPw * bestPh) { bestCols = c; bestPw = pw; bestPh = ph; }
+    }
+    p->cols = bestCols;
     int rows = (TILES + p->cols - 1) / p->cols;
-    int tw = (W - 2 * m - (p->cols - 1) * m) / p->cols, th = (int)((gridBottom - gridTop - (rows - 1) * m) / rows);
-    p->labelH = th * 0.22f;
-    int pad = th / 22 > 4 ? th / 22 : 4;
+    int tw = bestPw + 2 * pad, th = bestPh + pad + label;
+    p->labelH = (float)label;
+    int top = (int)gridTop + ((int)(gridBottom - gridTop) - (rows * th + (rows - 1) * m)) / 2;
     for (int i = 0; i < TILES; i++) {
         Tile *t = &p->tile[i];
         t->sv = SAVERS[i];
         int row = i / p->cols, col = i % p->cols;
         int inRow = row == rows - 1 ? TILES - row * p->cols : p->cols;
-        int left = m + (p->cols - inRow) * (tw + m) / 2;
-        t->box = (SDL_Rect){ left + col * (tw + m), (int)gridTop + row * (th + m), tw, th };
-        t->preview = (SDL_Rect){ t->box.x + pad, t->box.y + pad, tw - 2 * pad, th - (int)p->labelH - pad };
+        int left = (W - (inRow * tw + (inRow - 1) * m)) / 2;
+        t->box = (SDL_Rect){ left + col * (tw + m), top + row * (th + m), tw, th };
+        t->preview = (SDL_Rect){ t->box.x + pad, t->box.y + pad, bestPw, bestPh };
         t->st = t->sv->create(p->r, t->preview.w, t->preview.h);
     }
     int bh = (int)(bottomH * 0.62f), by = (int)gridBottom + (int)(bottomH - bh) / 2;

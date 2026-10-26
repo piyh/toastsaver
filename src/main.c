@@ -58,6 +58,12 @@ static SDL_Rect speed_track(int w, int h) {
     return (SDL_Rect){ (w - tw) / 2, h - h / 14, tw, th };
 }
 
+static SDL_Rect reset_button(int w, int h) {
+    SDL_Rect t = speed_track(w, h);
+    int sc = h / 240 > 2 ? h / 240 : 2;
+    return (SDL_Rect){ t.x + t.w + 36, t.y - 3 * sc, text_width("RESET", sc) + 8 * sc, 11 * sc };
+}
+
 static void draw_speed_ui(SDL_Renderer *r, int w, int h, float lg, int paused) {
     SDL_Rect t = speed_track(w, h);
     int sc = h / 240 > 2 ? h / 240 : 2;
@@ -80,7 +86,13 @@ static void draw_speed_ui(SDL_Renderer *r, int w, int h, float lg, int paused) {
     else if (sp < 1.0f) snprintf(label, sizeof label, "SPEED %.2gX", sp);
     else snprintf(label, sizeof label, "SPEED %.3gX", sp);
     draw_text_shadow(r, label, t.x, t.y - 7 * sc - 10, sc, (SDL_Color){ 255, 255, 255, 255 });
-    draw_text_shadow(r, "[ ] SLOWER FASTER   1 RESET   SPACE PAUSE   S SHOT   I INFO", t.x + t.w / 2 - text_width("[ ] SLOWER FASTER   1 RESET   SPACE PAUSE   S SHOT   I INFO", 1) / 2,
+    SDL_Rect rb = reset_button(w, h);
+    SDL_SetRenderDrawColor(r, 255, 255, 255, 40);
+    SDL_RenderFillRect(r, &rb);
+    SDL_SetRenderDrawColor(r, 255, 255, 255, 200);
+    SDL_RenderDrawRect(r, &rb);
+    draw_text_shadow(r, "RESET", rb.x + 4 * sc, rb.y + 2 * sc, sc, (SDL_Color){ 255, 255, 255, 255 });
+    draw_text_shadow(r, "[ ] SPEED   1 NORMAL SPEED   R RESTART   SPACE PAUSE   S SHOT   I INFO", t.x + t.w / 2 - text_width("[ ] SPEED   1 NORMAL SPEED   R RESTART   SPACE PAUSE   S SHOT   I INFO", 1) / 2,
                      t.y + t.h + 8, 1, (SDL_Color){ 220, 220, 220, 255 });
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
@@ -122,7 +134,7 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed) {
     Uint64 last = SDL_GetPerformanceCounter();
     const Uint32 started = SDL_GetTicks();
     float moved = 0, flash = 0, lg = 0, uiT = 0;   /* lg: log2 of the speed */
-    int result = -1, paused = 0, shot = 0, drag = 0;
+    int result = -1, paused = 0, shot = 0, drag = 0, reset = 0;
     (void)win;
 
     while (result < 0) {
@@ -150,6 +162,8 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed) {
                     lg = 0;
                 } else if (k == SDLK_i) {
                     g_show_info = !g_show_info;
+                } else if (k == SDLK_r) {
+                    reset = 1;
                 }
                 if (windowed) uiT = 3;
                 break;
@@ -161,7 +175,8 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed) {
                     int ww, wh;
                     SDL_GetWindowSize(win, &ww, &wh);
                     float mx = e.button.x * (float)w / ww, my = e.button.y * (float)h / wh;
-                    SDL_Rect t = speed_track(w, h);
+                    SDL_Rect rb = reset_button(w, h), t = speed_track(w, h);
+                    if (mx >= rb.x && mx < rb.x + rb.w && my >= rb.y && my < rb.y + rb.h) reset = 1;
                     if (my > t.y - 40 && my < t.y + t.h + 40 && mx > t.x - 20 && mx < t.x + t.w + 20) drag = 1;
                 }
                 if (!drag) break;
@@ -207,6 +222,13 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed) {
         float dt = (float)(now - last) / (float)freq;
         last = now;
         if (dt > 0.1f) dt = 0.1f;
+        if (reset) {                              /* start the simulation over from scratch */
+            reset = 0;
+            sv->destroy(st);
+            st = sv->create(r, w, h);
+            if (!st) return 1;
+            clock_reset(w, h);
+        }
         if (!paused) {                            /* speed > 1 runs several steps, each small enough to stay stable */
             float left = dt * powf(2.0f, lg);
             for (int n = 0; left > 0 && n < 64; n++) {
@@ -294,6 +316,7 @@ static int snapshot(const char *path, const char *what, int w, int h, float seco
     SDL_Renderer *r = surf ? SDL_CreateSoftwareRenderer(surf) : NULL;
     if (!r) { fprintf(stderr, "snapshot: %s\n", SDL_GetError()); return 1; }
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    g_show_info = getenv("TOASTSAVER_INFO") != NULL;   /* for snapshots: draws the saver's read-out */
     const float dt = 1.0f / 30;
     if (!strcmp(what, "sprites")) {                       /* scaled-up sprite sheet, own size */
         Canvas sh = toasters_sheet();
@@ -429,7 +452,7 @@ static void usage(void) {
            "  toastsaver --list           list savers\n"
            "  toastsaver --windowed ...   use a window: clicks and keys no longer quit it. S = screenshot\n"
            "                              (saved to ~/Pictures), Space = pause, [ ] = slower/faster (or drag the\n"
-           "                              slider), I = info, Esc or Q = quit\n\n"
+           "                              slider), R = restart, I = info, Esc or Q = quit\n\n"
            "Savers: random", VERSION, config_path());
     for (int i = 0; i < SAVER_COUNT; i++) printf(", %s", SAVERS[i]->id);
     printf("\n\nrandom picks a different saver each time from RANDOM_SAVERS, e.g.\n"
