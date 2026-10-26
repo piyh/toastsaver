@@ -1,3 +1,20 @@
+toastsaver (1.4.0) stable; urgency=medium
+
+  * New VOLCANO saver: an undersea volcano that grows into an island. Magma
+    rises from deep below into a chamber, breaks a winding channel up to the
+    surface and erupts, with the lava cooling into rock that builds the
+    mountain. Waves roll in, the sea douses the lava, and every so often a
+    whale swims by. When the mountain is tall it blows itself apart with a
+    tsunami, and a new seamount begins.
+  * BIRDS: bees and ladybugs visit the flowers alongside the butterflies.
+  * The picker lays out all the previews at the screen's own shape, so they
+    are bigger and easier to read at any resolution.
+  * With --windowed, clicks and keys no longer quit: S takes a screenshot,
+    Space pauses, [ and ] (or the slider) change the speed, R restarts,
+    E shows an easter egg, I shows what the saver is doing.
+
+ -- piyh <10518137+piyh@users.noreply.github.com>  Mon, 26 Oct 2026 05:29:04 +0000
+
 toastsaver (1.3.0) stable; urgency=medium
 
   * FISH has new friends: a shark swims by now and then (and the little

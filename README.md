@@ -37,6 +37,9 @@ Thirteen screensavers, plus a SURPRISE ME button that picks a random one each ti
     <td align="center"><img src="docs/lava.png" width="400"><br><b>LAVA</b></td>
     <td align="center"><img src="docs/name.png" width="400"><br><b>NAME</b></td>
   </tr>
+  <tr>
+    <td align="center" colspan="2"><img src="docs/volcano.png" width="400"><br><b>VOLCANO</b></td>
+  </tr>
 </table>
 
 - **TOASTERS**: winged chrome toasters and slices of toast flying down and to the left.
