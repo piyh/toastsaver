@@ -1,6 +1,6 @@
 /* Birds: a sunny summer day. Pixel-art songbirds and a far-off seagull flap and glide across
    a blue sky at different depths, sometimes in a little flock. Clouds drift, flowers sway on
-   rolling hills, a butterfly visits the flowers, and now and then a bird lands for a rest. */
+   rolling hills, butterflies, bees and ladybugs visit the flowers, and now and then a bird lands for a rest. */
 #include "../engine.h"
 #include <math.h>
 #include <stdlib.h>
@@ -22,7 +22,9 @@
 #define MAX_CLOUDS 16
 #define MAX_PLANTS 120
 #define MAX_PERCHES 8
-#define MAX_FLIES 2
+#define MAX_FLIES 5
+#define BEE 4                   /* fly[] rows 0-3 are butterflies */
+#define LADYBUG 5
 #define FLOWER_KINDS 5
 #define SUNFLOWER FLOWER_KINDS
 #define SUN_H 38
@@ -156,7 +158,39 @@ static Canvas make_gull(int frame) {
     return c;
 }
 
-/* ---------- butterflies, sun, clouds ---------- */
+/* ---------- butterflies, bees, ladybugs, sun, clouds ---------- */
+
+/* A bee in side view facing right (frame 0 = wings up, 2 = wings flat), or a ladybug seen
+   from above (frame 0/1 = shell lifted with wings out, 2 = shell closed). */
+static Canvas make_bug(int kind, int frame) {
+    Canvas c = canvas_new(FLY_W, FLY_H);
+    if (kind == BEE) {
+        static const float lift[3] = { 3.2f, 2.2f, 1.2f };
+        fill_ellipse(&c, 4.6f, lift[frame], 1.3f, 1.6f, rgb(0xDDF2FF));
+        fill_ellipse(&c, 6.4f, lift[frame] + 0.3f, 1.1f, 1.4f, rgb(0xEAF8FF));
+        fill_ellipse(&c, 5.0f, 5.6f, 3.0f, 2.1f, rgb(0xFFCE1F));
+        fill_rect(&c, 4, 4, 4, 7, rgb(0x2A2216));
+        fill_rect(&c, 6, 4, 6, 7, rgb(0x2A2216));
+        fill_ellipse(&c, 8.2f, 5.6f, 1.4f, 1.4f, rgb(0x2A2216));
+        put(&c, 1, 6, rgb(0x2A2216));
+        put(&c, 9, 5, rgb(0xFFFFFF));
+        outline(&c, rgb(0x5A4300));
+    } else {
+        float open = frame == 2 ? 0.0f : 1.0f;
+        if (open > 0) {
+            fill_ellipse(&c, 2.6f, 4.6f, 1.2f, 2.0f, rgb(0xE8F4FF));
+            fill_ellipse(&c, 8.4f, 4.6f, 1.2f, 2.0f, rgb(0xE8F4FF));
+        }
+        fill_ellipse(&c, 5.5f, 5.0f, open ? 2.0f : 2.6f, 3.0f, rgb(0xE8221C));
+        fill_ellipse(&c, 5.5f, 1.8f, 1.4f, 1.1f, rgb(0x1E1414));
+        fill_rect(&c, 5, 3, 5, 7, rgb(0x1E1414));
+        put(&c, 4, 4, rgb(0x1E1414));
+        put(&c, 7, 5, rgb(0x1E1414));
+        put(&c, 4, 6, rgb(0x1E1414));
+        outline(&c, rgb(0x3A0A08));
+    }
+    return c;
+}
 
 static Canvas make_butterfly(int col, int frame) {
     static const uint32_t up[4] = { 0xFF9A1F, 0xFFE45C, 0x7EC8FF, 0xFF8FC8 };
@@ -309,14 +343,14 @@ typedef struct {
 typedef struct { float x, y; int plant, busy; } Perch;               /* plant: sunflower or -1 */
 typedef struct { float x, y, ph; int kind, tall, frame; } Plant;
 typedef struct { int shape, layer; float x, y; } Cloud;
-typedef struct { int on, col, target, visits, sitting; float x, y, timer, flap; } Butterfly;
+typedef struct { int on, col, target, visits, sitting, dir; float x, y, timer, flap; } Butterfly;   /* col: fly[] row */
 
 typedef struct {
     int w, h, u, lw, lh, nbirds, nclouds, nplants, nperch, want;
     float t, spawnT, flockT, flyT, sunX, sunY;
     int *nearTop;
     SDL_Texture *sky, *hill[3], *sun, *rays[3];
-    SDL_Texture *bird[KINDS][FLAP + 1], *gull[FLAP], *cloud[CLOUD_SHAPES], *fly[4][3];
+    SDL_Texture *bird[KINDS][FLAP + 1], *gull[FLAP], *cloud[CLOUD_SHAPES], *fly[6][3];
     SDL_Texture *flower[FLOWER_KINDS][2][3], *sunflower[3];
     int cloudW[CLOUD_SHAPES], cloudH[CLOUD_SHAPES];
     Bird b[MAX_BIRDS];
@@ -438,10 +472,12 @@ static void spawn_butterfly(Birds *s, int anywhere) {
         if (f->on) continue;
         memset(f, 0, sizeof *f);
         f->on = 1;
-        f->col = irand(4);
+        int roll = irand(10);
+        f->col = roll < 5 ? irand(4) : roll < 8 ? BEE : LADYBUG;
         f->visits = 2 + irand(3);
         f->target = flowers[irand(n)];
         int left = irand(2);
+        f->dir = left ? 1 : -1;
         f->x = anywhere ? frand(0.2f, 0.8f) * s->w : left ? -6.0f * s->u : s->w + 6.0f * s->u;
         f->y = s->p[f->target].y - frand(14, 30) * s->u;
         f->flap = frand(0, 5);
@@ -577,9 +613,9 @@ static void *create(SDL_Renderer *r, int w, int h) {
         Canvas c = make_gull(fr);
         s->gull[fr] = canvas_texture(r, &c);
     }
-    for (int col = 0; col < 4; col++)
+    for (int col = 0; col < 6; col++)
         for (int fr = 0; fr < 3; fr++) {
-            Canvas c = make_butterfly(col, fr);
+            Canvas c = col < BEE ? make_butterfly(col, fr) : make_bug(col, fr);
             s->fly[col][fr] = canvas_texture(r, &c);
         }
     for (int k = 0; k < FLOWER_KINDS; k++)
@@ -778,7 +814,8 @@ static void step_butterfly(Birds *s, Butterfly *f, float dt) {
         return;
     }
     float dx = gx - f->x, dy = gy - f->y, d = sqrtf(dx * dx + dy * dy);
-    float speed = 20.0f * u, wob = fminf(1.0f, d / (10.0f * u));
+    float speed = (f->col == BEE ? 30.0f : f->col == LADYBUG ? 14.0f : 20.0f) * u, wob = fminf(1.0f, d / (10.0f * u));
+    if (fabsf(dx) > 0.5f * u) f->dir = dx > 0 ? 1 : -1;
     if (d > 0.01f) {
         f->x += dx / d * speed * dt;
         f->y += dy / d * speed * dt;
@@ -915,9 +952,12 @@ static void draw(void *p, SDL_Renderer *r) {
     for (int i = 0; i < MAX_FLIES; i++) {
         const Butterfly *f = &s->f[i];
         if (!f->on) continue;
-        int fr = f->sitting ? restSeq[(int)(f->flap * 3) % 6] : flySeq[(int)(f->flap * 12) % 4];
+        float rate = f->col == BEE ? 40.0f : f->col == LADYBUG ? 16.0f : 12.0f;
+        int fr = f->sitting ? restSeq[(int)(f->flap * 3) % 6] : flySeq[(int)(f->flap * rate) % 4];
+        if (f->col == BEE && f->sitting) fr = 2;
         SDL_Rect d = { (int)(f->x - 5.5f * u), (int)(f->y - 4.5f * u), FLY_W * u, FLY_H * u };
-        SDL_RenderCopy(r, s->fly[f->col][fr], NULL, &d);
+        SDL_RenderCopyEx(r, s->fly[f->col][fr], NULL, &d, 0, NULL,
+                         f->col == BEE && f->dir < 0 ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE);
     }
     draw_birds(s, r, 2, 0);
     draw_birds(s, r, 3, 0);
@@ -935,7 +975,7 @@ static void destroy(void *p) {
     for (int k = 0; k < KINDS; k++)
         for (int fr = 0; fr <= FLAP; fr++) SDL_DestroyTexture(s->bird[k][fr]);
     for (int fr = 0; fr < FLAP; fr++) SDL_DestroyTexture(s->gull[fr]);
-    for (int c = 0; c < 4; c++)
+    for (int c = 0; c < 6; c++)
         for (int fr = 0; fr < 3; fr++) SDL_DestroyTexture(s->fly[c][fr]);
     for (int k = 0; k < FLOWER_KINDS; k++)
         for (int t = 0; t < 2; t++)

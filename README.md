@@ -10,7 +10,7 @@ curl -fsSL https://piyh.github.io/toastsaver/setup.sh | sh
 
 ## What's inside
 
-Twelve screensavers, plus a SURPRISE ME button that picks a random one each time from the ones you put in the mix. All of the artwork is original and drawn by the program itself.
+Thirteen screensavers, plus a SURPRISE ME button that picks a random one each time from the ones you put in the mix. All of the artwork is original and drawn by the program itself.
 
 <table>
   <tr>
@@ -45,11 +45,12 @@ Twelve screensavers, plus a SURPRISE ME button that picks a random one each time
 - **BOOKS**: a cozy lamplit bookshelf. Books slide out, float to the middle, open to a little animated picture, and fly back to their spot.
 - **DICE**: 3D dice (d6, d8, d10, d12 and d20) are thrown together onto a felt tray. Then each number flies up to a chalkboard, slowly enough for a kid to add them up first. A natural 20 on the d20 gets gold rays, confetti and "CRIT!"; a natural 1 gets a grumpy rain cloud.
 - **FISH**: clownfish, a blue tang, a pufferfish, seaweed and a bubbling treasure chest.
-- **BIRDS**: a sunny summer sky with bluebirds, cardinals, finches and robins flying over a flower meadow. (Also requested by a six-year-old.)
+- **BIRDS**: a sunny summer sky with bluebirds, cardinals, finches and robins flying over a flower meadow, visited by butterflies, bees and ladybugs. (Also requested by a six-year-old.)
 - **STARS**: a warp-speed starfield.
 - **MYSTIFY**: bouncing, color-changing shapes with echo trails.
 - **MATRIX**: falling green code. Sometimes a column spells your name.
 - **LAVA**: a glowing lava lamp with wax that warms, rises, merges and sinks, in a new color each time.
+- **VOLCANO**: a night-time island volcano. Lava oozes and erupts, flows down the slopes and cools into rock so the mountain slowly grows, and hisses into steam where it reaches the sea. Smoke, ash, flying fire-bombs and rock chunks fill the sky. When it gets tall it blows up and a new island begins.
 - **NAME**: your name bounces around like the old DVD logo, with confetti when it hits a corner.
 
 ### Easter eggs
@@ -107,6 +108,7 @@ Open **Screensavers** from the app menu. To put an icon on the desktop too, run 
 - **Tap the chosen tile again**, or the big green **TRY IT!** button, to watch it.
 - **Move the mouse, touch the screen, or press any key** to go back to the picker.
 - **SURPRISE ME!** (under the tiles) shows a different saver each time. While it is on, the tiles show which savers are **in the mix**: tap a tile to put it in (green check) or take it out (dimmed). At least one always stays in. Tap **SURPRISE ME!** again to turn it off and choose a single tile.
+- **VOLCANO**: a night-time island volcano. Lava oozes and erupts, flows down the slopes and cools into rock so the mountain slowly grows, and hisses into steam where it reaches the sea. Smoke, ash, flying fire-bombs and rock chunks fill the sky. When it gets tall it blows up and a new island begins.
 - **NAME**: when it is chosen, type your name on the keyboard.
 - The **big red X** closes the app.
 
@@ -151,7 +153,7 @@ Settings live in `~/.config/toastsaver.conf`. The app edits it for you and keeps
 
 ```sh
 ENABLED=1               # 0 = turn the screensaver off
-SAVER=toasters          # toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava name random
+SAVER=toasters          # toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava volcano name random
 RANDOM_SAVERS=          # savers SAVER=random picks from, e.g. toasters,pipes,lava (empty = all)
 NAME='HELLO'            # letters, digits, space and ! ? - . *  (* draws a heart)
 IDLE_MINUTES=5          # minutes of no input before the screensaver appears

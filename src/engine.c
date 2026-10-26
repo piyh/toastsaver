@@ -74,7 +74,7 @@ static const char *const KEYS[NKEYS] = {
     "FPS=", "RANDOM_SAVERS=" };
 static const char *const HELP[NKEYS] = {
     "# 0 = turn the screensaver off",
-    "# toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava name random",
+    "# toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava volcano name random",
     "# shown by the name saver",
     "# minutes of no input before the screensaver appears",
     "# minutes before the display turns off (0 = never)",

@@ -88,6 +88,9 @@ void clock_reset(int w, int h);
 void clock_step(float dt);
 void clock_draw(SDL_Renderer *r, int w, int h);
 
+/* Windowed mode: I toggles a read-out of what the saver is doing (savers may draw it). */
+extern int g_show_info;
+
 /* ---------- screensavers ---------- */
 
 typedef struct Saver {
@@ -102,7 +105,7 @@ typedef struct Saver {
 extern const Saver saver_toasters, saver_pipes, saver_starfield, saver_mystify,
                    saver_matrix, saver_aquarium, saver_lava, saver_name,
                    saver_rainbow, saver_books, saver_birds,
-                   saver_dice;
+                   saver_dice, saver_volcano;
 extern const Saver *const SAVERS[];
 extern const int SAVER_COUNT;
 const Saver *saver_find(const char *id);   /* NULL if unknown */

@@ -10,12 +10,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <time.h>
 #include <sys/stat.h>
 
 const Saver *const SAVERS[] = {
     &saver_toasters, &saver_rainbow, &saver_pipes, &saver_books, &saver_dice, &saver_aquarium,
     &saver_birds, &saver_starfield, &saver_mystify, &saver_matrix, &saver_lava, &saver_name,
+    &saver_volcano,
 };
 const int SAVER_COUNT = sizeof SAVERS / sizeof SAVERS[0];
 
@@ -46,6 +48,68 @@ const Saver *saver_resolve(const char *id) {
 
 /* ---------- fullscreen runner ---------- */
 
+int g_show_info;   /* windowed: I toggles a little read-out of what the saver is doing */
+
+/* Speed slider geometry (windowed mode): the knob position is log2(speed), -2..5 = 0.25x..32x. */
+#define SPEED_MIN_LOG (-2.0f)
+#define SPEED_MAX_LOG 5.0f
+static SDL_Rect speed_track(int w, int h) {
+    int tw = w / 2 < 700 ? w / 2 : 700, th = h / 90 > 8 ? h / 90 : 8;
+    return (SDL_Rect){ (w - tw) / 2, h - h / 14, tw, th };
+}
+
+static void draw_speed_ui(SDL_Renderer *r, int w, int h, float lg, int paused) {
+    SDL_Rect t = speed_track(w, h);
+    int sc = h / 240 > 2 ? h / 240 : 2;
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(r, 0, 0, 0, 120);
+    SDL_Rect bg = { t.x - 24, t.y - 7 * sc - 18, t.w + 48, t.h + 7 * sc + 36 };
+    SDL_RenderFillRect(r, &bg);
+    SDL_SetRenderDrawColor(r, 255, 255, 255, 90);
+    SDL_RenderFillRect(r, &t);
+    float f = (lg - SPEED_MIN_LOG) / (SPEED_MAX_LOG - SPEED_MIN_LOG);
+    SDL_SetRenderDrawColor(r, 255, 190, 60, 255);
+    SDL_Rect fill = { t.x, t.y, (int)(t.w * f), t.h };
+    SDL_RenderFillRect(r, &fill);
+    SDL_Rect knob = { t.x + (int)(t.w * f) - t.h, t.y - t.h / 2, t.h * 2, t.h * 2 };
+    SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
+    SDL_RenderFillRect(r, &knob);
+    char label[64];
+    float sp = powf(2.0f, lg);
+    if (paused) snprintf(label, sizeof label, "PAUSED");
+    else if (sp < 1.0f) snprintf(label, sizeof label, "SPEED %.2gX", sp);
+    else snprintf(label, sizeof label, "SPEED %.3gX", sp);
+    draw_text_shadow(r, label, t.x, t.y - 7 * sc - 10, sc, (SDL_Color){ 255, 255, 255, 255 });
+    draw_text_shadow(r, "[ ] SLOWER FASTER   1 RESET   SPACE PAUSE   S SHOT   I INFO", t.x + t.w / 2 - text_width("[ ] SLOWER FASTER   1 RESET   SPACE PAUSE   S SHOT   I INFO", 1) / 2,
+                     t.y + t.h + 8, 1, (SDL_Color){ 220, 220, 220, 255 });
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+}
+
+/* Saves what is on screen (call after drawing, before presenting) to ~/Pictures if it exists,
+   else the home folder, and prints where it went. Returns 0 on success. */
+static int save_screenshot(SDL_Renderer *r, const char *id, int w, int h) {
+    uint32_t *px = malloc((size_t)w * h * 4);
+    if (!px) return 1;
+    if (SDL_RenderReadPixels(r, NULL, SDL_PIXELFORMAT_RGBA8888, px, w * 4) != 0) { free(px); return 1; }
+    const char *home = getenv("HOME");
+    char dir[600], path[800], stamp[32];
+    struct stat st;
+    snprintf(dir, sizeof dir, "%s/Pictures", home ? home : ".");
+    if (stat(dir, &st) != 0 || !S_ISDIR(st.st_mode)) snprintf(dir, sizeof dir, "%s", home ? home : ".");
+    time_t now = time(NULL);
+    strftime(stamp, sizeof stamp, "%Y%m%d-%H%M%S", localtime(&now));
+    snprintf(path, sizeof path, "%s/toastsaver-%s-%s.png", dir, id, stamp);
+    int rc = write_png(path, w, h, px);
+    free(px);
+    if (rc == 0) printf("screenshot: %s\n", path);
+    else fprintf(stderr, "screenshot: could not write %s\n", path);
+    fflush(stdout);
+    return rc;
+}
+
+/* Screensaver: any key, click or mouse movement ends it. With --windowed it behaves like an
+   app instead, so you can look around: only Esc/Q or closing the window quits, S (or P or F12)
+   takes a screenshot, and Space pauses. */
 int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed) {
     int w, h;
     SDL_GetRendererOutputSize(r, &w, &h);
@@ -57,8 +121,8 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed) {
     const Uint64 freq = SDL_GetPerformanceFrequency();
     Uint64 last = SDL_GetPerformanceCounter();
     const Uint32 started = SDL_GetTicks();
-    float moved = 0;
-    int result = -1;
+    float moved = 0, flash = 0, lg = 0, uiT = 0;   /* lg: log2 of the speed */
+    int result = -1, paused = 0, shot = 0, drag = 0;
     (void)win;
 
     while (result < 0) {
@@ -68,18 +132,66 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed) {
             int armed = SDL_GetTicks() - started > 1200;
             switch (e.type) {
             case SDL_QUIT: result = 1; break;
-            case SDL_KEYDOWN:
-                if (armed || e.key.keysym.sym == SDLK_ESCAPE) result = 0;
+            case SDL_KEYDOWN: {
+                SDL_Keycode k = e.key.keysym.sym;
+                if (!windowed) {
+                    if (armed || k == SDLK_ESCAPE) result = 0;
+                } else if (k == SDLK_ESCAPE || k == SDLK_q) {
+                    result = 0;
+                } else if (k == SDLK_s || k == SDLK_p || k == SDLK_F12) {
+                    shot = 1;
+                } else if (k == SDLK_SPACE && !e.key.repeat) {
+                    paused = !paused;
+                } else if (k == SDLK_LEFTBRACKET || k == SDLK_MINUS) {
+                    lg = fmaxf(SPEED_MIN_LOG, lg - 1);
+                } else if (k == SDLK_RIGHTBRACKET || k == SDLK_EQUALS || k == SDLK_PLUS) {
+                    lg = fminf(SPEED_MAX_LOG, lg + 1);
+                } else if (k == SDLK_1) {
+                    lg = 0;
+                } else if (k == SDLK_i) {
+                    g_show_info = !g_show_info;
+                }
+                if (windowed) uiT = 3;
                 break;
+            }
             case SDL_MOUSEBUTTONDOWN:
             case SDL_FINGERDOWN:
-                if (armed) result = 0;
-                break;
+                if (armed && !windowed) result = 0;
+                if (windowed && e.type == SDL_MOUSEBUTTONDOWN) {
+                    int ww, wh;
+                    SDL_GetWindowSize(win, &ww, &wh);
+                    float mx = e.button.x * (float)w / ww, my = e.button.y * (float)h / wh;
+                    SDL_Rect t = speed_track(w, h);
+                    if (my > t.y - 40 && my < t.y + t.h + 40 && mx > t.x - 20 && mx < t.x + t.w + 20) drag = 1;
+                }
+                if (!drag) break;
+                /* a press on the slider also places the knob, like a drag: */
+                /* fall through */
             case SDL_MOUSEMOTION:
+                if (windowed) {
+                    uiT = 3;
+                    if (drag && (e.type == SDL_MOUSEMOTION ? (e.motion.state & SDL_BUTTON_LMASK) : 1)) {
+                        int ww, wh;
+                        SDL_GetWindowSize(win, &ww, &wh);
+                        int px = e.type == SDL_MOUSEMOTION ? e.motion.x : e.button.x;
+                        float mx = px * (float)w / ww;
+                        SDL_Rect t = speed_track(w, h);
+                        float f = (mx - t.x) / t.w;
+                        f = f < 0 ? 0 : f > 1 ? 1 : f;
+                        lg = SPEED_MIN_LOG + f * (SPEED_MAX_LOG - SPEED_MIN_LOG);
+                        lg = floorf(lg * 4 + 0.5f) / 4;      /* snaps to quarter steps, so 1x is easy to hit */
+                        if (lg > -0.12f && lg < 0.12f) lg = 0;
+                    } else if (e.type == SDL_MOUSEMOTION) {
+                        drag = 0;
+                    }
+                }
                 if (armed && !windowed) {
                     moved += abs(e.motion.xrel) + abs(e.motion.yrel);
                     if (moved > 24) result = 0;
                 }
+                break;
+            case SDL_MOUSEBUTTONUP:
+                drag = 0;
                 break;
             case SDL_WINDOWEVENT:
                 if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
@@ -95,12 +207,34 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed) {
         float dt = (float)(now - last) / (float)freq;
         last = now;
         if (dt > 0.1f) dt = 0.1f;
-        sv->step(st, dt);
+        if (!paused) {                            /* speed > 1 runs several steps, each small enough to stay stable */
+            float left = dt * powf(2.0f, lg);
+            for (int n = 0; left > 0 && n < 64; n++) {
+                float d = left < 0.05f ? left : 0.05f;
+                sv->step(st, d);
+                left -= d;
+            }
+        }
         SDL_RenderSetViewport(r, NULL);
         sv->draw(st, r);
         if (g_config.clock) {
             clock_step(dt);
             clock_draw(r, w, h);
+        }
+        if (shot) {
+            shot = 0;
+            if (save_screenshot(r, sv->id, w, h) == 0) flash = 0.25f;
+        }
+        if (windowed) {
+            if (uiT > 0) uiT -= dt;
+            if (uiT > 0 || paused || drag) draw_speed_ui(r, w, h, lg, paused);
+        }
+        if (flash > 0) {                          /* a quick white flash so you know it worked */
+            SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(r, 255, 255, 255, (Uint8)(flash / 0.25f * 160));
+            SDL_RenderFillRect(r, NULL);
+            SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+            flash -= dt;
         }
         SDL_RenderPresent(r);
         SDL_Delay(8); /* vsync paces us when available; this keeps CPU sane otherwise */
@@ -293,7 +427,9 @@ static void usage(void) {
            "  toastsaver --set KEY=VALUE  change a setting, e.g. --set CLOCK=1\n"
            "  toastsaver --desktop-icon   put a Screensavers icon on the desktop\n"
            "  toastsaver --list           list savers\n"
-           "  toastsaver --windowed ...   use a window instead of fullscreen\n\n"
+           "  toastsaver --windowed ...   use a window: clicks and keys no longer quit it. S = screenshot\n"
+           "                              (saved to ~/Pictures), Space = pause, [ ] = slower/faster (or drag the\n"
+           "                              slider), I = info, Esc or Q = quit\n\n"
            "Savers: random", VERSION, config_path());
     for (int i = 0; i < SAVER_COUNT; i++) printf(", %s", SAVERS[i]->id);
     printf("\n\nrandom picks a different saver each time from RANDOM_SAVERS, e.g.\n"
