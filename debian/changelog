@@ -1,3 +1,11 @@
+toastsaver (1.4.1) stable; urgency=medium
+
+  * Gamepads and joysticks count as input now: their activity resets the
+    screensaver and screen-off timers, and a button press or stick push
+    ends the saver.
+
+ -- piyh <10518137+piyh@users.noreply.github.com>  Fri, 30 Oct 2026 02:41:51 +0000
+
 toastsaver (1.4.0) stable; urgency=medium
 
   * New VOLCANO saver: an undersea volcano that grows into an island. Magma

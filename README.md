@@ -171,7 +171,8 @@ FPS=30                  # frames per second; 30 saves power, 0 = as fast as the 
 At login, every user's session starts `toastsaver-idle` from `/etc/xdg/autostart`. It runs [`swayidle`](https://github.com/swaywm/swayidle), which watches for inactivity:
 
 - After `IDLE_MINUTES` with no input, the chosen saver starts full screen.
-- Any key, click, touch or mouse movement makes it go away.
+- Any key, click, touch, mouse movement or gamepad button/stick makes it go away.
+- Gamepad and joystick activity also counts as input for the timeouts (the compositor usually doesn't see it, so `toastsaver-idle` watches the joystick event devices and restarts `swayidle`'s timers). A stick that drifts on its own keeps the saver from starting.
 - After `SCREEN_OFF_MINUTES`, the display turns off with `wlopm`, if it is installed.
 
 toastsaver never stops the screen from blanking. Apps that block idle the standard Wayland way (the idle-inhibit protocol, which video players and games use while playing) keep the saver from starting.

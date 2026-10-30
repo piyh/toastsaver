@@ -212,6 +212,17 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed) {
             case SDL_MOUSEBUTTONUP:
                 drag = 0;
                 break;
+            case SDL_JOYBUTTONDOWN:
+            case SDL_JOYHATMOTION:
+            case SDL_CONTROLLERBUTTONDOWN:
+                if (armed && !windowed) result = 0;
+                break;
+            case SDL_JOYAXISMOTION:                   /* ignore stick drift and noise */
+                if (armed && !windowed && abs(e.jaxis.value) > 16000) result = 0;
+                break;
+            case SDL_JOYDEVICEADDED:
+                SDL_JoystickOpen(e.jdevice.which);
+                break;
             case SDL_WINDOWEVENT:
                 if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
                     SDL_GetRendererOutputSize(r, &w, &h);
@@ -544,11 +555,15 @@ int main(int argc, char **argv) {
        (--inhibit flips this, so tests can play the part of a video player.) */
     SDL_SetHint(SDL_HINT_VIDEO_ALLOW_SCREENSAVER, inhibit ? "0" : "1");
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
+    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
         fprintf(stderr, "toastsaver: SDL_Init failed: %s\n", SDL_GetError());
         return 1;
     }
     if (inhibit) SDL_DisableScreenSaver();
+    /* Gamepads count as input too; joysticks only deliver events once opened. */
+    if (!windowed && !picker && !settings && SDL_InitSubSystem(SDL_INIT_JOYSTICK) == 0)
+        for (int i = 0; i < SDL_NumJoysticks(); i++) SDL_JoystickOpen(i);
 
     Uint32 flags = SDL_WINDOW_SHOWN | (windowed ? SDL_WINDOW_RESIZABLE : SDL_WINDOW_FULLSCREEN_DESKTOP);
     const char *title = picker || settings ? "Screensavers" : "toastsaver";

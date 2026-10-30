@@ -88,4 +88,39 @@ set -- timeout "$IDLE_SECONDS" "$BIN 9>&- &" resume 'pkill -x toastsaver'
 if [ "$SCREEN_OFF_SECONDS" -gt 0 ] && command -v wlopm >/dev/null; then
     set -- "$@" timeout "$SCREEN_OFF_SECONDS" 'wlopm --off "*"' resume 'wlopm --on "*"'
 fi
-exec swayidle -w "$@"
+
+# swayidle only sees what the compositor sees, and gamepads/joysticks usually never reach it.
+# So watch the joystick event devices ourselves: any activity restarts swayidle, which resets
+# its timers (and wakes the display / ends the saver if they were already up).
+start_idle() { swayidle -w "$@" 9>&- & SWAYIDLE=$!; }
+pads() { ls /dev/input/by-id/*-event-joystick /dev/input/by-path/*-event-joystick 2>/dev/null; }
+
+FLAG="${XDG_RUNTIME_DIR:-/tmp}/toastsaver-pad.$$"
+READERS=
+stop_readers() { for r in $READERS; do pkill -P "$r" 2>/dev/null; kill "$r" 2>/dev/null; done; READERS=; }
+cleanup() { stop_readers; rm -f "$FLAG"; kill "$SWAYIDLE" 2>/dev/null; exit 0; }
+trap cleanup INT TERM HUP
+
+start_idle "$@"
+[ -z "$(pads)" ] && { wait "$SWAYIDLE"; exit; }   # fast path when no pads are plugged in at start
+
+while kill -0 "$SWAYIDLE" 2>/dev/null; do
+    rm -f "$FLAG"
+    for d in $(pads); do
+        [ -r "$d" ] || continue
+        (dd if="$d" of=/dev/null bs=256 count=1 2>/dev/null && : >"$FLAG") 9>&- &
+        READERS="$READERS $!"
+    done
+    # Poll for activity (or a new pad being plugged in) every couple of seconds.
+    n=0
+    while [ ! -e "$FLAG" ] && [ $n -lt 15 ] && kill -0 "$SWAYIDLE" 2>/dev/null; do
+        sleep 2; n=$((n + 1))
+    done
+    stop_readers
+    if [ -e "$FLAG" ]; then
+        kill "$SWAYIDLE" 2>/dev/null; wait "$SWAYIDLE" 2>/dev/null
+        pkill -x toastsaver
+        command -v wlopm >/dev/null && wlopm --on "*"
+        start_idle "$@"
+    fi
+done
