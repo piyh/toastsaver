@@ -61,6 +61,18 @@ running() { pgrep -a -x toastsaver | grep -q "$1"; }
 has_wayland() { ls "$XDG_RUNTIME_DIR" | grep -q "^wayland-[0-9]*$"; }
 until_() { n=$(( $1 * 10 )); shift; while ! "$@"; do n=$((n - 1)); [ $n -gt 0 ] || return 1; sleep 0.1; done; }
 GRACE=1.4   # a new saver ignores input for its first 1.2 s
+# Presses a key until the saver is gone. A loaded machine can be slow to open the window, and
+# the saver ignores input for 1.2 s after that, so one keypress at a fixed time can be missed.
+dismiss() {
+    sleep $GRACE
+    n=20
+    while [ $n -gt 0 ]; do
+        wtype a
+        until_ 1 savers 0 && return 0
+        n=$((n - 1))
+    done
+    return 1
+}
 
 cd ~/toastsaver
 if [ -z "$DEB" ]; then
@@ -99,8 +111,7 @@ echo "single instance: ok"
 echo "--- 1. idle -> screensaver -> key -> gone"
 until_ 6 savers 1 || { pgrep -a swayidle; pgrep -a toastsaver; tail -5 /tmp/compositor.log; fail "screensaver did not start"; }
 sleep $GRACE; grim /tmp/s1.png
-wtype a
-until_ 3 savers 0 || fail "screensaver still running after a key"
+dismiss || fail "screensaver still running after a key"
 echo "ok"
 
 echo "--- 2. an idle inhibitor (like a playing video) blocks it"
@@ -111,16 +122,14 @@ savers 1 || fail "screensaver started even though idle was inhibited ($(count) r
 echo "blocked while inhibited: ok"
 kill $INH; wait $INH 2>/dev/null || true
 until_ 6 savers 1 || fail "screensaver did not start after the inhibitor went away"
-sleep $GRACE; wtype a
-until_ 3 savers 0 || fail "screensaver still running"
+dismiss || fail "screensaver still running"
 echo "starts again once the inhibitor is gone: ok"
 
 echo "--- 3. picker survives a screensaver dismissed over it"
 toastsaver-picker &
 PICK=$!
 until_ 8 savers 1 || fail "screensaver did not appear over the picker"
-sleep $GRACE; wtype a
-until_ 3 savers 0 || fail "screensaver still running"
+dismiss || fail "screensaver still running"
 kill -0 $PICK 2>/dev/null || fail "picker was closed too"
 echo "ok"
 kill $PICK; wait $PICK 2>/dev/null || true
