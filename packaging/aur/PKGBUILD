@@ -12,7 +12,7 @@ makedepends=('pkgconf')
 optdepends=('wlopm: turn the display off after a while')
 options=('!debug')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/piyh/toastsaver/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('489a1ec18529663c3fe1325f46d57062f9408d2dff65fb6d0502624bc8f4eba1')
+sha256sums=('eae2d35625ac85891f87b7a324a05eb5debdba0f0034f43d1e00638b74f1fb63')
 
 build() {
     cd "$pkgname-$pkgver"
