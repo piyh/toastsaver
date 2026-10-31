@@ -1161,4 +1161,4 @@ static void destroy(void *p) {
     free(b);
 }
 
-const Saver saver_books = { "books", "BOOKS", create, step, draw, destroy };
+const Saver saver_books = { "books", "BOOKS", create, step, draw, destroy, NULL };

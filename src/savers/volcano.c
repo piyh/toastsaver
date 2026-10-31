@@ -1212,4 +1212,10 @@ static void destroy(void *p) {
     free(s);
 }
 
-const Saver saver_volcano = { "volcano", "VOLCANO", create, step, draw, destroy };
+/* The screen is nearly black while one island fades into the next: a good moment to cut away. */
+static int at_rest(void *p) {
+    const Volcano *s = p;
+    return s->fadeDir > 0 && s->fade > 0.95f;
+}
+
+const Saver saver_volcano = { "volcano", "VOLCANO", create, step, draw, destroy, at_rest };

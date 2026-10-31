@@ -101,6 +101,7 @@ typedef struct Saver {
     void (*step)(void *s, float dt);
     void (*draw)(void *s, SDL_Renderer *r);  /* draws 0,0..w,h of the current viewport */
     void (*destroy)(void *s);
+    int (*at_rest)(void *s);  /* optional: 1 at a natural place to cut away (SURPRISE rotation waits for it) */
 } Saver;
 
 extern const Saver saver_toasters, saver_pipes, saver_starfield, saver_mystify,
@@ -118,7 +119,7 @@ int saver_set_in_mix(const Saver *sv, int on); /* 0 (and no change) if that woul
 
 /* Runs a saver in the window until input (after a short grace period). Returns 1 if the
    whole app should quit (window closed / SIGTERM), 0 if it was dismissed by input. */
-int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed);
+int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, int cycle);
 int run_picker(SDL_Window *win, SDL_Renderer *r);   /* the app window */
 int run_settings(SDL_Window *win, SDL_Renderer *r);
 void *settings_create(SDL_Renderer *r, int w, int h);

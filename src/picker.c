@@ -312,7 +312,7 @@ static int hit(SDL_Rect rc, int x, int y) { return x >= rc.x && y >= rc.y && x <
 
 static void try_it(Picker *p, SDL_Window *win) {
     const Saver *sv = p->surprise ? saver_resolve("random") : p->tile[p->sel].sv;
-    if (run_saver(win, p->r, sv, 0) == 1) p->quit = 1;
+    if (run_saver(win, p->r, sv, 0, 0) == 1) p->quit = 1;
     SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
 }
 

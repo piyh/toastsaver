@@ -184,7 +184,7 @@ static void click(Settings *s, SDL_Window *win, int x, int y) {
         if (hit(s->row[R_CLOCK24], x, y) && g_config.clock) { g_config.clock24 = !g_config.clock24; config_save(); return; }
     }
     if (hit(s->test, x, y)) {
-        if (run_saver(win, s->r, saver_resolve(g_config.saver), 0) == 1) s->quit = 1;
+        if (run_saver(win, s->r, saver_resolve(g_config.saver), 0, !strcmp(g_config.saver, "random")) == 1) s->quit = 1;
         SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
         return;
     }

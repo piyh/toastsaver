@@ -1547,4 +1547,4 @@ static void destroy(void *p) {
     free(d);
 }
 
-const Saver saver_dice = { "dice", "DICE", create, step, draw, destroy };
+const Saver saver_dice = { "dice", "DICE", create, step, draw, destroy, NULL };

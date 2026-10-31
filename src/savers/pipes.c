@@ -261,4 +261,4 @@ static void destroy(void *v) {
     free(p);
 }
 
-const Saver saver_pipes = { "pipes", "PIPES", create, step, draw, destroy };
+const Saver saver_pipes = { "pipes", "PIPES", create, step, draw, destroy, NULL };
