@@ -28,9 +28,12 @@ typedef struct {
     int clock24;             /* CLOCK_24H: 1 for 24-hour time */
     int fps;                 /* FPS: frame-rate cap for savers, 30 by default (0 = as fast as the display) */
     char randomSavers[256];  /* RANDOM_SAVERS: ids SURPRISE picks from ("" = every saver) */
+    int cycleMinutes;        /* CYCLE_MINUTES: SURPRISE moves on to another saver this often (0 = never) */
 } Config;
 
+#define CONFIG_MAX_MINUTES 9999   /* the most any minutes setting can be */
 extern Config g_config;
+extern const Config CONFIG_DEFAULTS;
 const char *config_path(void);
 void config_load(void);
 int config_apply(const char *line);  /* one KEY=value line; 0 if unknown */

@@ -126,10 +126,12 @@ Click the **gear** in the top-left corner of the app. Changes are saved right aw
 - **Screensaver**: turn it on or off.
 - **Start after**: how long the computer waits before showing the screensaver.
 - **Screen off after**: when the display turns off, or **NEVER**. It is always later than the screensaver.
+- **Surprise switch**: with SURPRISE ME on, how often it moves on to another saver, or **NEVER** to keep one.
+- Tap a time to type in any number of minutes (up to 9999); **-** and **+** also keep going past the usual choices.
 - **Show clock**: puts the time over any screensaver. It drifts to a new spot about once a minute, so it never sits in one place.
 - **Clock style**: 12-hour or 24-hour.
 - **Save power**: draws savers at 30 frames a second instead of as fast as the display can, which roughly halves the work and looks the same for these savers. On by default.
-- **Test it** shows the current screensaver; **Back** returns to the tiles.
+- **Test it** shows the current screensaver; **Reset** (tap it twice) puts every setting on this page back to how it started; **Back** returns to the tiles.
 
 ![The clock over the aquarium](docs/clock.png)
 
@@ -158,6 +160,7 @@ Settings live in `~/.config/toastsaver.conf`. The app edits it for you and keeps
 ENABLED=1               # 0 = turn the screensaver off
 SAVER=toasters          # toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava volcano name random
 RANDOM_SAVERS=          # savers SAVER=random picks from, e.g. toasters,pipes,lava (empty = all)
+CYCLE_MINUTES=10        # minutes before SAVER=random switches to another saver (0 = never)
 NAME='HELLO'            # letters, digits, space and ! ? - . *  (* draws a heart)
 IDLE_MINUTES=5          # minutes of no input before the screensaver appears
 SCREEN_OFF_MINUTES=30   # minutes before the display turns off (0 = never)

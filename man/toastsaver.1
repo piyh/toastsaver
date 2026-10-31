@@ -76,14 +76,17 @@ toasters, rainbow, pipes, books, dice, aquarium, birds, starfield, mystify, matr
 volcano, name, and random.
 .B random
 picks a different saver each time, only from those listed in RANDOM_SAVERS
-(every saver when it is empty), and not the same one twice in a row.
+(every saver when it is empty), and not the same one twice in a row. While the
+screen stays idle it moves on to another every CYCLE_MINUTES.
 .SH FILES
 .TP
 .I ~/.config/toastsaver.conf
 Settings, in shell syntax: ENABLED, SAVER, NAME, IDLE_MINUTES,
 SCREEN_OFF_MINUTES, CLOCK, CLOCK_24H, FPS (a frame-rate cap, 30 by default; 0 means as fast as the
 display, 30 saves power on a Pi) and RANDOM_SAVERS (a comma-separated
-list of savers for SAVER=random; empty means all, unknown names are ignored).
+list of savers for SAVER=random; empty means all, unknown names are ignored) and
+CYCLE_MINUTES (how often SAVER=random switches savers, 10 by default; 0 means never).
+Minutes settings go up to 9999.
 Created on first change.
 .SH NOTES
 Needs a Wayland compositor that supports idle notification, such as labwc,

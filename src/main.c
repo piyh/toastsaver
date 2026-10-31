@@ -123,7 +123,7 @@ static int save_screenshot(SDL_Renderer *r, const char *id, int w, int h) {
 /* Screensaver: any key, click or mouse movement ends it. With --windowed it behaves like an
    app instead, so you can look around: only Esc/Q or closing the window quits, S (or P or F12)
    takes a screenshot, and Space pauses. With `cycle` (SURPRISE) it moves on to another saver every
-   ~10 minutes, waiting up to 10 more for the current one to reach a natural break (at_rest). */
+   CYCLE_MINUTES, waiting up to 10 more for the current one to reach a natural break (at_rest). */
 int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, int cycle) {
     int w, h;
     SDL_GetRendererOutputSize(r, &w, &h);
@@ -138,7 +138,8 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, i
     const Uint32 started = SDL_GetTicks();
     Uint32 shownAt = started;
     const char *cs = getenv("TOASTSAVER_CYCLE_SECS");   /* tests shorten the window */
-    const Uint32 window = (cs && atoi(cs) > 0 ? (Uint32)atoi(cs) : 600) * 1000, grace = window;
+    const Uint32 window = (cs && atoi(cs) > 0 ? (Uint32)atoi(cs) : (Uint32)g_config.cycleMinutes * 60) * 1000,
+                 grace = window < 600000 ? window : 600000;
     float moved = 0, flash = 0, lg = 0, uiT = 0;   /* lg: log2 of the speed */
     int result = -1, paused = 0, shot = 0, drag = 0, reset = 0;
     (void)win;
@@ -241,7 +242,7 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, i
         float dt = (float)(now - last) / (float)freq;
         last = now;
         if (dt > 0.1f) dt = 0.1f;
-        if (cycle && !windowed) {
+        if (cycle && window && !windowed) {
             Uint32 shown = SDL_GetTicks() - shownAt;
             if (shown >= window && ((sv->at_rest && sv->at_rest(st)) || shown >= window + grace)) {
                 const Saver *next = saver_resolve("random");

@@ -3,6 +3,9 @@ toastsaver (1.5.0) stable; urgency=medium
   * SURPRISE ME now keeps rotating: about every 10 minutes of idle time it
     switches to another saver from the mix instead of sticking with one. The
     volcano waits for its island to fade into the next before it cuts away.
+  * Settings: a SURPRISE SWITCH row sets how often that happens (CYCLE_MINUTES),
+    any minutes value can be typed in (up to 9999, so screen-off can be hours),
+    and a RESET button puts the page back to its defaults.
 
  -- piyh <10518137+piyh@users.noreply.github.com>  Sat, 31 Oct 2026 12:00:00 +0000
 

@@ -9,7 +9,9 @@
 
 /* ---------- settings ---------- */
 
-Config g_config = { 1, "toasters", "HELLO", 5, 30, 0, 0, 30, "" };
+#define DEFAULTS { 1, "toasters", "HELLO", 5, 30, 0, 0, 30, "", 10 }
+Config g_config = DEFAULTS;
+const Config CONFIG_DEFAULTS = DEFAULTS;
 
 const char *config_path(void) {
     static char path[1024];
@@ -41,6 +43,13 @@ static void read_value(const char *line, char *out, size_t size) {
     out[n] = 0;
 }
 
+/* A minutes value from the file: `fallback` when missing or below `lo`, at most CONFIG_MAX_MINUTES. */
+static int minutes(const char *v, int lo, int fallback) {
+    int n = atoi(v);
+    if (!*v || n < lo) return fallback;
+    return n < CONFIG_MAX_MINUTES ? n : CONFIG_MAX_MINUTES;
+}
+
 /* Applies one KEY=value line. Returns 0 if the key isn't one of ours. */
 int config_apply(const char *line) {
     char v[256];
@@ -49,12 +58,13 @@ int config_apply(const char *line) {
     if (!strncmp(line, "ENABLED=", 8)) g_config.enabled = atoi(v) != 0;
     else if (!strncmp(line, "SAVER=", 6)) snprintf(g_config.saver, sizeof g_config.saver, "%.31s", v);
     else if (!strncmp(line, "NAME=", 5)) config_set_name(v);
-    else if (!strncmp(line, "IDLE_MINUTES=", 13)) g_config.idleMinutes = atoi(v) > 0 ? atoi(v) : 5;
-    else if (!strncmp(line, "SCREEN_OFF_MINUTES=", 19)) g_config.screenOffMinutes = atoi(v) > 0 ? atoi(v) : 0;
+    else if (!strncmp(line, "IDLE_MINUTES=", 13)) g_config.idleMinutes = minutes(v, 1, 5);
+    else if (!strncmp(line, "SCREEN_OFF_MINUTES=", 19)) g_config.screenOffMinutes = minutes(v, 1, 0);
     else if (!strncmp(line, "CLOCK=", 6)) g_config.clock = atoi(v) != 0;
     else if (!strncmp(line, "CLOCK_24H=", 10)) g_config.clock24 = atoi(v) != 0;
     else if (!strncmp(line, "FPS=", 4)) g_config.fps = atoi(v) > 0 ? atoi(v) : 0;
     else if (!strncmp(line, "RANDOM_SAVERS=", 14)) snprintf(g_config.randomSavers, sizeof g_config.randomSavers, "%s", v);
+    else if (!strncmp(line, "CYCLE_MINUTES=", 14)) g_config.cycleMinutes = minutes(v, 0, 10);
     else return 0;
     return 1;
 }
@@ -68,10 +78,10 @@ void config_load(void) {
 }
 
 /* Every setting we own, with the comment written next to it in a new file. */
-#define NKEYS 9
+#define NKEYS 10
 static const char *const KEYS[NKEYS] = {
     "ENABLED=", "SAVER=", "NAME=", "IDLE_MINUTES=", "SCREEN_OFF_MINUTES=", "CLOCK=", "CLOCK_24H=",
-    "FPS=", "RANDOM_SAVERS=" };
+    "FPS=", "RANDOM_SAVERS=", "CYCLE_MINUTES=" };
 static const char *const HELP[NKEYS] = {
     "# 0 = turn the screensaver off",
     "# toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava volcano name random",
@@ -81,7 +91,8 @@ static const char *const HELP[NKEYS] = {
     "# 1 = show a clock over the screensaver",
     "# 1 = 24-hour clock",
     "# frames per second; 30 saves power, 0 = as fast as the display",
-    "# savers SAVER=random picks from, comma-separated (empty = all)" };
+    "# savers SAVER=random picks from, comma-separated (empty = all)",
+    "# minutes before SAVER=random switches to another saver (0 = never)" };
 
 static void format_key(int k, char *out, size_t n) {
     switch (k) {
@@ -93,7 +104,8 @@ static void format_key(int k, char *out, size_t n) {
     case 5: snprintf(out, n, "CLOCK=%d", g_config.clock); break;
     case 6: snprintf(out, n, "CLOCK_24H=%d", g_config.clock24); break;
     case 7: snprintf(out, n, "FPS=%d", g_config.fps); break;
-    default: snprintf(out, n, "RANDOM_SAVERS=%s", g_config.randomSavers); break;
+    case 8: snprintf(out, n, "RANDOM_SAVERS=%s", g_config.randomSavers); break;
+    default: snprintf(out, n, "CYCLE_MINUTES=%d", g_config.cycleMinutes); break;
     }
 }
 
