@@ -261,4 +261,10 @@ static void destroy(void *v) {
     free(p);
 }
 
-const Saver saver_pipes = { "pipes", "PIPES", create, step, draw, destroy, NULL };
+/* Nearly black at the end of the fade before a new tangle: a good moment to cut away. */
+static int at_rest(void *p) {
+    const Pipes *s = p;
+    return s->fade > 0.9f;
+}
+
+const Saver saver_pipes = { "pipes", "PIPES", create, step, draw, destroy, at_rest };

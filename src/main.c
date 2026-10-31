@@ -120,10 +120,37 @@ static int save_screenshot(SDL_Renderer *r, const char *id, int w, int h) {
     return rc;
 }
 
+/* ---------- switching savers (SURPRISE) ---------- */
+
+#define XFADE_SECONDS 1.5f
+
+/* The saver's current picture, frozen in a texture (NULL where render targets don't work). */
+static SDL_Texture *freeze_frame(SDL_Renderer *r, const Saver *sv, void *st, int w, int h) {
+    if (!SDL_RenderTargetSupported(r)) return NULL;
+    SDL_Texture *t = SDL_CreateTexture(r, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, w, h);
+    if (!t) return NULL;
+    if (SDL_SetRenderTarget(r, t) != 0) { SDL_DestroyTexture(t); return NULL; }
+    SDL_RenderSetViewport(r, NULL);
+    sv->draw(st, r);
+    SDL_SetRenderTarget(r, NULL);
+    SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND);
+    return t;
+}
+
+/* The frozen old saver over the new one: fully there at left = XFADE_SECONDS, gone at 0. */
+static void draw_crossfade(SDL_Renderer *r, SDL_Texture *old, float left) {
+    float a = left / XFADE_SECONDS;
+    a = a * a * (3 - 2 * a);                      /* eases in and out */
+    SDL_RenderSetViewport(r, NULL);
+    SDL_SetTextureAlphaMod(old, (Uint8)(a * 255));
+    SDL_RenderCopy(r, old, NULL, NULL);
+}
+
 /* Screensaver: any key, click or mouse movement ends it. With --windowed it behaves like an
    app instead, so you can look around: only Esc/Q or closing the window quits, S (or P or F12)
    takes a screenshot, and Space pauses. With `cycle` (SURPRISE) it moves on to another saver every
-   CYCLE_MINUTES, waiting up to 10 more for the current one to reach a natural break (at_rest). */
+   CYCLE_MINUTES, waiting up to 10 more for the current one to reach a natural break (at_rest),
+   and crossfades from the old one's last picture to the new one. */
 int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, int cycle) {
     int w, h;
     SDL_GetRendererOutputSize(r, &w, &h);
@@ -137,6 +164,8 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, i
     Uint64 last = SDL_GetPerformanceCounter();
     const Uint32 started = SDL_GetTicks();
     Uint32 shownAt = started;
+    SDL_Texture *old = NULL;                       /* the last saver's picture, fading out */
+    float xfade = 0;
     const char *cs = getenv("TOASTSAVER_CYCLE_SECS");   /* tests shorten the window */
     const Uint32 window = (cs && atoi(cs) > 0 ? (Uint32)atoi(cs) : (Uint32)g_config.cycleMinutes * 60) * 1000,
                  grace = window < 600000 ? window : 600000;
@@ -231,6 +260,7 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, i
             case SDL_WINDOWEVENT:
                 if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
                     SDL_GetRendererOutputSize(r, &w, &h);
+                    if (old) { SDL_DestroyTexture(old); old = NULL; }
                     sv->destroy(st);
                     st = sv->create(r, w, h);
                     if (!st) return 1;
@@ -248,6 +278,9 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, i
                 const Saver *next = saver_resolve("random");
                 shownAt = SDL_GetTicks();
                 if (next != sv) {
+                    if (old) SDL_DestroyTexture(old);
+                    old = freeze_frame(r, sv, st, w, h);
+                    xfade = XFADE_SECONDS;
                     sv->destroy(st);
                     sv = next;
                     st = sv->create(r, w, h);
@@ -272,6 +305,11 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, i
         }
         SDL_RenderSetViewport(r, NULL);
         sv->draw(st, r);
+        if (old) {
+            draw_crossfade(r, old, xfade);
+            xfade -= dt;
+            if (xfade <= 0) { SDL_DestroyTexture(old); old = NULL; }
+        }
         if (g_config.clock) {
             clock_step(dt);
             clock_draw(r, w, h);
@@ -299,6 +337,7 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, i
             if (wait > 0) SDL_Delay((Uint32)wait);
         }
     }
+    if (old) SDL_DestroyTexture(old);
     sv->destroy(st);
     SDL_ShowCursor(SDL_ENABLE);
     return result;

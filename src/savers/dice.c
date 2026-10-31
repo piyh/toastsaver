@@ -1547,4 +1547,10 @@ static void destroy(void *p) {
     free(d);
 }
 
-const Saver saver_dice = { "dice", "DICE", create, step, draw, destroy, NULL };
+/* The tray is empty between one throw and the next. */
+static int at_rest(void *p) {
+    const Dice *s = p;
+    return s->state == GAP;
+}
+
+const Saver saver_dice = { "dice", "DICE", create, step, draw, destroy, at_rest };

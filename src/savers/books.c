@@ -1161,4 +1161,10 @@ static void destroy(void *p) {
     free(b);
 }
 
-const Saver saver_books = { "books", "BOOKS", create, step, draw, destroy, NULL };
+/* Every book is home on the shelf, between one story and the next. */
+static int at_rest(void *p) {
+    const Books *s = p;
+    return s->state == REST;
+}
+
+const Saver saver_books = { "books", "BOOKS", create, step, draw, destroy, at_rest };
