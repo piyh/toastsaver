@@ -21,6 +21,17 @@ CLOCK=0
 IDLE_SECONDS=${IDLE_SECONDS:-$((IDLE_MINUTES * 60))}
 SCREEN_OFF_SECONDS=${SCREEN_OFF_SECONDS:-$((SCREEN_OFF_MINUTES * 60))}
 
+# A small log of the watcher starting, stopping and why, for when the saver stops showing up.
+# Kept in ~/.local/state so it survives logging out and rebooting; trimmed to its last 500 lines.
+LOG="${XDG_STATE_HOME:-$HOME/.local/state}/toastsaver/idle.log"
+log() {
+    mkdir -p "${LOG%/*}" 2>/dev/null || return 0
+    if [ "$(wc -l <"$LOG" 2>/dev/null || echo 0)" -gt 1000 ]; then
+        tail -n 500 "$LOG" >"$LOG.tmp" 2>/dev/null && mv "$LOG.tmp" "$LOG"
+    fi
+    printf '%s [%s] %s\n' "$(date '+%F %T %Z')" "$$" "$*" >>"$LOG" 2>/dev/null
+}
+
 # PIDs of our swayidle watchers. Checks the process name exactly and then its
 # arguments, so it can't match some other program that mentions "toastsaver".
 watcher_pids() {
@@ -28,6 +39,8 @@ watcher_pids() {
         tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null | grep -q "$BIN" && echo "$pid"
     done
 }
+
+pads() { ls /dev/input/by-id/*-event-joystick /dev/input/by-path/*-event-joystick 2>/dev/null; }
 
 first_file() {
     for f in "$@"; do [ -f "$f" ] && { echo "$f"; return 0; }; done
@@ -51,6 +64,7 @@ check() {
     if first_file /usr/share/applications/toastsaver-picker.desktop /usr/local/share/applications/toastsaver-picker.desktop >/dev/null; then ok "Screensavers in the app menu"; else bad "menu entries missing"; fi
     if command -v wlopm >/dev/null; then ok "wlopm available (screen off after $SCREEN_OFF_MINUTES min)"; else note "wlopm not installed; display won't be turned off by toastsaver"; fi
     echo "  settings: '$SAVER' after $IDLE_MINUTES min, clock $CLOCK ($CONF)"
+    if [ -s "$LOG" ]; then echo "  last log lines ($LOG):"; tail -n 8 "$LOG" | sed 's/^/    /'; fi
 }
 
 case "${1:-}" in
@@ -58,11 +72,13 @@ case "${1:-}" in
     --now) shift; exec "$BIN" "$@" ;;
     --stop)
         pids=$(watcher_pids)
+        log "--stop: stopping swayidle ${pids:-(none running)}"
         # shellcheck disable=SC2086  # one word per PID is intended
         [ -n "$pids" ] && kill $pids
         exit 0 ;;
     --restart)
         pids=$(watcher_pids)
+        log "--restart: stopping swayidle ${pids:-(none running)}"
         # shellcheck disable=SC2086  # one word per PID is intended
         [ -n "$pids" ] && kill $pids && sleep 0.3
         # The old watcher can hold the lock for a couple of seconds more (the gamepad loop
@@ -73,15 +89,19 @@ case "${1:-}" in
     *) echo "usage: toastsaver-idle [--now [SAVER]|--check|--restart|--stop]" >&2; exit 2 ;;
 esac
 
-[ "$ENABLED" = 0 ] && exit 0                     # switched off in settings
+[ "$ENABLED" = 0 ] && { log "not starting: ENABLED=0"; exit 0; }   # switched off in settings
 if [ -z "${WAYLAND_DISPLAY:-}" ]; then
     echo "toastsaver-idle: needs a Wayland session" >&2
+    log "not starting: no Wayland session (${XDG_SESSION_TYPE:-unknown})"
     exit 0                                       # quietly do nothing on X11 logins
 fi
 
 # One watcher per login session.
 exec 9>"${XDG_RUNTIME_DIR:-/tmp}/toastsaver-idle.lock"
-if [ -n "${TOASTSAVER_LOCK_WAIT:-}" ]; then flock -w "$TOASTSAVER_LOCK_WAIT" 9 || exit 0; else flock -n 9 || exit 0; fi
+if [ -n "${TOASTSAVER_LOCK_WAIT:-}" ]; then got=0; flock -w "$TOASTSAVER_LOCK_WAIT" 9 && got=1
+else got=0; flock -n 9 && got=1; fi
+if [ "$got" = 0 ]; then log "not starting: another watcher holds the lock"; exit 0; fi
+log "started: '$SAVER' after ${IDLE_SECONDS}s, screen off after ${SCREEN_OFF_SECONDS}s, pads: $(pads | wc -l)"
 
 # The saver reads its settings each time it starts, so picker changes apply at once.
 # 'pkill -x toastsaver' doesn't touch the picker or settings (different process names).
@@ -94,17 +114,20 @@ fi
 # swayidle only sees what the compositor sees, and gamepads/joysticks usually never reach it.
 # So watch the joystick event devices ourselves: any activity restarts swayidle, which resets
 # its timers (and wakes the display / ends the saver if they were already up).
-start_idle() { swayidle -w "$@" 9>&- & SWAYIDLE=$!; }
-pads() { ls /dev/input/by-id/*-event-joystick /dev/input/by-path/*-event-joystick 2>/dev/null; }
+start_idle() { swayidle -w "$@" 9>&- 2>>"$LOG" & SWAYIDLE=$!; }
 
 FLAG="${XDG_RUNTIME_DIR:-/tmp}/toastsaver-pad.$$"
 READERS=
 stop_readers() { for r in $READERS; do pkill -P "$r" 2>/dev/null; kill "$r" 2>/dev/null; done; READERS=; }
-cleanup() { stop_readers; rm -f "$FLAG"; kill "$SWAYIDLE" 2>/dev/null; exit 0; }
+cleanup() { log "stopped by a signal"; stop_readers; rm -f "$FLAG"; kill "$SWAYIDLE" 2>/dev/null; exit 0; }
 trap cleanup INT TERM HUP
 
 start_idle "$@"
-[ -z "$(pads)" ] && { wait "$SWAYIDLE"; exit; }   # fast path when no pads are plugged in at start
+if [ -z "$(pads)" ]; then                          # fast path when no pads are plugged in at start
+    wait "$SWAYIDLE"; rc=$?
+    log "swayidle exited ($rc); watcher stopping"
+    exit
+fi
 
 while kill -0 "$SWAYIDLE" 2>/dev/null; do
     rm -f "$FLAG"
@@ -126,3 +149,4 @@ while kill -0 "$SWAYIDLE" 2>/dev/null; do
         start_idle "$@"
     fi
 done
+log "swayidle exited; watcher stopping"
