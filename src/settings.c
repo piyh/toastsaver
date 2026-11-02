@@ -269,6 +269,7 @@ static void reset_defaults(Settings *s) {
     g_config.clock = d->clock;
     g_config.clock24 = d->clock24;
     g_config.fps = d->fps;
+    g_config.bookPageSecs = d->bookPageSecs;
     s->timingChanged = 1;
     config_save();
 }

@@ -29,6 +29,7 @@ typedef struct {
     int fps;                 /* FPS: frame-rate cap for savers, 30 by default (0 = as fast as the display) */
     char randomSavers[256];  /* RANDOM_SAVERS: ids SURPRISE picks from ("" = every saver) */
     int cycleMinutes;        /* CYCLE_MINUTES: SURPRISE moves on to another saver this often (0 = never) */
+    int bookPageSecs;        /* BOOK_PAGE_SECONDS: how long each page of a poem stays up in BOOKS */
 } Config;
 
 #define CONFIG_MAX_MINUTES 9999   /* the most any minutes setting can be */
@@ -115,7 +116,7 @@ typedef struct Saver {
 extern const Saver saver_toasters, saver_pipes, saver_starfield, saver_mystify,
                    saver_matrix, saver_aquarium, saver_lava, saver_name,
                    saver_rainbow, saver_books, saver_birds,
-                   saver_dice, saver_volcano;
+                   saver_dice, saver_volcano, saver_city;
 extern const Saver *const SAVERS[];
 extern const int SAVER_COUNT;
 const Saver *saver_find(const char *id);   /* NULL if unknown */

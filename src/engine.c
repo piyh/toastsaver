@@ -9,7 +9,7 @@
 
 /* ---------- settings ---------- */
 
-#define DEFAULTS { 1, "toasters", "HELLO", 5, 30, 0, 0, 30, "", 10 }
+#define DEFAULTS { 1, "toasters", "HELLO", 5, 30, 0, 0, 30, "", 10, 9 }
 Config g_config = DEFAULTS;
 const Config CONFIG_DEFAULTS = DEFAULTS;
 
@@ -65,6 +65,7 @@ int config_apply(const char *line) {
     else if (!strncmp(line, "FPS=", 4)) g_config.fps = atoi(v) > 0 ? atoi(v) : 0;
     else if (!strncmp(line, "RANDOM_SAVERS=", 14)) snprintf(g_config.randomSavers, sizeof g_config.randomSavers, "%s", v);
     else if (!strncmp(line, "CYCLE_MINUTES=", 14)) g_config.cycleMinutes = minutes(v, 0, 10);
+    else if (!strncmp(line, "BOOK_PAGE_SECONDS=", 18)) g_config.bookPageSecs = minutes(v, 1, 9);
     else return 0;
     return 1;
 }
@@ -78,13 +79,13 @@ void config_load(void) {
 }
 
 /* Every setting we own, with the comment written next to it in a new file. */
-#define NKEYS 10
+#define NKEYS 11
 static const char *const KEYS[NKEYS] = {
     "ENABLED=", "SAVER=", "NAME=", "IDLE_MINUTES=", "SCREEN_OFF_MINUTES=", "CLOCK=", "CLOCK_24H=",
-    "FPS=", "RANDOM_SAVERS=", "CYCLE_MINUTES=" };
+    "FPS=", "RANDOM_SAVERS=", "CYCLE_MINUTES=", "BOOK_PAGE_SECONDS=" };
 static const char *const HELP[NKEYS] = {
     "# 0 = turn the screensaver off",
-    "# toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava volcano name random",
+    "# toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava volcano city name random",
     "# shown by the name saver",
     "# minutes of no input before the screensaver appears",
     "# minutes before the display turns off (0 = never)",
@@ -92,7 +93,8 @@ static const char *const HELP[NKEYS] = {
     "# 1 = 24-hour clock",
     "# frames per second; 30 saves power, 0 = as fast as the display",
     "# savers SAVER=random picks from, comma-separated (empty = all)",
-    "# minutes before SAVER=random switches to another saver (0 = never)" };
+    "# minutes before SAVER=random switches to another saver (0 = never)",
+    "# seconds each page of a poem stays up in the books saver" };
 
 static void format_key(int k, char *out, size_t n) {
     switch (k) {
@@ -105,7 +107,8 @@ static void format_key(int k, char *out, size_t n) {
     case 6: snprintf(out, n, "CLOCK_24H=%d", g_config.clock24); break;
     case 7: snprintf(out, n, "FPS=%d", g_config.fps); break;
     case 8: snprintf(out, n, "RANDOM_SAVERS=%s", g_config.randomSavers); break;
-    default: snprintf(out, n, "CYCLE_MINUTES=%d", g_config.cycleMinutes); break;
+    case 9: snprintf(out, n, "CYCLE_MINUTES=%d", g_config.cycleMinutes); break;
+    default: snprintf(out, n, "BOOK_PAGE_SECONDS=%d", g_config.bookPageSecs); break;
     }
 }
 

@@ -32,7 +32,7 @@ static const uint32_t SPARKS[6] = { 0xFFE27A, 0xFFFFFF, 0xFF9EC8, 0x9ED8FF, 0xA8
 /* '/' starts a new line, '|' a new page; long lines wrap at the page edge. */
 static const char *const TITLES[PICS] = {
     "HEY DIDDLE DIDDLE", "THE RAINBOW", "ONCE I CAUGHT A FISH ALIVE", "ROSES ARE RED",
-    "TWINKLE, TWINKLE, LITTLE STAR", "THE OWL AND THE PUSSY-CAT", "BAA, BAA, BLACK SHEEP",
+    "TWINKLE, TWINKLE, LITTLE STAR", "I LOVE LITTLE PUSSY", "BAA, BAA, BLACK SHEEP",
     "HICKORY, DICKORY, DOCK", "THE WIND", "THE JUMBLIES", "WHAT IS PINK?", "WHERE GO THE BOATS?",
 };
 static const char *const STORIES[PICS] = {
@@ -54,11 +54,13 @@ static const char *const STORIES[PICS] = {
     "UP ABOVE THE WORLD SO HIGH,/LIKE A DIAMOND IN THE SKY.|"
     "WHEN THE BLAZING SUN IS GONE,/WHEN HE NOTHING SHINES UPON,|"
     "THEN YOU SHOW YOUR LITTLE LIGHT,/TWINKLE, TWINKLE, ALL THE NIGHT.",
-    /* Edward Lear, 1871 */
-    "THE OWL AND THE PUSSY-CAT WENT TO SEA/IN A BEAUTIFUL PEA-GREEN BOAT,|"
-    "THEY TOOK SOME HONEY, AND PLENTY OF MONEY,/WRAPPED UP IN A FIVE-POUND NOTE.|"
-    "THE OWL LOOKED UP TO THE STARS ABOVE,/AND SANG TO A SMALL GUITAR,|"
-    "O LOVELY PUSSY! O PUSSY, MY LOVE,/WHAT A BEAUTIFUL PUSSY YOU ARE!",
+    /* Jane Taylor, 1804 */
+    "I LOVE LITTLE PUSSY,/HER COAT IS SO WARM,|"
+    "AND IF I DON'T HURT HER/SHE'LL DO ME NO HARM.|"
+    "SO I'LL NOT PULL HER TAIL,/NOR DRIVE HER AWAY,|"
+    "BUT PUSSY AND I/VERY GENTLY WILL PLAY.|"
+    "SHE SHALL SIT BY MY SIDE,/AND I'LL GIVE HER SOME FOOD,|"
+    "AND PUSSY WILL LOVE ME/BECAUSE I AM GOOD.",
     "BAA, BAA, BLACK SHEEP,/HAVE YOU ANY WOOL?/YES SIR, YES SIR,/THREE BAGS FULL.|"
     "ONE FOR THE MASTER,/ONE FOR THE DAME,/AND ONE FOR THE LITTLE BOY/WHO LIVES DOWN THE LANE.",
     "HICKORY, DICKORY, DOCK,/THE MOUSE RAN UP THE CLOCK.|"
@@ -94,8 +96,10 @@ static const char *const STORIES[PICS] = {
 #define PAPER 0xF4E8C8
 #define INK 0x3A2A1A
 #define LINE_H (FONT_H + 2)
+#define TK 2                             /* the poem is set at 1/TK the size: its page is drawn TK times finer */
+#define POEM_LH (FONT_H + 3)
 #define MAXLINES 64
-#define PAGE_SECS 9.0f                   /* how long each page of a poem stays up */
+#define PAGE_SECS ((float)g_config.bookPageSecs)   /* how long each page of a poem stays up (BOOK_PAGE_SECONDS) */
 #define TURN_T 1.1f                      /* how long one page takes to turn over */
 #define PIC_SPEED 0.7f                   /* the pictures move a bit slower than real time */
 
@@ -111,7 +115,7 @@ typedef struct {
     int hasLamp, lampW, lampH, lampFloor, needTex;
     int state, cur, pic, lastPic, picFrame;
     int page, leftPage, nlines, npages;
-    int lineS[MAXLINES], lineL[MAXLINES], pageStart[MAXLINES + 1];
+    int lineS[MAXLINES], lineL[MAXLINES], lineGap[MAXLINES], pageStart[MAXLINES + 1];
     Book books[MAXBOOKS];
     int nbooks, home[PICS];               /* each story always lives in the same book */
     SDL_Texture *shelf, *spine, *cover, *left, *next, *right, *picTex, *cat[CAT_FRAMES];
@@ -648,15 +652,20 @@ static void gutter(Canvas *c, int left) {
 }
 
 static Canvas make_left_page(const Books *b) {
-    Canvas c = canvas_new(b->pw, b->ph);
+    Canvas c = canvas_new(b->pw * TK, b->ph * TK);
     paper(&c, 1);
     int first = b->pageStart[b->page], n = b->pageStart[b->page + 1] - first;
-    int y = (b->ph - 6 - n * LINE_H) / 2 + 1;
-    for (int i = 0; i < n; i++, y += LINE_H)
-        ink_text(&c, 5, y, STORIES[b->pic] + b->lineS[first + i], b->lineL[first + i], INK);
-    for (int i = 0; i < b->npages && b->npages > 1; i++)      /* which page we're on */
-        fill_rect(&c, b->pw / 2 - b->npages * 2 + i * 4, b->ph - 4, b->pw / 2 - b->npages * 2 + i * 4 + 1, b->ph - 4,
-                  rgb(i == b->page ? 0x7A6448 : 0xD8C8A4));
+    int h = n * POEM_LH;
+    for (int i = 0; i < n - 1; i++) h += b->lineGap[first + i];
+    int y = (b->ph * TK - 6 * TK - h) / 2 + 1;
+    for (int i = 0; i < n; i++) {
+        ink_text(&c, 4 * TK, y, STORIES[b->pic] + b->lineS[first + i], b->lineL[first + i], INK);
+        y += POEM_LH + b->lineGap[first + i];
+    }
+    for (int i = 0; i < b->npages && b->npages > 1; i++) {    /* which page we're on */
+        int x = (b->pw / 2 - b->npages * 2 + i * 4) * TK, yy = (b->ph - 4) * TK;
+        fill_rect(&c, x, yy, x + 2 * TK - 1, yy + TK - 1, rgb(i == b->page ? 0x7A6448 : 0xD8C8A4));
+    }
     gutter(&c, 1);
     return c;
 }
@@ -1180,12 +1189,17 @@ static void choose_book(Books *b) {
     b->picT = 0;
     b->picFrame = -1;
     b->needTex = 1;
-    int brk[MAXLINES], cap = (b->ph - 8) / LINE_H, on = 0;
-    b->nlines = wrap(STORIES[b->pic], text_cols(b->pw - 10), b->lineS, b->lineL, brk, MAXLINES);
+    int brk[MAXLINES], room = b->ph * TK - 8 * TK, used = 0;
+    b->nlines = wrap(STORIES[b->pic], text_cols(b->pw * TK - 8 * TK), b->lineS, b->lineL, brk, MAXLINES);
     b->npages = 0;
-    for (int i = 0; i < b->nlines; i++) {
-        if (on == 0) b->pageStart[b->npages++] = i;
-        if (++on == cap || brk[i]) on = 0;
+    for (int i = 0, st = 0; i < b->nlines; i++) {      /* stanzas are packed onto pages, a gap between */
+        b->lineGap[i] = brk[i] ? POEM_LH / 2 + 2 : 0;
+        if (!brk[i] && i < b->nlines - 1) continue;
+        int h = (i - st + 1) * POEM_LH;
+        if (used && used + POEM_LH / 2 + h > room) used = 0;
+        if (!used) b->pageStart[b->npages++] = st;
+        used += (used ? POEM_LH / 2 + 2 : 0) + h;
+        st = i + 1;
     }
     b->pageStart[b->npages] = b->nlines;
     b->page = 0;
@@ -1215,11 +1229,11 @@ static void *create(SDL_Renderer *ren, int w, int h) {
     b->px = h / 180 > 1 ? h / 180 : 1;
     b->W = (w + b->px - 1) / b->px;
     b->H = (h + b->px - 1) / b->px;
-    b->ch = (int)(b->H * 0.6f);
-    b->cw = (int)(b->ch * 0.74f);
+    b->ch = (int)(b->H * 0.68f);
+    b->cw = (int)(b->ch * 0.9f);
     b->pw = b->cw - 2;
     b->ph = b->ch - 4;
-    b->picw = b->pw - 11;
+    b->picw = b->pw - 8;
     b->pich = (int)(b->picw * 0.78f);
     if (b->pich > b->ph * 62 / 100) b->pich = b->ph * 62 / 100;
     b->picx = (b->pw - b->picw) / 2 + 1;
@@ -1543,4 +1557,13 @@ static int at_rest(void *p) {
     return s->state == REST;
 }
 
-const Saver saver_books = { "books", "BOOKS", create, step, draw, destroy, at_rest, NULL };
+/* The clock stays off the book while one is out in the middle. */
+static int keep_clear(void *p, SDL_Rect *out, int max) {
+    const Books *b = p;
+    if (max < 1 || b->state == REST) return 0;
+    int S = b->px, w = 2 * b->pw * S, h = b->ch * S;
+    out[0] = (SDL_Rect){ b->w / 2 - w / 2, b->h / 2 - h / 2, w, h };
+    return 1;
+}
+
+const Saver saver_books = { "books", "BOOKS", create, step, draw, destroy, at_rest, keep_clear };

@@ -110,12 +110,12 @@ Open **Screensavers** from the app menu. To put an icon on the desktop too, run 
 - **Tap a tile** to choose it. Your choice is saved right away. There is no Save button.
 - **Tap the chosen tile again**, or the big green **TRY IT!** button, to watch it.
 - **Move the mouse, touch the screen, or press any key** to go back to the picker.
-- **SURPRISE ME!** (under the tiles) shows a different saver each time, and keeps switching about every 10 minutes while the screen stays idle (fading from one to the next, and waiting for a natural break where a saver has one: a new volcano island, a fresh pipes tangle, a book back on the shelf, an empty dice tray). While it is on, the tiles show which savers are **in the mix**: tap a tile to put it in (green check) or take it out (dimmed). At least one always stays in. Tap **SURPRISE ME!** again to turn it off and choose a single tile.
+- **SURPRISE ME!** (under the tiles) shows a different saver each time, and keeps switching about every 10 minutes while the screen stays idle (fading from one to the next, and waiting for a natural break where a saver has one: a new volcano island, a fresh pipes tangle, a book back on the shelf, an empty dice tray). While it is on, **tap any tile to watch just that saver**: nothing is changed or saved, so a quick look at VOLCANO needs no deselecting. To choose what is in the mix, press **PICK MIX**: the tiles then show which savers are in (green check) or out (dimmed), and tapping a tile flips it. At least one always stays in. Press **DONE** to go back to watching. Tap **SURPRISE ME!** again to turn it off and choose a single tile.
 - **VOLCANO**: a night-time island volcano. Lava oozes and erupts, flows down the slopes and cools into rock so the mountain slowly grows, and hisses into steam where it reaches the sea. Smoke, ash, flying fire-bombs and rock chunks fill the sky. When it gets tall it blows up and a new island begins.
 - **NAME**: when it is chosen, type your name on the keyboard.
 - The **big red X** closes the app.
 
-On a keyboard, use the arrow keys to move, **Enter** to try, **Tab** to turn SURPRISE ME on or off, **Space** to put the highlighted saver in or out of the mix, and **Esc** to close.
+On a keyboard, use the arrow keys to move, **Enter** to try, **Tab** to turn SURPRISE ME on or off, **Space** to watch the highlighted saver (in SURPRISE mode; while picking the mix it puts it in or out), and **Esc** to close.
 
 ### Settings (for grown-ups)
 
@@ -158,9 +158,10 @@ Settings live in `~/.config/toastsaver.conf`. The app edits it for you and keeps
 
 ```sh
 ENABLED=1               # 0 = turn the screensaver off
-SAVER=toasters          # toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava volcano name random
+SAVER=toasters          # toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava volcano city name random
 RANDOM_SAVERS=          # savers SAVER=random picks from, e.g. toasters,pipes,lava (empty = all)
 CYCLE_MINUTES=10        # minutes before SAVER=random switches to another saver (0 = never)
+BOOK_PAGE_SECONDS=9     # seconds each page of a poem stays up in the books saver
 NAME='HELLO'            # letters, digits, space and ! ? - . *  (* draws a heart)
 IDLE_MINUTES=5          # minutes of no input before the screensaver appears
 SCREEN_OFF_MINUTES=30   # minutes before the display turns off (0 = never)
