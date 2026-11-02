@@ -1,3 +1,27 @@
+toastsaver (1.6.0) stable; urgency=medium
+
+  * Volcano: the finale throws the cone apart. Thin rock near the summit
+    flies fast as small fragments, the thick base shrugs outward as slow
+    slabs, and the crater settles into a partly filled bowl.
+  * Volcano: rock has real heat. It flows between touching rock, quenches
+    fast in the sea and slowly in air; small debris goes dark at once while
+    big lumps keep a glowing core, in the air and under water alike.
+  * Volcano: new channels bend toward rock still warm from old ones, sealed
+    channels stay in the cone as dark red dikes, and the magma chamber stays
+    full, glowing and churning harder as its pressure builds.
+  * Volcano: the whale dives and swims away from eruptions and rides the
+    swell smoothly instead of every ripple.
+  * Windowed mode: B sets off the volcano's finale now, F fast-forwards to
+    it and drops back to normal speed when it starts, and the speed goes up
+    to 512x (as fast as the computer can run it).
+  * Books: each book shows a real public-domain rhyme or poem with its
+    title, in order from a random start. Pages turn over like paper, every
+    story keeps its own book, and there are six new stories and pictures.
+  * Rainbow: a unicorn gallops across the sky every few minutes (or on E),
+    and the Waffle Cat is livelier.
+
+ -- piyh <10518137+piyh@users.noreply.github.com>  Mon, 02 Nov 2026 22:00:00 +0000
+
 toastsaver (1.5.2) stable; urgency=medium
 
   * Fixes the screensaver no longer starting after changing a time in
