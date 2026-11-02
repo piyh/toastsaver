@@ -1174,7 +1174,7 @@ static void pick_homes(Books *b) {
 }
 
 static void choose_book(Books *b) {
-    do b->pic = irand(PICS); while (b->pic == b->lastPic);
+    b->pic = b->lastPic < 0 ? irand(PICS) : (b->lastPic + 1) % PICS;   /* in order, from a random start */
     b->cur = b->home[b->pic];
     b->lastPic = b->pic;
     b->picT = 0;
