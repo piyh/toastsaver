@@ -10,7 +10,7 @@
 #include <string.h>
 
 #define TICK (1.0f / 30)
-#define MAX_PARTS 700
+#define MAX_PARTS 2000
 #define MAX_SMOKE 260
 
 enum { AIR, ROCK, WATER, LAVA, RUBBLE, MAGMA };   /* RUBBLE: freshly cooled, still tumbling; sets into ROCK.
@@ -19,13 +19,15 @@ enum { ST_REPOSE, ST_CRACK, ST_ERUPT, ST_FREEZE };  /* the plumbing's life: rech
 #define COND_MAX 6000
 enum { P_BOMB, P_CHUNK, P_EMBER, P_STEAM, P_BUBBLE };
 
-typedef struct { float x, y, vx, vy, life, size; int kind, sunk; } Part;
+typedef struct { float x, y, vx, vy, life, size, grace; int kind, sunk; float temp; } Part;   /* grace: seconds it ploughs through water;
+                                                                                                temp: 1 = white hot, 0 = cold rock */
 typedef struct { float x, y, vx, vy, age, life, size, dark; } Smoke;
 
 typedef struct {
     int w, h, gw, gh, u, sub;
     float k;                              /* grid cells per old 1/130th of the screen height */
     uint8_t *m, *heat, *stamp, *shade, *age;   /* material, heat (lava + glowing rock), tick stamp, rock tint */
+    uint8_t *live;                        /* per row: has lava, rubble or glowing rock, so the automaton visits it */
     float *wtop;                          /* where the sea surface really is, per column (cells, y down) */
     float *wh, *wv;                       /* sea surface height and velocity per column (cells) */
     int *top;                             /* per column: y of the highest rock, or gh */
@@ -59,6 +61,7 @@ static uint32_t hash2(int x, int y) {
 #define SOLID(m) ((m) == ROCK || (m) == RUBBLE || (m) == MAGMA)
 #define LOOSE_OR_ROCK(m) ((m) == ROCK || (m) == RUBBLE)
 static int inside(const Volcano *s, int x, int y) { return x >= 0 && x < s->gw && y >= 0 && y < s->gh; }
+static void wake(Volcano *s, int y) { s->live[y] = 1; }   /* something on row y needs the automaton */
 
 /* ---------- world ---------- */
 
@@ -91,10 +94,12 @@ static void update_sea(Volcano *s) {
 }
 
 static void recompute_tops(Volcano *s) {
-    for (int x = 0; x < s->gw; x++) {
-        int y = 0;
-        while (y < s->gh && !SOLID(AT(s, x, y))) y++;
-        s->top[x] = y;
+    int left = s->gw;                              /* row by row, in memory order, until every column has found rock */
+    for (int x = 0; x < s->gw; x++) s->top[x] = s->gh;
+    for (int y = 0; y < s->gh && left; y++) {
+        const uint8_t *row = s->m + y * s->gw;
+        for (int x = 0; x < s->gw; x++)
+            if (s->top[x] == s->gh && SOLID(row[x])) { s->top[x] = y; left--; }
     }
 }
 
@@ -206,6 +211,7 @@ static void *create(SDL_Renderer *r, int w, int h) {
     s->stamp = calloc(n, 1);
     s->shade = calloc(n, 1);
     s->age = calloc(n, 1);
+    s->live = calloc(s->gh, 1);
     s->cond = calloc(COND_MAX, sizeof(int));
     s->cw = (s->gw + 3) / 4;
     s->ch = (s->gh + 3) / 4;
@@ -236,7 +242,7 @@ static void add_smoke(Volcano *s, float x, float y, float vx, float vy, float si
 
 static void add_part(Volcano *s, int kind, float x, float y, float vx, float vy, float life, float size) {
     if (s->np >= MAX_PARTS) return;
-    s->p[s->np++] = (Part){ x, y, vx, vy, life, size, kind, 0 };
+    s->p[s->np++] = (Part){ x, y, vx, vy, life, size, 0, kind, 0, kind == P_BOMB ? 1.0f : kind == P_CHUNK ? 0.6f : 0 };
 }
 
 static int surface_y(const Volcano *s, int x) {
@@ -277,6 +283,7 @@ static int move_cell(Volcano *s, int x, int y, int nx, int ny) {
     s->m[j] = s->m[i];
     s->heat[j] = s->heat[i];
     s->stamp[j] = (uint8_t)s->tick;
+    wake(s, ny);
     s->m[i] = AIR;
     s->heat[i] = 0;
     return j;
@@ -294,6 +301,7 @@ static void solidify(Volcano *s, int x, int y, int glow) {
     s->m[i] = RUBBLE;
     s->heat[i] = (uint8_t)glow;
     s->age[i] = 0;
+    wake(s, y);
     if (y < s->top[x]) s->top[x] = y;
 }
 
@@ -335,7 +343,7 @@ static void step_lava_cell(Volcano *s, int x, int y) {
             }
         }
     }
-    int hv = s->heat[at] - (irand(1000) < (int)(700 / s->k) ? (moved ? (s->tick % 3 == 0) : 1) : 0);
+    int hv = s->heat[at] - (irand(1000) < (int)(250 / s->k) ? (moved ? (s->tick % 3 == 0) : 1) : 0);
     if (hv <= 80 && !moved) solidify(s, at % s->gw, at / s->gw, 100);
     else s->heat[at] = (uint8_t)(hv < 80 ? 80 : hv);
 }
@@ -368,6 +376,7 @@ static void step_rubble(Volcano *s, int x, int y) {
     int j = ny * s->gw + nx, displaced = s->m[j];
     s->m[j] = RUBBLE;
     s->heat[j] = s->heat[i];
+    wake(s, ny);
     s->age[j] = 0;
     s->stamp[j] = (uint8_t)s->tick;
     s->m[i] = displaced == WATER && y >= sea_top(s, (float)x) ? WATER : AIR;   /* pushed-aside water takes its place */
@@ -401,10 +410,10 @@ static void heat_update(Volcano *s) {
                 if (nx < 0 || nx >= cw || ny < 0) { sum += s->T[i]; continue; }
                 if (ny >= ch) { sum += s->T[i]; continue; }
                 int j = ny * cw + nx;
-                sum += s->ty[j] == 1 ? s->T[j] : s->ty[j] == 2 ? 1.0f : 0.0f;
+                sum += s->ty[j] == 1 ? s->T[j] : s->ty[j] == 2 ? 1.0f : s->ty[j] == 0 ? 0.85f * s->T[i] : 0.0f;   /* air insulates */
                 wet |= s->ty[j] == 3;
             }
-            float t = s->T[i] + 0.2f * (sum * 0.25f - s->T[i]) - 0.0004f;
+            float t = s->T[i] + 0.2f * (sum * 0.25f - s->T[i]) - 0.00015f;
             if (wet) t *= 0.93f;
             s->Tn[i] = t < 0 ? 0 : t;
         }
@@ -541,6 +550,7 @@ static int emit_lava(Volcano *s, int n) {
         for (int up = (int)(14 * s->k); up > 0 && inside(s, x, y) && (AT(s, x, y) == LAVA || AT(s, x, y) == RUBBLE); up--) y--;   /* pile on top of what is already there */
         if (!inside(s, x, y) || (AT(s, x, y) != AIR && AT(s, x, y) != WATER)) continue;
         AT(s, x, y) = LAVA;
+        wake(s, y);
         placed++;
         s->heat[y * s->gw + x] = 255;
         s->stamp[y * s->gw + x] = (uint8_t)s->tick;
@@ -568,20 +578,48 @@ static void land(Volcano *s, Part *p) {
     while (y < s->gh && AT(s, x, y) == AIR) y++;
     if (y >= s->gh) y = s->gh - 1;
     int rad = (int)(p->size * (p->kind == P_CHUNK ? 0.45f : 0.5f));
-    blob(s, x, y - 1, rad < 1 ? 1 : rad, p->kind == P_CHUNK ? 120 : 210);
+    blob(s, x, y - 1, rad < 1 ? 1 : rad, (int)(p->temp * 210));
 }
 
 /* One pass of the lava automaton, bottom to top, alternating sweep direction. */
+/* Heat in glowing rock and rubble, per cell. It flows between touching hot cells, so a big chunk keeps
+   a hot core; it leaks away through every face that touches the sea (fast) or the air (slowly). A
+   small bit is all faces and quenches in a blink; a big one grows a dark crust over a glowing heart. */
+static void cool_cell(Volcano *s, int x, int y, int i) {
+    int h = s->heat[i], flow = 0, loss = 6;   /* sixteenths of a heat step; 6: it always seeps into the cold rock around */
+    static const int dx[4] = { 1, -1, 0, 0 }, dy[4] = { 0, 0, 1, -1 };
+    for (int k = 0; k < 4; k++) {
+        int nx = x + dx[k], ny = y + dy[k];
+        if (!inside(s, nx, ny)) continue;
+        int j = ny * s->gw + nx, m = s->m[j];
+        if (m == WATER) loss += 96;
+        else if (m == AIR) loss += 1;
+        else if (LOOSE_OR_ROCK(m)) flow += 2 * (s->heat[j] - h);   /* shares heat with touching rock; lava and magma keep theirs */
+    }
+    int d = flow - loss, step = d >> 4, frac = d & 15;  /* the fraction is dithered, so slow rates still add up */
+    if (frac > (int)((i * 2654435761u + (unsigned)s->tick * 40503u) >> 28)) step++;
+    h += step;
+    s->heat[i] = (uint8_t)(h < 0 ? 0 : h > 255 ? 255 : h);
+}
+
+/* One pass of the lava automaton, bottom to top, alternating sweep direction. Rows with nothing
+   moving or glowing, and none beside them, are skipped; every sixteenth pass looks at them all anyway. */
 static void ca_pass(Volcano *s) {
     s->tick++;
+    int all = (s->tick & 15) == 0;
     for (int y = s->gh - 2; y >= 0; y--) {
+        if (!all && !s->live[y] && !(y > 0 && s->live[y - 1]) && !s->live[y + 1]) continue;
+        s->live[y] = 0;
+        int busy = 0;
         int x0 = (s->tick & 1) ? 0 : s->gw - 1, dx = (s->tick & 1) ? 1 : -1;
         for (int k = 0, x = x0; k < s->gw; k++, x += dx) {
             int i = y * s->gw + x;
             if (s->m[i] == LAVA && s->stamp[i] != (uint8_t)s->tick) step_lava_cell(s, x, y);
             else if (s->m[i] == RUBBLE && s->stamp[i] != (uint8_t)s->tick) step_rubble(s, x, y);
-            if (LOOSE_OR_ROCK(s->m[i]) && s->heat[i] && (s->tick & 1) == 0) s->heat[i]--;
+            if (LOOSE_OR_ROCK(s->m[i]) && s->heat[i]) cool_cell(s, x, y, i);
+            busy |= s->m[i] == LAVA || s->m[i] == RUBBLE || s->heat[i];
         }
+        if (busy) s->live[y] = 1;
     }
     /* any lava that fell off the world floor stops being lava */
     for (int x = 0; x < s->gw; x++)
@@ -599,6 +637,7 @@ static void slump(Volcano *s) {
         s->m[to] = RUBBLE;
         s->age[to] = 0;
         s->heat[to] = s->heat[from];
+        wake(s, s->top[nx] - 1);
         s->m[from] = s->top[x] >= sea_top(s, (float)x) ? WATER : AIR;
         s->heat[from] = 0;
         s->top[nx]--;
@@ -610,19 +649,74 @@ static void slump(Volcano *s) {
 
 /* ---------- the finale: the mountain blows itself apart ---------- */
 
+/* Beside the crater, out to 2 radii, nothing is left standing above a low rim line: a circle cut
+   out of a cone would leave two tall horns. */
+static int gone_in_blast(int x, int y, int cx, int cy, int R) {
+    float u = (float)abs(x - cx) / (2.0f * R);
+    return u < 1 && y < cy - 0.05f * R + 0.6f * R * u * u + (float)(hash2(x >> 2, 7) % 100) / 100.0f * 0.06f * R;
+}
+
 static void blast(Volcano *s) {
     float K = s->k;
-    int cx = s->ventX, cy = s->seaY - (int)(0.04f * s->gh), R = (int)(0.33f * s->gh);
+    int px = s->ventX;                              /* the summit can sit off the vent: aim between them */
+    for (int x = s->ventX - s->gw * 15 / 100; x <= s->ventX + s->gw * 15 / 100; x++)
+        if (x >= 0 && x < s->gw && s->top[x] < s->top[px < 0 ? 0 : px]) px = x;
+    int cx = (s->ventX + px) / 2, cy = s->seaY - (int)(0.04f * s->gh), R = (int)(0.33f * s->gh);
+    R += abs(px - s->ventX) / 2;
+    /* The cone doesn't vanish, it's thrown. Every g x g block of it flies out from a point below the summit,
+       and how hard depends on how much rock lies between it and open air that way: the thin summit and
+       overhangs fling off fast as small fragments, the thick base only shrugs outward as big slow slabs.
+       This is measured on the intact cone, before any of it is carved away. */
+    int g = R / 17 > 2 ? R / 17 : 2, nb = 0, cap = (4 * R / g + 3) * (4 * R / g + 3);
+    float ox = cx, oy = cy + 0.35f * R;
+    Part *blk = malloc(sizeof *blk * cap);
+    for (int y = (cy - R) / g * g; blk && y <= cy + R; y += g)
+        for (int x = (cx - 2 * R) / g * g; x <= cx + 2 * R; x += g) {
+            if (!inside(s, x, y) || nb >= cap || !(gone_in_blast(x, y, cx, cy, R) || (x - cx) * (x - cx) + (y - cy) * (y - cy) <= R * R * 0.81f)) continue;
+            int m = AT(s, x, y);
+            if (!SOLID(m) && m != LAVA) continue;
+            float dx = x - ox, dy = y - oy, d = sqrtf(dx * dx + dy * dy) + 1, ux = dx / d, uy = dy / d, rock = 0;
+            for (float t = 1; t < 1.2f * R; t += 1) {             /* the rock in the way, out along the throw */
+                int qx = (int)(x + ux * t), qy = (int)(y + uy * t);
+                if (!inside(s, qx, qy)) break;
+                int q = AT(s, qx, qy);
+                if (SOLID(q)) rock += 1;
+                else if (q == LAVA) rock += 0.5f;
+            }
+            float cover = clampf(rock / (0.55f * R), 0, 1), loose = 1 - cover;
+            float v = K * (32 + 140 * loose * loose) * frand(0.8f, 1.2f);
+            if (abs(x - cx) > 0.8f * R) { ux = x > cx ? 0.9f : -0.9f; uy = -0.45f; }   /* a horn: shoved off sideways */
+            int hot = m == LAVA || irand(4) == 0;
+            blk[nb++] = (Part){ (float)x, (float)y, ux * v + frand(-6, 6) * K * loose, uy * v - frand(8, 28) * K * loose,
+                                frand(6, 11), g * (0.7f + 0.9f * cover) * frand(0.9f, 1.15f), 0.15f + 0.5f * loose,
+                                hot ? P_BOMB : P_CHUNK, 0, hot ? 1.0f : 0.55f };
+        }
     for (int y = cy - R; y <= cy + R; y++)
-        for (int x = cx - R; x <= cx + R; x++) {
+        for (int x = cx - 2 * R; x <= cx + 2 * R; x++) {
             float rr = R * (0.9f + 0.2f * (hash2(x >> 1, y >> 1) % 100) / 100.0f);   /* a ragged rim, not a perfect bowl */
-            if (!inside(s, x, y) || (x - cx) * (x - cx) + (y - cy) * (y - cy) > rr * rr) continue;
+            if (!inside(s, x, y) || ((x - cx) * (x - cx) + (y - cy) * (y - cy) > rr * rr && !gone_in_blast(x, y, cx, cy, R))) continue;
             int m = AT(s, x, y);
             if (SOLID(m) || m == LAVA) {
                 AT(s, x, y) = (float)y >= sea_top(s, (float)x) ? WATER : AIR;
                 s->heat[y * s->gw + x] = 0;
             }
         }
+    /* past the crater the flanks are shaken loose rather than thrown: the rock turns to warm rubble that
+       slumps down into a rounded heap, so no tall horns are left standing at the rim */
+    float Ro = 1.5f * R;
+    for (int y = cy - (int)Ro; y <= cy + (int)(0.6f * R); y++)
+        for (int x = cx - (int)Ro; x <= cx + (int)Ro; x++) {
+            if (!inside(s, x, y) || !SOLID(AT(s, x, y))) continue;
+            float d = sqrtf((float)((x - cx) * (x - cx) + (y - cy) * (y - cy)));
+            if (d > Ro || irand(1000) >= (int)(1000 * clampf((Ro - d) / (0.5f * R), 0, 1))) continue;
+            int i = y * s->gw + x;
+            s->m[i] = RUBBLE;
+            s->age[i] = 0;
+            wake(s, y);
+            if (s->heat[i] < 70) s->heat[i] = 70;
+        }
+    for (int i = 0; i < nb && s->np < MAX_PARTS; i++) s->p[s->np++] = blk[i];
+    free(blk);
     s->ncond = 0;
     for (int i = 0; i < 110; i++) {
         float a = frand(-1.3f, 1.3f), v = frand(40, 120) * K;
@@ -670,7 +764,8 @@ static void finale(Volcano *s) {
 static void egg_tick(Volcano *s) {
     float K = s->k, L = 34 * K, H = 12 * K;
     if (!s->whale) {
-        if (s->finStage || s->fadeDir) return;          /* not during the finale; a forced egg waits */
+        if (s->fadeDir) return;                         /* not while the screen fades; a forced egg waits */
+        if (s->finStage && !g_force_egg) return;         /* none of its own during the finale, but E still brings one */
         s->eggT -= TICK;
         if (s->eggT <= 0 || g_force_egg) {
             s->whale = 1;
@@ -746,13 +841,14 @@ static void paint_whale(Volcano *s) {
    tunnel) gets filled, a sample of cells per tick. */
 static void close_gaps(Volcano *s) {
     int gw = s->gw, gh = s->gh;
-    for (int n = gw * gh / 40; n > 0; n--) {
+    for (int n = gw * gh / 160; n > 0; n--) {
         int x = 1 + irand(gw - 2), y = 1 + irand(gh - 2), m = AT(s, x, y);
         if ((m != WATER && m != AIR) || y <= s->top[x]) continue;
         int u = AT(s, x, y - 1), d = AT(s, x, y + 1), l = AT(s, x - 1, y), r = AT(s, x + 1, y);
         int su = SOLID(u) || u == LAVA, sd = SOLID(d) || d == LAVA, sl = SOLID(l) || l == LAVA, sr = SOLID(r) || r == LAVA;
         if (su + sd + sl + sr >= 3 || (su && sd) || (su && sl && sr)) {
             s->m[y * gw + x] = RUBBLE;
+            wake(s, y);
             s->heat[y * gw + x] = 0;
             s->age[y * gw + x] = 0;
             s->stamp[y * gw + x] = (uint8_t)s->tick;
@@ -831,7 +927,7 @@ static void tick_world(Volcano *s) {
             if (m != WATER) break;
         }
     }
-    recompute_tops(s);
+    if ((s->tick & 3) == 0) recompute_tops(s);     /* solidify and slump keep the tops right in between */
 
     /* smoke from the crater, or bubbles and surface steam while the vent is under water */
     if (s->fadeDir == 0) {
@@ -874,12 +970,17 @@ static void tick_world(Volcano *s) {
             if (p->life <= 0) s->p[i] = s->p[--s->np];
             continue;
         }
+        /* it cools through its surface: small bits fast, big lumps slowly, water ~40x faster than air */
+        float small = 2 * K / (p->size > 0.5f * K ? p->size : 0.5f * K);
+        p->temp -= TICK * small * small * (p->sunk ? 1.6f : 0.04f);
+        if (p->temp < 0) p->temp = 0;
         p->vy += 55 * K * TICK;
         p->x += p->vx * TICK;
         p->y += p->vy * TICK;
         int gone = p->x < 0 || p->x >= s->gw || p->y >= s->gh;
         int mat = !gone && p->y >= 0 ? AT(s, (int)p->x, (int)p->y) : AIR;
-        if (mat == WATER) {                       /* splash, then sink to the sea floor and turn to stone */
+        if (p->grace > 0) p->grace -= TICK;
+        if (mat == WATER && p->grace <= 0) {      /* splash, then sink to the sea floor and turn to stone */
             if (!p->sunk) {
                 p->sunk = 1;
                 p->life = 30;
@@ -894,7 +995,7 @@ static void tick_world(Volcano *s) {
             if (p->vy > 14 * K) p->vy = 14 * K;
             int below = (int)p->y + 1 < s->gh ? AT(s, (int)p->x, (int)p->y + 1) : ROCK;
             if (below != WATER) {
-                blob(s, (int)p->x + irand(3) - 1, (int)p->y, (int)(p->size * 0.6f) + 1, 0);
+                blob(s, (int)p->x + irand(3) - 1, (int)p->y, (int)(p->size * 0.6f) + 1, (int)(p->temp * 210));
                 gone = 1;
             }
         } else if (!p->sunk && irand(100) < 35) {
@@ -1159,18 +1260,21 @@ static void draw(void *p, SDL_Renderer *r) {
         const Part *q = &s->p[i];
         if (q->kind == P_STEAM || q->kind == P_BUBBLE) continue;
         float sz = q->size;
+        float t = q->temp, g = clampf(t * 1.6f, 0, 1);   /* glow fades out over the cooler half */
         if (q->sunk) {
-            SDL_SetRenderDrawColor(r, 70, 60, 62, 200);
+            SDL_SetRenderDrawColor(r, (Uint8)(70 + 185 * g), (Uint8)(60 + 50 * g), (Uint8)(62 - 40 * g), 200);
             fillf(r, q->x - sz * 0.4f, q->y - sz * 0.4f, sz * 0.8f, sz * 0.8f, u);
-        } else if (q->kind == P_CHUNK) {
+        } else if (q->kind == P_CHUNK || t < 0.7f) {
             SDL_SetRenderDrawColor(r, 62, 52, 50, 255);
             fillf(r, q->x - sz * 0.5f, q->y - sz * 0.5f, sz, sz, u);
-            SDL_SetRenderDrawColor(r, 255, 120, 30, 255);
-            fillf(r, q->x - sz * 0.5f, q->y - sz * 0.5f, sz * 0.45f, sz * 0.45f, u);
+            if (g > 0.05f) {
+                SDL_SetRenderDrawColor(r, 255, (Uint8)(60 + 60 * g), 30, (Uint8)(255 * g));
+                fillf(r, q->x - sz * 0.5f, q->y - sz * 0.5f, sz * 0.45f, sz * 0.45f, u);
+            }
         } else {
-            SDL_SetRenderDrawColor(r, 255, 90, 20, 140);
+            SDL_SetRenderDrawColor(r, 255, 90, 20, (Uint8)(140 * g));
             fillf(r, q->x - sz, q->y - sz, sz * 2, sz * 2, u);
-            SDL_SetRenderDrawColor(r, 255, 220, 120, 255);
+            SDL_SetRenderDrawColor(r, 255, (Uint8)(120 + 100 * t), (Uint8)(40 + 80 * t), 255);
             fillf(r, q->x - sz * 0.5f, q->y - sz * 0.5f, sz, sz, u);
         }
     }
@@ -1220,6 +1324,7 @@ static void destroy(void *p) {
     free(s->stamp);
     free(s->shade);
     free(s->age);
+    free(s->live);
     free(s->cond);
     free(s->T);
     free(s->Tn);

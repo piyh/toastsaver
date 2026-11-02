@@ -53,9 +53,9 @@ int g_force_egg;
 int g_force_boom;
 int g_rush;
 
-/* Speed slider geometry (windowed mode): the knob position is log2(speed), -2..5 = 0.25x..32x. */
+/* Speed slider geometry (windowed mode): the knob position is log2(speed), -2..9 = 0.25x..512x. */
 #define SPEED_MIN_LOG (-2.0f)
-#define SPEED_MAX_LOG 5.0f
+#define SPEED_MAX_LOG 9.0f
 static SDL_Rect speed_track(int w, int h) {
     int tw = w / 2 < 700 ? w / 2 : 700, th = h / 90 > 8 ? h / 90 : 8;
     return (SDL_Rect){ (w - tw) / 2, h - h / 14, tw, th };
@@ -309,10 +309,11 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, i
         rushing = g_rush;
         if (!paused) {                            /* speed > 1 runs several steps, each small enough to stay stable */
             float left = dt * (g_rush ? powf(2.0f, SPEED_MAX_LOG) : powf(2.0f, lg));
-            for (int n = 0; left > 0 && n < 64; n++) {
+            for (int n = 0; left > 0 && n < 1024; n++) {
                 float d = left < 0.05f ? left : 0.05f;
                 sv->step(st, d);
                 left -= d;
+                if (rushing && !g_rush) break;   /* the big moment just began: don't run on into it this frame */
             }
         }
         SDL_RenderSetViewport(r, NULL);
@@ -384,6 +385,9 @@ static int sequence(const char *dir, const char *what, int w, int h, float secon
     void *st = sv->create(r, w, h);
     const float dt = 1.0f / fps;
     for (float t = 0; t < seconds; t += dt) sv->step(st, dt);
+    g_rush = getenv("TOASTSAVER_RUSH") != NULL;          /* for frames: skip ahead to the saver's big moment (an hour at most) */
+    for (float t = 0; g_rush && t < 3600; t += 1.0f / 30) sv->step(st, 1.0f / 30);
+    g_rush = 0;
     char path[1100];
     for (int i = 0; i < frames; i++) {
         sv->step(st, dt);
