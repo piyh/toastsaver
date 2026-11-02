@@ -2,6 +2,8 @@
    Every 20-30 seconds it slows down and shimmers, goes *poof*, its rainbow races
    ahead with rainbow lines zooming across the screen, and it pops back out
    at the end of the rainbow.
+   Easter egg: every few minutes a unicorn gallops across the sky the other way,
+   trailing pastel sparkles, and the two swap little hearts as they pass.
    (Idea and story by a six-year-old.) */
 #include "../engine.h"
 #include <math.h>
@@ -14,6 +16,8 @@
 #define STARS 140
 #define BITS 140
 #define STREAKS 4
+#define UNI_W 56
+#define UNI_H 40
 
 static const uint32_t BANDS[6] = { 0xFF4D4D, 0xFF9A3C, 0xFFE14D, 0x5BD46B, 0x4DA6FF, 0x9B6BFF };
 
@@ -76,6 +80,45 @@ Canvas make_waffle_cat(int frame) {
     return c;
 }
 
+/* Original pixel art: a white unicorn with a pastel mane, galloping to the right. */
+static const uint32_t PASTEL[6] = { 0xFFB3C6, 0xFFD6A5, 0xFDFFB6, 0xCAFFBF, 0xA0E7FF, 0xD7B8FF };
+
+static Canvas make_unicorn(int frame) {
+    Canvas c = canvas_new(UNI_W, UNI_H);
+    float ph = frame * PI_F / 2;
+    int lift = frame % 2;                              /* the body rises a little mid-stride */
+    static const float tail[6][2] = { {11, 20}, {8, 21}, {6, 23}, {4.5f, 26}, {4, 29}, {5, 32} };
+    for (int i = 0; i < 6; i++)                        /* a flowing pastel tail */
+        fill_ellipse(&c, tail[i][0] - (i > 2 ? lift : 0), tail[i][1] - lift, 2.6f, 2.2f, rgb(PASTEL[i]));
+    static const int hips[4] = { 15, 19, 28, 32 };
+    for (int i = 0; i < 4; i++) {                      /* legs: back pair and front pair gallop */
+        float a = ph + (i < 2 ? 0 : PI_F) + (i % 2) * 0.6f;
+        int hx = hips[i], hy = 26 - lift, kx = hx + (int)roundf(cosf(a) * 2.5f), ky = hy + 4;
+        int fx = kx + (int)roundf(sinf(a) * 2.5f), fy = 34 - lift + (sinf(a) > 0.3f ? -2 : 0);
+        uint32_t col = i % 2 ? 0xFFFFFF : 0xE8E0F4;      /* the far legs are a little shaded */
+        fill_poly(&c, (float[]){ hx - 1, hx + 2, kx + 2, kx - 1 }, (float[]){ hy, hy, ky, ky }, 4, rgb(col));
+        fill_poly(&c, (float[]){ kx - 1, kx + 2, fx + 2, fx - 1 }, (float[]){ ky, ky, fy, fy }, 4, rgb(col));
+        fill_rect(&c, fx - 1, fy, fx + 2, fy + 1, rgb(0xC9A6E8));
+    }
+    fill_ellipse(&c, 24, 22 - lift, 13, 7, rgb(0xFFFFFF));
+    for (int x = 13; x <= 35; x++) put(&c, x, 27 - lift, rgb(0xE8E0F4));
+    fill_poly(&c, (float[]){ 31, 37, 42, 35 }, (float[]){ 20 - lift, 9 - lift, 11 - lift, 23 - lift }, 4, rgb(0xFFFFFF));
+    fill_ellipse(&c, 42, 12 - lift, 6, 4.2f, rgb(0xFFFFFF));
+    fill_ellipse(&c, 47, 14 - lift, 3.2f, 2.8f, rgb(0xFFE3EF));
+    put(&c, 48, 13 - lift, rgb(0xC07090));
+    fill_poly(&c, (float[]){ 38, 40, 41 }, (float[]){ 9 - lift, 4 - lift, 9 - lift }, 3, rgb(0xFFFFFF));
+    fill_poly(&c, (float[]){ 42, 45, 50 }, (float[]){ 8 - lift, 9 - lift, 1 - lift }, 3, rgb(0xFFD84D));   /* the horn */
+    put(&c, 45, 6 - lift, rgb(0xE0A82E)); put(&c, 47, 4 - lift, rgb(0xE0A82E));
+    put(&c, 44, 7 - lift, rgb(0xFFF3B0));
+    fill_rect(&c, 43, 11 - lift, 44, 12 - lift, rgb(0x2A1A3A));
+    put(&c, 43, 11 - lift, rgb(0xFFFFFF));
+    fill_rect(&c, 45, 15 - lift, 46, 15 - lift, rgb(0xFFB3C6));
+    for (int i = 0; i < 6; i++)                        /* the mane, one stripe per colour */
+        fill_ellipse(&c, 38 - i * 1.3f + (i % 2 ? 1 : 0) * (frame % 2), 8 + i * 2.2f - lift, 2.4f, 1.9f, rgb(PASTEL[i]));
+    outline(&c, rgb(0x5A3A7A));
+    return c;
+}
+
 enum { FLY, SHIMMER, POOF, STREAK };
 
 /* Flying is the main show: the trick is a short treat every 20-30 seconds. */
@@ -87,14 +130,16 @@ enum { FLY, SHIMMER, POOF, STREAK };
 #define TRICK_GAP 16     /* 16-24 s timer; waiting for the cat to reach the spot makes it ~20-30 */
 
 typedef struct { float x, y, t; int brk; } TrailPt;   /* brk: start of a new ribbon */
-typedef struct { float x, y, vx, vy, life, max; SDL_Color c; } Bit;
+typedef struct { float x, y, vx, vy, life, max; SDL_Color c; int heart; } Bit;
 typedef struct { float y, start, len; } Streak;
 
 typedef struct {
     int w, h, sc, frame, state, head, count, brkNext;
     float t, x, baseY, phase, speed, boost, frameAcc, stateT, nextTrick, fromX;
     float streakT, ringT, ringX, ringY, flash;
-    SDL_Texture *cat[CAT_FRAMES];
+    SDL_Texture *cat[CAT_FRAMES], *uni[CAT_FRAMES];
+    int unicorn, hearts;                  /* easter egg */
+    float uniX, uniY, uniT, eggT, pop;
     TrailPt trail[TRAIL];
     Bit bits[BITS];
     Streak streak[STREAKS];
@@ -125,10 +170,53 @@ static void burst(Rainbow *r, float x, float y, int n, float speed) {
     for (int i = 0, k = 0; i < BITS && k < n; i++) {
         if (r->bits[i].life > 0) continue;
         float a = frand(0, 2 * PI_F), s = frand(0.3f, 1.0f) * speed;
-        r->bits[i] = (Bit){ x, y, cosf(a) * s, sinf(a) * s, 0, frand(0.6f, 1.3f), hexcol(BANDS[irand(6)]) };
+        r->bits[i] = (Bit){ x, y, cosf(a) * s, sinf(a) * s, 0, frand(0.6f, 1.3f), hexcol(BANDS[irand(6)]), 0 };
         r->bits[i].life = r->bits[i].max;
         k++;
     }
+}
+
+/* A sparkle (or heart) with a chosen colour and drift. */
+static void add_bit(Rainbow *r, float x, float y, float vx, float vy, float life, uint32_t col, int heart) {
+    for (int i = 0; i < BITS; i++)
+        if (r->bits[i].life <= 0) { r->bits[i] = (Bit){ x, y, vx, vy, life, life, hexcol(col), heart }; return; }
+}
+
+/* ---------- easter egg: the unicorn ---------- */
+
+static float uni_w(const Rainbow *r) { return (float)UNI_W * r->sc; }
+
+static void unicorn_tick(Rainbow *r, float dt) {
+    if (!r->unicorn) {
+        r->eggT -= dt;
+        if ((r->eggT <= 0 || g_force_egg) && r->state == FLY) {
+            r->unicorn = 1;
+            r->hearts = 0;
+            r->uniT = 0;
+            r->uniX = r->w + uni_w(r);
+            r->uniY = r->baseY > r->h * 0.42f ? r->h * 0.12f : r->h * 0.7f;   /* keep clear of the cat */
+            r->eggT = frand(150, 240);
+            g_force_egg = 0;
+        }
+        return;
+    }
+    g_force_egg = 0;
+    r->uniT += dt;
+    r->uniX -= r->w * 0.24f * dt;
+    float x = r->uniX, y = r->uniY + fabsf(sinf(r->uniT * 5)) * -4.0f * r->sc;
+    if (frand(0, 1) < dt * 40)                          /* pastel stardust from the hooves and tail */
+        add_bit(r, x + uni_w(r) * frand(0.5f, 0.95f), y + UNI_H * r->sc * frand(0.55f, 0.85f),
+                r->w * 0.03f + frand(-1, 1) * r->h * 0.02f, frand(-1, 1) * r->h * 0.02f, frand(0.8f, 1.6f), PASTEL[irand(6)], 0);
+    float cx = r->x + catw(r) / 2;
+    if (!r->hearts && fabsf(x + uni_w(r) / 2 - cx) < catw(r) && r->state == FLY) {   /* they meet: hearts! */
+        r->hearts = 1;
+        float cy = cat_y(r, r->x) + cath(r) * 0.3f, uy = y + UNI_H * r->sc * 0.3f;
+        for (int i = 0; i < 4; i++) {
+            add_bit(r, cx + frand(-0.4f, 0.4f) * catw(r), cy, frand(-1, 1) * r->h * 0.08f, -r->h * frand(0.06f, 0.12f), frand(1.6f, 2.4f), 0xFF6FA0, 1);
+            add_bit(r, x + uni_w(r) * frand(0.1f, 0.6f), uy, frand(-1, 1) * r->h * 0.08f, -r->h * frand(0.06f, 0.12f), frand(1.6f, 2.4f), 0xFFB3C6, 1);
+        }
+    }
+    if (r->uniX < -uni_w(r)) r->unicorn = 0;
 }
 
 /* Start a fresh pass just off the left edge. */
@@ -150,7 +238,10 @@ static void *create(SDL_Renderer *ren, int w, int h) {
     for (int i = 0; i < CAT_FRAMES; i++) {
         Canvas c = make_waffle_cat(i);
         r->cat[i] = canvas_texture(ren, &c);
+        Canvas u = make_unicorn(i);
+        r->uni[i] = canvas_texture(ren, &u);
     }
+    r->eggT = frand(90, 150);
     for (int i = 0; i < STARS; i++) {
         r->star[i][0] = frand(0, (float)w);
         r->star[i][1] = frand(0, (float)h);
@@ -176,6 +267,7 @@ static void step(void *p, float dt) {
     r->streakT += dt;
     r->ringT += dt;
     r->flash = r->flash > dt ? r->flash - dt : 0;
+    r->pop = r->pop > dt * 2.5f ? r->pop - dt * 2.5f : 0;
     float k = r->stateT / SHIMMER_T;
 
     switch (r->state) {
@@ -228,6 +320,7 @@ static void step(void *p, float dt) {
         if (s >= 1) {                                    /* pop back out and zoom off */
             burst(r, r->x + catw(r) / 2, cat_y(r, r->x) + cath(r) / 2, 40, r->h * 0.3f);
             r->flash = FLASH_T;
+            r->pop = 1;
             r->state = FLY;
             r->stateT = 0;
             r->boost = 1.4f;
@@ -247,6 +340,7 @@ static void step(void *p, float dt) {
         b->vx *= 1 - 2.0f * dt;
         b->vy *= 1 - 2.0f * dt;
     }
+    unicorn_tick(r, dt);
     r->shootT += dt;
     if (r->shootT > 1.2f) { r->shootT = -frand(4, 9); r->shootX = frand(0.3f, 1.0f) * r->w; r->shootY = frand(0, 0.4f) * r->h; }
 }
@@ -297,7 +391,7 @@ static void draw(void *p, SDL_Renderer *ren) {
     float lx = r->x + catw(r) / 2, ly = cat_y(r, r->x) + cath(r) / 2, lr = catw(r) * 1.4f;
     for (int i = 0; i < STARS; i++) {
         float sx = r->star[i][0], sy = r->star[i][1];
-        float tw = 0.5f + 0.5f * sinf(r->t * 2 + r->star[i][2]), glow = 0;
+        float tw = 0.5f + 0.5f * sinf(r->t * (1.2f + (i % 5) * 0.35f) + r->star[i][2]), glow = 0;
         if (lit) {
             float dx = sx - lx, dy = sy - ly, d2 = (dx * dx + dy * dy) / (lr * lr);
             if (d2 < 1) glow = 1 - d2;
@@ -309,8 +403,12 @@ static void draw(void *p, SDL_Renderer *ren) {
     }
     if (r->shootT > 0) {                                 /* the occasional shooting star */
         float k = r->shootT / 1.2f, x = r->shootX - k * r->w * 0.5f, y = r->shootY + k * r->h * 0.25f;
-        SDL_Color c = { 255, 255, 255, (Uint8)(200 * (1 - k)) };
-        thick_line(ren, x, y, x + r->w * 0.06f, y - r->h * 0.03f, r->sc * 1.2f, c);
+        for (int i = 0; i < 8; i++) {                    /* a tail that thins and fades */
+            float f = i / 8.0f, g = (i + 1) / 8.0f;
+            SDL_Color c = { 255, 255, 255, (Uint8)(220 * (1 - k) * (1 - f)) };
+            thick_line(ren, x + r->w * 0.08f * f, y - r->h * 0.04f * f, x + r->w * 0.08f * g, y - r->h * 0.04f * g,
+                       r->sc * 1.6f * (1 - f * 0.8f), c);
+        }
     }
 
     float bandH = 3.0f * r->sc;
@@ -347,8 +445,23 @@ static void draw(void *p, SDL_Renderer *ren) {
         sparkle(ren, hp->x, hp->y, r->sc * (5 + 2 * tw), (SDL_Color){ 255, 255, 255, 255 });
     }
 
+    if (r->unicorn) {
+        float y = r->uniY + fabsf(sinf(r->uniT * 5)) * -4.0f * r->sc;
+        SDL_Rect d = { (int)r->uniX, (int)y, (int)uni_w(r), UNI_H * r->sc };
+        SDL_RenderCopyEx(ren, r->uni[(int)(r->uniT * 10) % CAT_FRAMES], NULL, &d, 0, NULL, SDL_FLIP_HORIZONTAL);
+    }
+
     if (r->state == FLY || r->state == SHIMMER) {
-        SDL_Rect d = { (int)r->x, (int)cat_y(r, r->x), (int)catw(r), (int)cath(r) };
+        float cy = cat_y(r, r->x), s = 1 + 0.22f * sinf(r->pop * PI_F);   /* a springy pop as it reappears */
+        SDL_Color gc = hsv(r->t * 40, 0.4f, 1);
+        for (int i = 0; i < 3; i++) {                    /* a soft glow that slowly changes colour */
+            gc.a = 10;
+            fill_circle(ren, r->x + catw(r) * 0.55f, cy + cath(r) * 0.5f, catw(r) * (0.75f - i * 0.15f), gc);
+        }
+        SDL_Rect d = { (int)(r->x - catw(r) * (s - 1) / 2), (int)(cy - cath(r) * (s - 1) / 2), (int)(catw(r) * s), (int)(cath(r) * s) };
+        /* lean into the climbs and dives of the wave */
+        float slope = cosf(r->x / r->w * 7.0f + r->phase) * r->h * 0.05f * 7.0f / r->w;
+        double tilt = atanf(slope) * 180 / PI_F * 0.6f;
         SDL_Texture *t = r->cat[r->frame];
         if (r->state == SHIMMER) {
             float k = r->stateT / SHIMMER_T;
@@ -356,12 +469,12 @@ static void draw(void *p, SDL_Renderer *ren) {
             SDL_SetTextureColorMod(t, c.r, c.g, c.b);
             d.x += ((int)(r->t * 30) % 2 ? 1 : -1) * (int)(k * 2.5f) * r->sc;   /* wobble */
         }
-        SDL_RenderCopy(ren, t, NULL, &d);
+        SDL_RenderCopyEx(ren, t, NULL, &d, tilt, NULL, SDL_FLIP_NONE);
         SDL_SetTextureColorMod(t, 255, 255, 255);
         if (r->flash > 0) {                              /* pop! a bright flash as it reappears */
             SDL_SetTextureBlendMode(t, SDL_BLENDMODE_ADD);
             SDL_SetTextureAlphaMod(t, (Uint8)(255 * r->flash / FLASH_T));
-            SDL_RenderCopy(ren, t, NULL, &d);
+            SDL_RenderCopyEx(ren, t, NULL, &d, tilt, NULL, SDL_FLIP_NONE);
             SDL_SetTextureAlphaMod(t, 255);
             SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND);
         }
@@ -371,13 +484,18 @@ static void draw(void *p, SDL_Renderer *ren) {
         if (b->life <= 0) continue;
         SDL_Color c = b->c;
         c.a = (Uint8)(255 * b->life / b->max);
-        sparkle(ren, b->x, b->y, r->sc * 2.2f * (0.5f + b->life / b->max), c);
+        if (b->heart) {
+            float hs = r->sc * 4.0f * (0.7f + 0.3f * b->life / b->max);
+            fill_circle(ren, b->x - hs * 0.5f, b->y, hs * 0.6f, c);
+            fill_circle(ren, b->x + hs * 0.5f, b->y, hs * 0.6f, c);
+            fill_triangle(ren, b->x - hs * 1.05f, b->y + hs * 0.2f, b->x + hs * 1.05f, b->y + hs * 0.2f, b->x, b->y + hs * 1.4f, c);
+        } else sparkle(ren, b->x, b->y, r->sc * 2.2f * (0.5f + b->life / b->max), c);
     }
 }
 
 static void destroy(void *p) {
     Rainbow *r = p;
-    for (int i = 0; i < CAT_FRAMES; i++) SDL_DestroyTexture(r->cat[i]);
+    for (int i = 0; i < CAT_FRAMES; i++) { SDL_DestroyTexture(r->cat[i]); SDL_DestroyTexture(r->uni[i]); }
     free(r);
 }
 
