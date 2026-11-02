@@ -10,7 +10,7 @@
 #include <string.h>
 
 #define TICK (1.0f / 30)
-#define MAX_PARTS 700
+#define MAX_PARTS 2000
 #define MAX_SMOKE 260
 
 enum { AIR, ROCK, WATER, LAVA, RUBBLE, MAGMA };   /* RUBBLE: freshly cooled, still tumbling; sets into ROCK.
@@ -19,7 +19,7 @@ enum { ST_REPOSE, ST_CRACK, ST_ERUPT, ST_FREEZE };  /* the plumbing's life: rech
 #define COND_MAX 6000
 enum { P_BOMB, P_CHUNK, P_EMBER, P_STEAM, P_BUBBLE };
 
-typedef struct { float x, y, vx, vy, life, size; int kind, sunk; } Part;
+typedef struct { float x, y, vx, vy, life, size, grace; int kind, sunk; } Part;   /* grace: seconds it ploughs through water */
 typedef struct { float x, y, vx, vy, age, life, size, dark; } Smoke;
 
 typedef struct {
@@ -236,7 +236,7 @@ static void add_smoke(Volcano *s, float x, float y, float vx, float vy, float si
 
 static void add_part(Volcano *s, int kind, float x, float y, float vx, float vy, float life, float size) {
     if (s->np >= MAX_PARTS) return;
-    s->p[s->np++] = (Part){ x, y, vx, vy, life, size, kind, 0 };
+    s->p[s->np++] = (Part){ x, y, vx, vy, life, size, 0, kind, 0 };
 }
 
 static int surface_y(const Volcano *s, int x) {
@@ -613,6 +613,33 @@ static void slump(Volcano *s) {
 static void blast(Volcano *s) {
     float K = s->k;
     int cx = s->ventX, cy = s->seaY - (int)(0.04f * s->gh), R = (int)(0.33f * s->gh);
+    /* The cone doesn't vanish, it's thrown. Every g x g block of it flies out from a point below the summit,
+       and how hard depends on how much rock lies between it and open air that way: the thin summit and
+       overhangs fling off fast as small fragments, the thick base only shrugs outward as big slow slabs.
+       This is measured on the intact cone, before any of it is carved away. */
+    int g = R / 17 > 2 ? R / 17 : 2, nb = 0, cap = (2 * R / g + 2) * (2 * R / g + 2);
+    float ox = cx, oy = cy + 0.35f * R;
+    Part *blk = malloc(sizeof *blk * cap);
+    for (int y = (cy - R) / g * g; blk && y <= cy + R; y += g)
+        for (int x = (cx - R) / g * g; x <= cx + R; x += g) {
+            if (!inside(s, x, y) || (x - cx) * (x - cx) + (y - cy) * (y - cy) > R * R * 0.81f || nb >= cap) continue;
+            int m = AT(s, x, y);
+            if (!SOLID(m) && m != LAVA) continue;
+            float dx = x - ox, dy = y - oy, d = sqrtf(dx * dx + dy * dy) + 1, ux = dx / d, uy = dy / d, rock = 0;
+            for (float t = 1; t < 1.2f * R; t += 1) {             /* the rock in the way, out along the throw */
+                int qx = (int)(x + ux * t), qy = (int)(y + uy * t);
+                if (!inside(s, qx, qy)) break;
+                int q = AT(s, qx, qy);
+                if (SOLID(q)) rock += 1;
+                else if (q == LAVA) rock += 0.5f;
+            }
+            float cover = clampf(rock / (0.55f * R), 0, 1), loose = 1 - cover;
+            float v = K * (12 + 150 * loose * loose) * frand(0.8f, 1.2f);
+            int hot = m == LAVA || irand(4) == 0;
+            blk[nb++] = (Part){ (float)x, (float)y, ux * v + frand(-6, 6) * K * loose, uy * v - frand(8, 28) * K * loose,
+                                frand(6, 11), g * (0.7f + 0.9f * cover) * frand(0.9f, 1.15f), 0.15f + 0.5f * loose,
+                                hot ? P_BOMB : P_CHUNK, 0 };
+        }
     for (int y = cy - R; y <= cy + R; y++)
         for (int x = cx - R; x <= cx + R; x++) {
             float rr = R * (0.9f + 0.2f * (hash2(x >> 1, y >> 1) % 100) / 100.0f);   /* a ragged rim, not a perfect bowl */
@@ -623,6 +650,8 @@ static void blast(Volcano *s) {
                 s->heat[y * s->gw + x] = 0;
             }
         }
+    for (int i = 0; i < nb && s->np < MAX_PARTS; i++) s->p[s->np++] = blk[i];
+    free(blk);
     s->ncond = 0;
     for (int i = 0; i < 110; i++) {
         float a = frand(-1.3f, 1.3f), v = frand(40, 120) * K;
@@ -670,7 +699,8 @@ static void finale(Volcano *s) {
 static void egg_tick(Volcano *s) {
     float K = s->k, L = 34 * K, H = 12 * K;
     if (!s->whale) {
-        if (s->finStage || s->fadeDir) return;          /* not during the finale; a forced egg waits */
+        if (s->fadeDir) return;                         /* not while the screen fades; a forced egg waits */
+        if (s->finStage && !g_force_egg) return;         /* none of its own during the finale, but E still brings one */
         s->eggT -= TICK;
         if (s->eggT <= 0 || g_force_egg) {
             s->whale = 1;
@@ -879,7 +909,8 @@ static void tick_world(Volcano *s) {
         p->y += p->vy * TICK;
         int gone = p->x < 0 || p->x >= s->gw || p->y >= s->gh;
         int mat = !gone && p->y >= 0 ? AT(s, (int)p->x, (int)p->y) : AIR;
-        if (mat == WATER) {                       /* splash, then sink to the sea floor and turn to stone */
+        if (p->grace > 0) p->grace -= TICK;
+        if (mat == WATER && p->grace <= 0) {      /* splash, then sink to the sea floor and turn to stone */
             if (!p->sunk) {
                 p->sunk = 1;
                 p->life = 30;
