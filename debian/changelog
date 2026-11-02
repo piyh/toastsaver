@@ -1,3 +1,15 @@
+toastsaver (1.5.2) stable; urgency=medium
+
+  * Fixes the screensaver no longer starting after changing a time in
+    Settings: with a gamepad plugged in, the restarted idle watcher could
+    give up while the old one was still shutting down.
+  * The idle watcher keeps a log (~/.local/state/toastsaver/idle.log) of
+    when it starts and stops and why; toastsaver-idle --check shows the end.
+  * The clock keeps clear of numbers on screen: the dice, their total and
+    the tallies flying to the chalkboard.
+
+ -- piyh <10518137+piyh@users.noreply.github.com>  Mon, 02 Nov 2026 18:00:00 +0000
+
 toastsaver (1.5.1) stable; urgency=medium
 
   * SURPRISE ME fades from one saver into the next instead of cutting.
