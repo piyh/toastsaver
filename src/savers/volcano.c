@@ -42,6 +42,8 @@ typedef struct {
     float pressure, trigger, pstateT, crackX, crackY, crackA, wander, tgtX, stepAcc, meanderPh;
     int *cond;                            /* the channel's cells, in the order they were opened */
     float *T, *Tn;                        /* rock temperature on a grid 1/4 the size (water is not modelled) */
+    float *hacc;                          /* per block: glowing cells' heat, summed since the last heat_update */
+    int haccN;                            /* automaton passes summed into hacc */
     uint8_t *ty;
     float acc, t, cycleT, phase, nextErupt, eruptLeft, flash, fade, spill, wind;
     int tick, fadeDir, spillDir;
@@ -219,6 +221,7 @@ static void *create(SDL_Renderer *r, int w, int h) {
     s->ch = (s->gh + 3) / 4;
     s->T = calloc((size_t)s->cw * s->ch, sizeof(float));
     s->Tn = calloc((size_t)s->cw * s->ch, sizeof(float));
+    s->hacc = calloc((size_t)s->cw * s->ch, sizeof(float));
     s->ty = calloc((size_t)s->cw * s->ch, 1);
     s->wh = calloc((size_t)s->gw, sizeof(float));
     s->wtop = calloc((size_t)s->gw, sizeof(float));
@@ -417,11 +420,15 @@ static void heat_update(Volcano *s) {
             }
             float t = s->T[i] + 0.2f * (sum * 0.25f - s->T[i]) - 0.00015f;
             if (wet) t *= 0.93f;
+            float glow = s->haccN ? s->hacc[i] / (16.0f * 200 * s->haccN) : 0;   /* the cells' own glow, as a block average */
+            if (t < glow) t = glow > 1 ? 1 : glow;
             s->Tn[i] = t < 0 ? 0 : t;
         }
     float *sw = s->T;
     s->T = s->Tn;
     s->Tn = sw;
+    memset(s->hacc, 0, sizeof(float) * (size_t)s->cw * s->ch);
+    s->haccN = 0;
 }
 
 static void carve(Volcano *s, int cx, int cy, int r) {
@@ -591,7 +598,7 @@ static void land(Volcano *s, Part *p) {
     if (y < 0) y = 0;
     while (y < s->gh && AT(s, x, y) == AIR) y++;
     if (y >= s->gh) y = s->gh - 1;
-    int rad = (int)(p->size * (p->kind == P_CHUNK ? 0.45f : 0.5f));
+    int rad = (int)(p->size * 0.5f);
     blob(s, x, y - 1, rad < 1 ? 1 : rad, (int)(p->temp * 210));
 }
 
@@ -612,14 +619,19 @@ static void cool_cell(Volcano *s, int x, int y, int i) {
     }
     int d = flow - loss, step = d >> 4, frac = d & 15;  /* the fraction is dithered, so slow rates still add up */
     if (frac > (int)((i * 2654435761u + (unsigned)s->tick * 40503u) >> 28)) step++;
+    int b = (y >> 2) * s->cw + (x >> 2);
+    int ember = (int)((s->T[b] - 0.3f) * 110);          /* deep in a hot cone it keeps a dim ember instead of going out */
+    if (step < 0 && h + step < ember) step = ember < h ? ember - h : 0;
     h += step;
     s->heat[i] = (uint8_t)(h < 0 ? 0 : h > 255 ? 255 : h);
+    s->hacc[b] += s->heat[i];                            /* and its heat warms the rock temperature around it */
 }
 
 /* One pass of the lava automaton, bottom to top, alternating sweep direction. Rows with nothing
    moving or glowing, and none beside them, are skipped; every sixteenth pass looks at them all anyway. */
 static void ca_pass(Volcano *s) {
     s->tick++;
+    s->haccN++;
     int all = (s->tick & 15) == 0;
     for (int y = s->gh - 2; y >= 0; y--) {
         if (!all && !s->live[y] && !(y > 0 && s->live[y - 1]) && !s->live[y + 1]) continue;
@@ -1009,7 +1021,7 @@ static void tick_world(Volcano *s) {
             if (p->vy > 14 * K) p->vy = 14 * K;
             int below = (int)p->y + 1 < s->gh ? AT(s, (int)p->x, (int)p->y + 1) : ROCK;
             if (below != WATER) {
-                blob(s, (int)p->x + irand(3) - 1, (int)p->y, (int)(p->size * 0.6f) + 1, (int)(p->temp * 210));
+                blob(s, (int)p->x + irand(3) - 1, (int)p->y, (int)(p->size * 0.5f) > 1 ? (int)(p->size * 0.5f) : 1, (int)(p->temp * 210));   /* the same heap as on land */
                 gone = 1;
             }
         } else if (!p->sunk && irand(100) < 35) {
@@ -1276,22 +1288,19 @@ static void draw(void *p, SDL_Renderer *r) {
         const Part *q = &s->p[i];
         if (q->kind == P_STEAM || q->kind == P_BUBBLE) continue;
         float sz = q->size;
-        float t = q->temp, g = clampf(t * 1.6f, 0, 1);   /* glow fades out over the cooler half */
-        if (q->sunk) {
-            SDL_SetRenderDrawColor(r, (Uint8)(70 + 185 * g), (Uint8)(60 + 50 * g), (Uint8)(62 - 40 * g), 200);
-            fillf(r, q->x - sz * 0.4f, q->y - sz * 0.4f, sz * 0.8f, sz * 0.8f, u);
-        } else if (q->kind == P_CHUNK || t < 0.7f) {
-            SDL_SetRenderDrawColor(r, 62, 52, 50, 255);
-            fillf(r, q->x - sz * 0.5f, q->y - sz * 0.5f, sz, sz, u);
-            if (g > 0.05f) {
-                SDL_SetRenderDrawColor(r, 255, (Uint8)(60 + 60 * g), 30, (Uint8)(255 * g));
-                fillf(r, q->x - sz * 0.5f, q->y - sz * 0.5f, sz * 0.45f, sz * 0.45f, u);
-            }
-        } else {
-            SDL_SetRenderDrawColor(r, 255, 90, 20, (Uint8)(140 * g));
+        /* one look in air and water: a crust that cools first (temp squared) over a hotter core, and a halo
+           only while it is really hot. Water just cools it faster and dims it, like rock under the sea. */
+        float t = q->temp, wet = q->sunk ? 0.8f : 1.0f;
+        if (t > 0.6f) {
+            SDL_SetRenderDrawColor(r, 255, 90, 20, (Uint8)(140 * (t - 0.6f) / 0.4f * (q->sunk ? 0.4f : 1.0f)));
             fillf(r, q->x - sz, q->y - sz, sz * 2, sz * 2, u);
-            SDL_SetRenderDrawColor(r, 255, (Uint8)(120 + 100 * t), (Uint8)(40 + 80 * t), 255);
-            fillf(r, q->x - sz * 0.5f, q->y - sz * 0.5f, sz, sz, u);
+        }
+        for (int layer = 0; layer < 2; layer++) {
+            float h = layer ? t : t * t, gl = clampf(h * 1.6f, 0, 1), f = layer ? 0.5f : 1.0f;
+            if (layer && gl < 0.05f) break;
+            SDL_SetRenderDrawColor(r, (Uint8)((62 + 193 * gl) * wet), (Uint8)((52 + (20 + 160 * h * h) * gl) * wet),
+                                   (Uint8)((50 + (-25 + 110 * h * h * h) * gl) * wet), 255);
+            fillf(r, q->x - sz * 0.5f * f, q->y - sz * 0.5f * f, sz * f, sz * f, u);
         }
     }
     if (g_show_info) {
@@ -1344,6 +1353,7 @@ static void destroy(void *p) {
     free(s->cond);
     free(s->T);
     free(s->Tn);
+    free(s->hacc);
     free(s->ty);
     free(s->wh);
     free(s->wtop);
