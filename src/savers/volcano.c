@@ -33,7 +33,7 @@ typedef struct {
     int tipX, tipY;                       /* where the open channel ends: lava leaves from here */
     int pstate, ncond, chX0, chX1, cw, ch, heatTick;   /* plumbing */
     int whale, finStage;                  /* easter egg: a whale; the finale: 1 = building up, 2 = after the blast */
-    float whX, whY, whDir, whDepth, whU0, eggT, wmax, finT;
+    float whX, whY, whDir, whDepth, whU0, whScare, whSea, eggT, wmax, finT;
     int chTop, chBot, nChamber;           /* the chamber's extent, for drawing how full it is */
     float mass;                           /* lava the plumbing owes the surface this tick (cells); bombs and flows share it */
     float pressure, trigger, pstateT, crackX, crackY, crackA, wander, tgtX, stepAcc, meanderPh;
@@ -679,19 +679,33 @@ static void egg_tick(Volcano *s) {
             s->whDepth = s->seaY + s->gh * frand(0.10f, 0.17f);
             s->whU0 = frand(0.3f, 0.65f);
             s->whY = s->whDepth;
+            s->whScare = 0;
+            s->whSea = sea_top(s, s->whX);
             s->eggT = frand(150, 210);
         }
         g_force_egg = 0;
         return;
     }
     g_force_egg = 0;
-    s->whX += s->whDir * 8.0f * K * TICK;
+    /* an eruption or the blast scares it: it dives, turns away from the vent and swims for it */
+    float danger = s->finStage ? 1.0f : s->eruptLeft > 0 ? clampf((s->pressure - 0.2f) / 0.6f, 0, 1) : 0;
+    s->whScare = danger > s->whScare ? s->whScare + (danger - s->whScare) * (1 - expf(-3 * TICK))
+                                     : s->whScare + (danger - s->whScare) * (1 - expf(-0.15f * TICK));
+    float away = s->whX < s->ventX ? -1.0f : 1.0f;
+    if (s->whScare > 0.35f && s->whDir != away && fabsf(s->whX - s->ventX) < 0.45f * s->gw) s->whDir = away;
+    s->whX += s->whDir * (8.0f + 22.0f * s->whScare) * K * TICK;
+    if (s->whX < -0.7f * L || s->whX > s->gw + 0.7f * L) { s->whale = 0; return; }
     float u = (s->whX + 0.6f * L) / (s->gw + 1.2f * L);
     if (s->whDir < 0) u = 1 - u;
-    if (u > 1.0f || u < -0.05f || s->finStage) { s->whale = 0; return; }
-    float top = sea_top(s, s->whX), surfY = top + 0.3f * H, dive = expf(-((u - s->whU0) / 0.07f) * ((u - s->whU0) / 0.07f));
-    float prevY = s->whY;
-    s->whY = s->whDepth + (surfY - s->whDepth) * dive;
+    /* the sea under its whole length, eased: it rides the swell instead of every ripple */
+    float sea = 0;
+    for (int i = -3; i <= 3; i++) sea += sea_top(s, s->whX + i * 0.14f * L);
+    sea /= 7;
+    s->whSea += (sea - s->whSea) * (1 - expf(-2.5f * TICK));
+    float top = s->whSea, dive = expf(-((u - s->whU0) / 0.07f) * ((u - s->whU0) / 0.07f)) * (1 - s->whScare);
+    float depth = fmaxf(s->whDepth, top + 1.2f * H) + s->whScare * 0.06f * s->gh;   /* always under the troughs; deeper when scared */
+    float want = depth + (top + 0.3f * H - depth) * dive, prevY = s->whY;
+    s->whY += (want - s->whY) * (1 - expf(-4 * TICK));
     float bx = s->whX + s->whDir * 0.2f * L;
     if (dive > 0.8f && (s->tick % 14) < 2)           /* the spout */
         add_part(s, P_STEAM, bx, s->whY - 0.5f * H, frand(-2, 2) * K, -frand(26, 38) * K, frand(1.2f, 1.9f), frand(1.5f, 2.5f) * K);
@@ -766,6 +780,12 @@ static void tick_world(Volcano *s) {
         if (x >= 0 && x < s->gw && s->top[x] < peak) peak = s->top[x];
     int tall = peak <= s->peakMin;
     s->phase = clampf((float)(s->floorY - peak) / (s->floorY - s->peakMin), 0, 1);   /* progress to the finale */
+    if (g_force_boom && s->finStage == 0 && s->fadeDir == 0) {   /* B: skip ahead to the finale */
+        s->finStage = 1;
+        s->finT = 0;
+    }
+    if (s->fadeDir == 0) g_force_boom = 0;                       /* a press during the fade waits for the new island */
+    if (s->finStage) g_rush = 0;                                 /* F: fast-forward stops for the finale */
     if (s->finStage) finale(s);
     else if (s->fadeDir == 0) plumb(s);
     else s->eruptLeft = 0;

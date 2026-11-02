@@ -49,7 +49,9 @@ const Saver *saver_resolve(const char *id) {
 /* ---------- fullscreen runner ---------- */
 
 int g_show_info;
-int g_force_egg;   /* windowed: I toggles a little read-out of what the saver is doing */
+int g_force_egg;
+int g_force_boom;
+int g_rush;
 
 /* Speed slider geometry (windowed mode): the knob position is log2(speed), -2..5 = 0.25x..32x. */
 #define SPEED_MIN_LOG (-2.0f)
@@ -93,7 +95,7 @@ static void draw_speed_ui(SDL_Renderer *r, int w, int h, float lg, int paused) {
     SDL_SetRenderDrawColor(r, 255, 255, 255, 200);
     SDL_RenderDrawRect(r, &rb);
     draw_text_shadow(r, "RESET", rb.x + 4 * sc, rb.y + 2 * sc, sc, (SDL_Color){ 255, 255, 255, 255 });
-    draw_text_shadow(r, "[ ] SPEED   1 NORMAL SPEED   R RESTART   E EGG   SPACE PAUSE   S SHOT   I INFO", t.x + t.w / 2 - text_width("[ ] SPEED   1 NORMAL SPEED   R RESTART   E EGG   SPACE PAUSE   S SHOT   I INFO", 1) / 2,
+    draw_text_shadow(r, "[ ] SPEED   1 NORMAL SPEED   R RESTART   E EGG   B BOOM   F TO FINALE   SPACE PAUSE   S SHOT   I INFO", t.x + t.w / 2 - text_width("[ ] SPEED   1 NORMAL SPEED   R RESTART   E EGG   B BOOM   F TO FINALE   SPACE PAUSE   S SHOT   I INFO", 1) / 2,
                      t.y + t.h + 8, 1, (SDL_Color){ 220, 220, 220, 255 });
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
@@ -160,6 +162,8 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, i
     clock_reset(w, h);
 
     g_force_egg = 0;
+    g_force_boom = 0;
+    g_rush = 0;
     const Uint64 freq = SDL_GetPerformanceFrequency();
     Uint64 last = SDL_GetPerformanceCounter();
     const Uint32 started = SDL_GetTicks();
@@ -170,6 +174,7 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, i
     const Uint32 window = (cs && atoi(cs) > 0 ? (Uint32)atoi(cs) : (Uint32)g_config.cycleMinutes * 60) * 1000,
                  grace = window < 600000 ? window : 600000;
     float moved = 0, flash = 0, lg = 0, uiT = 0;   /* lg: log2 of the speed */
+    int rushing = 0;
     int result = -1, paused = 0, shot = 0, drag = 0, reset = 0;
     (void)win;
 
@@ -202,6 +207,11 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, i
                     reset = 1;
                 } else if (k == SDLK_e) {
                     g_force_egg = 1;
+                } else if (k == SDLK_b) {
+                    g_force_boom = 1;
+                } else if (k == SDLK_f) {
+                    g_rush = !g_rush;
+                    if (!g_rush) lg = 0;
                 }
                 if (windowed) uiT = 3;
                 break;
@@ -295,8 +305,10 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, i
             if (!st) return 1;
             clock_reset(w, h);
         }
+        if (rushing && !g_rush) { lg = 0; uiT = 3; }   /* the saver reached its big moment: back to 1x to watch it */
+        rushing = g_rush;
         if (!paused) {                            /* speed > 1 runs several steps, each small enough to stay stable */
-            float left = dt * powf(2.0f, lg);
+            float left = dt * (g_rush ? powf(2.0f, SPEED_MAX_LOG) : powf(2.0f, lg));
             for (int n = 0; left > 0 && n < 64; n++) {
                 float d = left < 0.05f ? left : 0.05f;
                 sv->step(st, d);
@@ -321,7 +333,8 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, i
         }
         if (windowed) {
             if (uiT > 0) uiT -= dt;
-            if (uiT > 0 || paused || drag) draw_speed_ui(r, w, h, lg, paused);
+            if (uiT > 0 || paused || drag || g_rush) draw_speed_ui(r, w, h, g_rush ? SPEED_MAX_LOG : lg, paused);
+            if (g_rush) draw_text_shadow(r, "FAST FORWARD TO THE FINALE   F TO STOP", 12, h - 24, 2, (SDL_Color){ 255, 220, 120, 255 });
         }
         if (flash > 0) {                          /* a quick white flash so you know it worked */
             SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
@@ -367,6 +380,7 @@ static int sequence(const char *dir, const char *what, int w, int h, float secon
     SDL_Renderer *r = surf ? SDL_CreateSoftwareRenderer(surf) : NULL;
     if (!r) return 1;
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    g_force_egg = getenv("TOASTSAVER_EGG") != NULL;
     void *st = sv->create(r, w, h);
     const float dt = 1.0f / fps;
     for (float t = 0; t < seconds; t += dt) sv->step(st, dt);
@@ -390,6 +404,7 @@ static int snapshot(const char *path, const char *what, int w, int h, float seco
     if (!r) { fprintf(stderr, "snapshot: %s\n", SDL_GetError()); return 1; }
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
     g_force_egg = getenv("TOASTSAVER_EGG") != NULL;
+    g_force_boom = getenv("TOASTSAVER_BOOM") != NULL;   /* for snapshots: the volcano starts its finale */
     g_show_info = getenv("TOASTSAVER_INFO") != NULL;   /* for snapshots: draws the saver's read-out */
     const float dt = 1.0f / 30;
     if (!strcmp(what, "sprites")) {                       /* scaled-up sprite sheet, own size */
@@ -530,7 +545,8 @@ static void usage(void) {
            "  toastsaver --list           list savers\n"
            "  toastsaver --windowed ...   use a window: clicks and keys no longer quit it. S = screenshot\n"
            "                              (saved to ~/Pictures), Space = pause, [ ] = slower/faster (or drag the\n"
-           "                              slider), R = restart, E = easter egg, I = info, Esc or Q = quit\n\n"
+           "                              slider), R = restart, E = easter egg, B = boom, F = fast-forward to the finale,\n"
+           "                              I = info, Esc or Q = quit\n\n"
            "Savers: random", VERSION, config_path());
     for (int i = 0; i < SAVER_COUNT; i++) printf(", %s", SAVERS[i]->id);
     printf("\n\nrandom picks a different saver each time from RANDOM_SAVERS, e.g.\n"
