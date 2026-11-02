@@ -1,7 +1,9 @@
 /* BOOKS: a cozy wooden bookshelf in lamplight. Every few seconds a book slides out
    of its slot, flies to the middle, turns to show its cover and opens up. Sparkles
-   float out and the page shows a little moving picture: the moon, a rainbow, a fish,
-   a heart, a rocket or the Waffle Cat. Then it closes and flies home.
+   float out, the left page shows a real old rhyme or poem (all public domain) and the
+   right page a little moving picture to go with it: the moon, a rainbow, a fish, a
+   heart, a rocket, the Waffle Cat, a sheep or a clock. Long poems turn their pages.
+   Then it closes and flies home.
    (Idea by a six-year-old.) */
 #include "../engine.h"
 #include <math.h>
@@ -17,20 +19,58 @@
 Canvas make_waffle_cat(int frame);   /* rainbow.c */
 
 enum { REST, LIFT, FLYOUT, OPEN, SHOW, CLOSE, FLYBACK, DROP };
-enum { PIC_MOON, PIC_RAINBOW, PIC_FISH, PIC_HEART, PIC_ROCKET, PIC_CAT, PICS };
+enum { PIC_MOON, PIC_RAINBOW, PIC_FISH, PIC_HEART, PIC_ROCKET, PIC_CAT, PIC_SHEEP, PIC_CLOCK, PICS };
 enum { P_SPARKLE, P_STAR, P_DOT };
 
 static const uint32_t SPINES[10] = { 0x7A1F2B, 0x1F3A68, 0x2D5A34, 0xC9A227, 0x1F7A7A,
                                      0x6B2D5C, 0x6B4226, 0xC8642A, 0x9E2F2A, 0x3E5F8F };
 static const uint32_t BANDS[6] = { 0xFF4D4D, 0xFF9A3C, 0xFFE14D, 0x5BD46B, 0x4DA6FF, 0x9B6BFF };
 static const uint32_t SPARKS[6] = { 0xFFE27A, 0xFFFFFF, 0xFF9EC8, 0x9ED8FF, 0xA8F0C0, 0xC9A8FF };
-static const char DROPCAP[PICS] = { 'M', 'R', 'F', 'H', 'R', 'C' };
+/* '/' starts a new line, '|' a new page; long lines wrap at the page edge. */
+static const char *const TITLES[PICS] = {
+    "HEY DIDDLE DIDDLE", "THE RAINBOW", "ONCE I CAUGHT A FISH ALIVE", "ROSES ARE RED",
+    "TWINKLE, TWINKLE, LITTLE STAR", "THE OWL AND THE PUSSY-CAT", "BAA, BAA, BLACK SHEEP",
+    "HICKORY, DICKORY, DOCK",
+};
+static const char *const STORIES[PICS] = {
+    "HEY DIDDLE DIDDLE,/THE CAT AND THE FIDDLE,/THE COW JUMPED OVER THE MOON.|"
+    "THE LITTLE DOG LAUGHED/TO SEE SUCH SPORT,/AND THE DISH RAN AWAY WITH THE SPOON.",
+    /* Christina Rossetti, 1872 */
+    "BOATS SAIL ON THE RIVERS,/AND SHIPS SAIL ON THE SEAS,|"
+    "BUT CLOUDS THAT SAIL ACROSS THE SKY/ARE PRETTIER FAR THAN THESE.|"
+    "THERE ARE BRIDGES ON THE RIVERS,/AS PRETTY AS YOU PLEASE,|"
+    "BUT THE BOW THAT BRIDGES HEAVEN,/AND OVERTOPS THE TREES,|"
+    "AND BUILDS A ROAD FROM EARTH TO SKY,/IS PRETTIER FAR THAN THESE.",
+    "ONE, TWO, THREE, FOUR, FIVE,/ONCE I CAUGHT A FISH ALIVE.|"
+    "SIX, SEVEN, EIGHT, NINE, TEN,/THEN I LET IT GO AGAIN.|"
+    "WHY DID YOU LET IT GO?/BECAUSE IT BIT MY FINGER SO.|"
+    "WHICH FINGER DID IT BITE?/THIS LITTLE FINGER ON THE RIGHT.",
+    "ROSES ARE RED,/VIOLETS ARE BLUE,/SUGAR IS SWEET,/AND SO ARE YOU.",
+    /* Jane Taylor, 1806 */
+    "TWINKLE, TWINKLE, LITTLE STAR,/HOW I WONDER WHAT YOU ARE!|"
+    "UP ABOVE THE WORLD SO HIGH,/LIKE A DIAMOND IN THE SKY.|"
+    "WHEN THE BLAZING SUN IS GONE,/WHEN HE NOTHING SHINES UPON,|"
+    "THEN YOU SHOW YOUR LITTLE LIGHT,/TWINKLE, TWINKLE, ALL THE NIGHT.",
+    /* Edward Lear, 1871 */
+    "THE OWL AND THE PUSSY-CAT WENT TO SEA/IN A BEAUTIFUL PEA-GREEN BOAT,|"
+    "THEY TOOK SOME HONEY, AND PLENTY OF MONEY,/WRAPPED UP IN A FIVE-POUND NOTE.|"
+    "THE OWL LOOKED UP TO THE STARS ABOVE,/AND SANG TO A SMALL GUITAR,|"
+    "O LOVELY PUSSY! O PUSSY, MY LOVE,/WHAT A BEAUTIFUL PUSSY YOU ARE!",
+    "BAA, BAA, BLACK SHEEP,/HAVE YOU ANY WOOL?/YES SIR, YES SIR,/THREE BAGS FULL.|"
+    "ONE FOR THE MASTER,/ONE FOR THE DAME,/AND ONE FOR THE LITTLE BOY/WHO LIVES DOWN THE LANE.",
+    "HICKORY, DICKORY, DOCK,/THE MOUSE RAN UP THE CLOCK.|"
+    "THE CLOCK STRUCK ONE,/THE MOUSE RAN DOWN,/HICKORY, DICKORY, DOCK.",
+};
 
 #define GOLD 0xE2B84A
 #define GOLD_HI 0xF7DE8E
 #define GOLD_LO 0x9A7424
 #define PAPER 0xF4E8C8
-#define INK 0x6E5C45
+#define INK 0x3A2A1A
+#define LINE_H (FONT_H + 2)
+#define MAXLINES 64
+#define PAGE_SECS 9.0f                   /* how long each page of a poem stays up */
+#define PIC_SPEED 0.7f                   /* the pictures move a bit slower than real time */
 
 typedef struct { int x, y, w, h, col; unsigned seed; } Book;   /* art pixels, y = top */
 typedef struct { float x, y, vx, vy, life, max, size, rot, ph; int kind; SDL_Color c; } Part;
@@ -43,6 +83,8 @@ typedef struct {
     float lampX, lampY, lampR, glowX, glowY;
     int hasLamp, lampW, lampH, lampFloor, needTex;
     int state, cur, pic, lastPic, picFrame;
+    int page, leftPage, nlines, npages;
+    int lineS[MAXLINES], lineL[MAXLINES], pageStart[MAXLINES + 1];
     Book books[MAXBOOKS];
     int nbooks;
     SDL_Texture *shelf, *spine, *cover, *left, *right, *picTex, *cat[CAT_FRAMES];
@@ -439,6 +481,18 @@ static void emblem(Canvas *c, float cx, float cy, float r, int pic, uint32_t bg)
         fill_poly(c, (float[]){ cx + r * 0.25f, cx + r * 0.6f, cx + r * 0.25f }, (float[]){ cy + r * 0.1f, cy + r * 0.75f, cy + r * 0.5f }, 3, g);
         fill_ellipse(c, cx, cy - r * 0.2f, r * 0.13f, r * 0.13f, k);
         break;
+    case PIC_SHEEP:
+        fill_ellipse(c, cx - r * 0.1f, cy, r * 0.6f, r * 0.42f, g);
+        fill_ellipse(c, cx + r * 0.58f, cy - r * 0.18f, r * 0.24f, r * 0.2f, g);
+        fill_rect(c, (int)(cx - r * 0.4f), (int)(cy + r * 0.3f), (int)(cx - r * 0.3f), (int)(cy + r * 0.7f), g);
+        fill_rect(c, (int)(cx + r * 0.15f), (int)(cy + r * 0.3f), (int)(cx + r * 0.25f), (int)(cy + r * 0.7f), g);
+        break;
+    case PIC_CLOCK:
+        fill_ellipse(c, cx, cy, r * 0.78f, r * 0.78f, g);
+        fill_ellipse(c, cx, cy, r * 0.58f, r * 0.58f, k);
+        fill_rect(c, (int)cx, (int)(cy - r * 0.45f), (int)cx, (int)cy, g);
+        fill_rect(c, (int)cx, (int)cy, (int)(cx + r * 0.32f), (int)cy, g);
+        break;
     default:
         fill_ellipse(c, cx, cy + r * 0.15f, r * 0.62f, r * 0.5f, g);
         fill_poly(c, (float[]){ cx - r * 0.6f, cx - r * 0.5f, cx - r * 0.15f }, (float[]){ cy, cy - r * 0.75f, cy - r * 0.25f }, 3, g);
@@ -449,30 +503,59 @@ static void emblem(Canvas *c, float cx, float cy, float r, int pic, uint32_t bg)
     }
 }
 
-/* A row of make-believe gold letters, centred on cx. */
-static void title_row(Canvas *c, int cx, int y, int maxw, unsigned *s, uint32_t hex, uint32_t bg) {
-    int lens[24], n = 0, total = 0;
-    while (n < 24) {
-        int l = (int)(lcg(s) % 3) + 2;
-        int add = l * 3 + (n ? 3 : 0);
-        if (total + add > maxw) break;
-        lens[n++] = l;
-        total += add;
+static int text_cols(int width) { return (width + 1) / (FONT_W + 1); }
+
+static void ink_text(Canvas *c, int x, int y, const char *s, int n, uint32_t hex) {
+    for (int i = 0; i < n; i++, x += FONT_W + 1) {
+        const char *const *gl = font_glyph(s[i]);
+        for (int j = 0; gl && j < FONT_H; j++)
+            for (int k = 0; k < FONT_W; k++)
+                if (gl[j][k] == '#') put(c, x + k, y + j, rgb(hex));
     }
-    int x = cx - total / 2;
-    for (int i = 0; i < n; i++) {
-        if (i) x += 3;
-        for (int k = 0; k < lens[i]; k++, x += 3) {
-            fill_rect(c, x, y, x + 1, y + 2, rgb(hex));
-            if (lcg(s) % 3 == 0) put(c, x + (int)(lcg(s) % 2), y + 1, rgb(bg));
+}
+
+/* Splits s into lines of at most cols letters, breaking between words. brk[i] says
+   a page ends after line i. Returns the number of lines. */
+static int wrap(const char *s, int cols, int *st, int *ln, int *brk, int max) {
+    int n = 0;
+    const char *p = s;
+    while (*p && n < max) {
+        const char *e = p;
+        while (*e && *e != '/' && *e != '|') e++;
+        for (const char *q = p; q < e && n < max;) {
+            while (q < e && *q == ' ') q++;
+            if (q >= e) break;
+            const char *cur = q, *w = q;
+            while (w < e) {
+                const char *we = w;
+                while (we < e && *we != ' ') we++;
+                if (cur != q && we - q > cols) break;
+                cur = we;
+                w = we;
+                while (w < e && *w == ' ') w++;
+            }
+            st[n] = (int)(q - s); ln[n] = (int)(cur - q); brk[n] = 0; n++;
+            q = cur;
         }
+        if (*e == '|' && n) brk[n - 1] = 1;
+        p = *e ? e + 1 : e;
+    }
+    return n;
+}
+
+/* Lines centred on cx, starting at y. */
+static void centred_text(Canvas *c, int cx, int y, int width, const char *s, uint32_t hex, uint32_t shadow) {
+    int st[8], ln[8], brk[8], n = wrap(s, text_cols(width), st, ln, brk, 8);
+    for (int i = 0; i < n; i++, y += LINE_H) {
+        int x = cx - (ln[i] * (FONT_W + 1) - 1) / 2;
+        if (shadow) ink_text(c, x + 1, y + 1, s + st[i], ln[i], shadow);
+        ink_text(c, x, y, s + st[i], ln[i], hex);
     }
 }
 
 static Canvas make_cover(const Books *b, const Book *bk, int pic) {
     int W = b->cw, H = b->ch;
     uint32_t col = SPINES[bk->col], deep = shade(col, 0.68f);
-    unsigned s = bk->seed;
     Canvas c = canvas_new(W, H);
     for (int y = 0; y < H; y++)
         for (int x = 0; x < W; x++) put(&c, x, y, rgb((x + y) & 1 ? shade(col, 0.95f) : col));
@@ -490,9 +573,8 @@ static Canvas make_cover(const Books *b, const Book *bk, int pic) {
         put(&c, cs[i][0], cs[i][1] - 1, rgb(GOLD)); put(&c, cs[i][0], cs[i][1] + 1, rgb(GOLD));
     }
     int mid = (fx0 + fx1) / 2;
-    title_row(&c, mid, fy0 + H / 9, fx1 - fx0 - 8, &s, GOLD_HI, col);
-    title_row(&c, mid, fy0 + H / 9 + 5, (fx1 - fx0) * 6 / 10, &s, GOLD, col);
-    float mcx = mid + 0.5f, mcy = H * 0.58f, mr = W * 0.22f;
+    centred_text(&c, mid, fy0 + 5, fx1 - fx0 - 4, TITLES[pic], GOLD_HI, shade(col, 0.45f));
+    float mcx = mid + 0.5f, mcy = H * 0.64f, mr = W * 0.2f;
     fill_ellipse(&c, mcx, mcy, mr + 1, mr + 1, rgb(GOLD_LO));
     fill_ellipse(&c, mcx, mcy, mr, mr, rgb(GOLD));
     fill_ellipse(&c, mcx, mcy, mr - 1.5f, mr - 1.5f, rgb(deep));
@@ -504,15 +586,6 @@ static Canvas make_cover(const Books *b, const Book *bk, int pic) {
     fill_rect(&c, W - 1, 0, W - 1, H - 1, rgb(shade(col, 0.45f)));
     fill_rect(&c, 0, 0, 0, H - 1, rgb(shade(col, 0.5f)));
     return c;
-}
-
-static void text_line(Canvas *c, int x0, int x1, int y, unsigned *s) {
-    for (int x = x0; x < x1;) {
-        int l = 2 + (int)(lcg(s) % 6);
-        if (x + l > x1) l = x1 - x;
-        hline(c, x, x + l - 1, y, lcg(s) % 4 ? INK : 0x8A765A);
-        x += l + 2;
-    }
 }
 
 static void paper(Canvas *c, int left) {
@@ -528,53 +601,29 @@ static void gutter(Canvas *c, int left) {
         for (int y = 0; y < c->h; y++) mul_px(c, left ? c->w - 1 - i : i, y, g[i]);
 }
 
-static Canvas make_left_page(const Books *b, const Book *bk, int pic) {
+static Canvas make_left_page(const Books *b) {
     Canvas c = canvas_new(b->pw, b->ph);
-    unsigned s = bk->seed * 7 + 3;
     paper(&c, 1);
-    int x0 = 5, x1 = b->pw - 6;
-    uint32_t col = SPINES[bk->col];
-    fill_rect(&c, x0, 5, x0 + 10, 16, rgb(col));
-    hline(&c, x0, x0 + 10, 5, GOLD); hline(&c, x0, x0 + 10, 16, GOLD);
-    fill_rect(&c, x0, 5, x0, 16, rgb(GOLD)); fill_rect(&c, x0 + 10, 5, x0 + 10, 16, rgb(GOLD));
-    const char *const *gl = font_glyph(DROPCAP[pic]);
-    for (int j = 0; gl && j < FONT_H; j++)
-        for (int i = 0; i < FONT_W; i++)
-            if (gl[j][i] == '#') put(&c, x0 + 3 + i, 7 + j, rgb(0xFFF4D8));
-    int line = 0, para = 6 + (int)(lcg(&s) % 4), indent = 0;
-    for (int y = 6; y < b->ph - 9; y += 3, line++) {
-        int start = (y <= 17 ? x0 + 13 : x0) + indent, end = x1;
-        indent = 0;
-        if (line == para) {                            /* end of a paragraph */
-            end = x0 + (x1 - x0) * (40 + (int)(lcg(&s) % 30)) / 100;
-            para += 7 + (int)(lcg(&s) % 4);
-            indent = 4;
-            text_line(&c, start, end, y, &s);
-            y += 2;
-            continue;
-        }
-        text_line(&c, start, end, y, &s);
-    }
-    hline(&c, b->pw / 2 - 1, b->pw / 2 + 1, b->ph - 4, 0x9A8668);
+    int first = b->pageStart[b->page], n = b->pageStart[b->page + 1] - first;
+    int y = (b->ph - 6 - n * LINE_H) / 2 + 1;
+    for (int i = 0; i < n; i++, y += LINE_H)
+        ink_text(&c, 5, y, STORIES[b->pic] + b->lineS[first + i], b->lineL[first + i], INK);
+    for (int i = 0; i < b->npages && b->npages > 1; i++)      /* which page we're on */
+        fill_rect(&c, b->pw / 2 - b->npages * 2 + i * 4, b->ph - 4, b->pw / 2 - b->npages * 2 + i * 4 + 1, b->ph - 4,
+                  rgb(i == b->page ? 0x7A6448 : 0xD8C8A4));
     gutter(&c, 1);
     return c;
 }
 
 static Canvas make_right_page(const Books *b, const Book *bk) {
     Canvas c = canvas_new(b->pw, b->ph);
-    unsigned s = bk->seed * 13 + 5;
     paper(&c, 0);
     int x0 = b->picx - 1, y0 = b->picy - 1, x1 = b->picx + b->picw, y1 = b->picy + b->pich;
     fill_rect(&c, x0 - 1, y0 - 1, x1 + 1, y1 + 1, rgb(0xE4D2A8));
     fill_rect(&c, x0, y0, x1, y1, rgb(0x7A5A3A));
     put(&c, x0 - 1, y0 - 1, rgb(GOLD)); put(&c, x1 + 1, y0 - 1, rgb(GOLD));
     put(&c, x0 - 1, y1 + 1, rgb(GOLD)); put(&c, x1 + 1, y1 + 1, rgb(GOLD));
-    int mid = (x0 + x1) / 2, line = 0;
-    for (int y = y1 + 5; y < b->ph - 8; y += 3, line++) {
-        int half = (x1 - x0) * (line % 2 ? 30 : 42) / 100;
-        text_line(&c, mid - half, mid + half, y, &s);
-    }
-    hline(&c, b->pw / 2 - 1, b->pw / 2 + 1, b->ph - 4, 0x9A8668);
+    centred_text(&c, b->pw / 2, y1 + 6, b->pw - 6, TITLES[b->pic], shade(SPINES[bk->col], 0.8f), 0);
     gutter(&c, 0);
     return c;
 }
@@ -818,15 +867,100 @@ static void pic_cat(const Books *b, Canvas *c, float t) {
     }
 }
 
+static void pic_sheep(Canvas *c, float t) {
+    int W = c->w, H = c->h, gy = H * 72 / 100;
+    gradient(c, 0x9FD8FF, 0xE6F6FF);
+    cloud(c, fmodf(t * 2, W + 20.0f) - 10, H * 0.2f);
+    cloud(c, fmodf(t * 2 + W * 0.6f, W + 20.0f) - 10, H * 0.34f);
+    for (int x = 0; x < W; x++) {
+        int hy = gy - 2 + (int)(sinf(x * 0.07f) * 1.5f);
+        fill_rect(c, x, hy, x, H - 1, rgb(0x7FCF6A));
+        put(c, x, hy, rgb(0x9BE07E));
+        if (x % 7 == 3) put(c, x, hy + 4 + x % 3, rgb(0x6AB858));
+    }
+    int fx = W / 2;                                    /* the fence they hop over */
+    fill_rect(c, fx - 5, gy - 9, fx - 4, gy, rgb(0x7A4E26));
+    fill_rect(c, fx + 4, gy - 9, fx + 5, gy, rgb(0x7A4E26));
+    hline(c, fx - 7, fx + 7, gy - 7, 0xA8743E);
+    hline(c, fx - 7, fx + 7, gy - 3, 0xA8743E);
+    for (int i = 0; i < 2; i++) {                      /* two black sheep, one after the other */
+        float k = fmodf(t / 7.0f + i * 0.5f, 1.0f), sx = -10 + k * (W + 20), dx = sx - fx;
+        float jy = fabsf(dx) < 14 ? cosf(dx / 14 * PI_F * 0.5f) * 12 : 0;
+        int y = gy - (int)jy, x = (int)sx, step = jy > 0 ? 0 : (int)(t * 5) % 2;
+        for (int l = 0; l < 4; l++) {
+            int lx = x - 4 + l * 2 + (l > 1), dy = (l + step) % 2;
+            fill_rect(c, lx, y - 3, lx, y - dy, rgb(0x1E1E24));
+        }
+        fill_ellipse(c, x, y - 6, 6, 3.6f, rgb(0x3A3A46));
+        for (int q = 0; q < 4; q++) fill_ellipse(c, x - 4.5f + q * 3, y - 8.5f, 1.6f, 1.4f, rgb(0x50505E));
+        fill_ellipse(c, x + 6.5f, y - 7, 2.4f, 2, rgb(0x1E1E24));
+        put(c, x + 5, y - 9, rgb(0x1E1E24));
+        put(c, x + 7, y - 8, rgb(0xFFFFFF));
+    }
+}
+
+static void mouse(Canvas *c, int x, int y, int up, int dir) {
+    if (up) {
+        fill_ellipse(c, x, y, 1.6f, 2.6f, rgb(0x9A9AA6));
+        put(c, x - 1, y - 2 * dir, rgb(0xFFB0C0)); put(c, x + 1, y - 2 * dir, rgb(0xFFB0C0));
+        for (int i = 0; i < 3; i++) put(c, x + (i == 2), y + (3 + i) * dir, rgb(0x6A5A5A));
+    } else {
+        fill_ellipse(c, x, y, 2.6f, 1.6f, rgb(0x9A9AA6));
+        put(c, x + 2 * dir, y - 2, rgb(0xFFB0C0));
+        put(c, x + 3 * dir, y, rgb(0x222222));
+        for (int i = 0; i < 3; i++) put(c, x - (3 + i) * dir, y - (i == 2), rgb(0x6A5A5A));
+    }
+}
+
+static void pic_clock(Canvas *c, float t) {
+    int W = c->w, H = c->h, cx = W / 2, top = 3, bot = H - 4;
+    gradient(c, 0xF3DDB0, 0xE4C48E);
+    for (int x = 2; x < W; x += 6) for (int y = 0; y < bot; y++) tint_px(c, x, y, 0xC8A070, 0.25f);
+    fill_rect(c, 0, bot, W - 1, H - 1, rgb(0x8A5A32));
+    hline(c, 0, W - 1, bot, 0xA8743E);
+    fill_rect(c, cx - 8, top, cx + 8, bot - 1, rgb(0x8A4E24));      /* the tall clock */
+    fill_rect(c, cx - 9, top + 16, cx + 9, top + 17, rgb(0x5A3014));
+    fill_rect(c, cx - 9, bot - 3, cx + 9, bot - 1, rgb(0x5A3014));
+    float fy = top + 8;
+    fill_ellipse(c, cx + 0.5f, fy, 6.5f, 6.5f, rgb(0xE2B84A));
+    fill_ellipse(c, cx + 0.5f, fy, 5.5f, 5.5f, rgb(0xFFF4D8));
+    for (int h = 0; h < 12; h += 3) put(c, cx + (int)roundf(sinf(h * PI_F / 6) * 4.5f), (int)(fy - cosf(h * PI_F / 6) * 4.5f), rgb(0x5A3014));
+    float P = 9, k = fmodf(t, P), ma = t * 0.6f;
+    for (int i = 1; i <= 4; i++) put(c, cx + (int)roundf(sinf(ma) * i), (int)roundf(fy - cosf(ma) * i), rgb(0x222222));
+    for (int i = 1; i <= 2; i++) put(c, cx + (int)roundf(sinf(PI_F / 6) * i), (int)roundf(fy - cosf(PI_F / 6) * i), rgb(0x222222));
+    int wy0 = top + 19, wy1 = bot - 5;                 /* the pendulum window */
+    fill_rect(c, cx - 5, wy0, cx + 5, wy1, rgb(0x3A1E0C));
+    float a = sinf(t * 2.2f) * 0.35f, L = wy1 - wy0 - 4.0f;
+    for (int i = 0; i < (int)L; i++) put(c, cx + (int)roundf(sinf(a) * i), wy0 + 1 + i, rgb(0xB08A3A));
+    fill_ellipse(c, cx + 0.5f + sinf(a) * L, wy0 + 1 + L, 2, 2, rgb(0xE2B84A));
+    if (k > 3 && k < 4.5f) {                           /* the clock strikes one: dong! */
+        float r = 7 + (k - 3) * 8;
+        uint32_t rc = mixc(0xFFE27A, 0xF3DDB0, (k - 3) / 1.5f);
+        for (int i = 0; i < 24; i++) {
+            float aa = i * PI_F / 12;
+            put(c, cx + (int)(cosf(aa) * r), (int)(fy + sinf(aa) * r), rgb(rc));
+        }
+    }
+    int side = cx + 11, oside = cx - 11, mx, my, up = 1, dir = -1;
+    if (k < 3) { mx = side; my = (int)(bot - 3 - (k / 3) * (bot - 3 - top - 2)); }
+    else if (k < 4.5f) { mx = cx + 4 - (int)((k - 3) / 1.5f * 8); my = top - 2; up = 0; }
+    else if (k < 7) { mx = oside; my = (int)(top + 2 + (k - 4.5f) / 2.5f * (bot - 5 - top)); dir = 1; }
+    else { mx = oside + (int)((k - 7) / 2 * (side - oside)); my = bot + 2; up = 0; dir = 1; }
+    if (k >= 3 && k < 4.5f) dir = -1;
+    mouse(c, mx, my, up, dir);
+}
+
 static void render_pic(Books *b) {
     Canvas *c = &b->art;
-    float t = b->picT;
+    float t = b->picT * PIC_SPEED;
     switch (b->pic) {
     case PIC_MOON: pic_moon(c, t); break;
     case PIC_RAINBOW: pic_rainbow(c, t); break;
     case PIC_FISH: pic_fish(c, t); break;
     case PIC_HEART: pic_heart(c, t); break;
     case PIC_ROCKET: pic_rocket(c, t); break;
+    case PIC_SHEEP: pic_sheep(c, t); break;
+    case PIC_CLOCK: pic_clock(c, t); break;
     default: pic_cat(b, c, t); break;
     }
     if (b->picTex) SDL_UpdateTexture(b->picTex, NULL, c->px, c->w * 4);
@@ -847,6 +981,15 @@ static void choose_book(Books *b) {
     b->picT = 0;
     b->picFrame = -1;
     b->needTex = 1;
+    int brk[MAXLINES], cap = (b->ph - 8) / LINE_H, on = 0;
+    b->nlines = wrap(STORIES[b->pic], text_cols(b->pw - 10), b->lineS, b->lineL, brk, MAXLINES);
+    b->npages = 0;
+    for (int i = 0; i < b->nlines; i++) {
+        if (on == 0) b->pageStart[b->npages++] = i;
+        if (++on == cap || brk[i]) on = 0;
+    }
+    b->pageStart[b->npages] = b->nlines;
+    b->page = 0;
 }
 
 /* Textures need the renderer, so they are made in draw() for the chosen book. */
@@ -859,8 +1002,9 @@ static void make_textures(Books *b, SDL_Renderer *ren) {
     b->spine = canvas_texture(ren, &sp);
     Canvas cv = make_cover(b, bk, b->pic);
     b->cover = canvas_texture(ren, &cv);
-    Canvas lp = make_left_page(b, bk, b->pic);
+    Canvas lp = make_left_page(b);
     b->left = canvas_texture(ren, &lp);
+    b->leftPage = b->page;
     Canvas rp = make_right_page(b, bk);
     b->right = canvas_texture(ren, &rp);
 }
@@ -944,8 +1088,8 @@ static void step(void *p, float dt) {
         case LIFT: set_state(b, FLYOUT, 1.5f); break;
         case FLYOUT: set_state(b, OPEN, 1.0f); break;
         case OPEN:
-            set_state(b, SHOW, 5.5f);
-            sparkle_burst(b, b->w * 0.5f, b->h * 0.5f - b->ch * S * 0.3f, 30);
+            set_state(b, SHOW, b->npages * PAGE_SECS + 2);
+            sparkle_burst(b, b->w * 0.5f, b->h * 0.5f - b->ch * S * 0.3f, 10);
             break;
         case SHOW: set_state(b, CLOSE, 0.9f); break;
         case CLOSE: set_state(b, FLYBACK, 1.5f); break;
@@ -961,8 +1105,10 @@ static void step(void *p, float dt) {
         }
         }
     }
-    if (b->state == SHOW) {                            /* sparkles float up out of the pages */
-        b->spawn += dt * 9;
+    if (b->state == SHOW) {                            /* now and then a sparkle drifts up */
+        int pg = (int)(b->stateT / PAGE_SECS);
+        b->page = pg < b->npages ? pg : b->npages - 1;
+        b->spawn += dt * 1.2f;
         while (b->spawn >= 1) {
             b->spawn -= 1;
             int kind = irand(3) == 0 ? P_STAR : (irand(3) ? P_SPARKLE : P_DOT);
@@ -1060,9 +1206,9 @@ static void draw_open(Books *b, SDL_Renderer *r, float th, float bob) {
     if (b->picTex) SDL_RenderCopyF(r, b->picTex, NULL, &pr);
     if (b->pic == PIC_CAT) {
         float cx, cy, cs;
-        cat_pos(b, b->picT, &cx, &cy, &cs);
+        cat_pos(b, b->picT * PIC_SPEED, &cx, &cy, &cs);
         SDL_FRect d = { pr.x + cx * S, pr.y + cy * S, CAT_W * cs * S, CAT_H * cs * S };
-        SDL_RenderCopyF(r, b->cat[(int)(b->picT * 8) % CAT_FRAMES], NULL, &d);
+        SDL_RenderCopyF(r, b->cat[(int)(b->picT * 5) % CAT_FRAMES], NULL, &d);
     }
     if (c > 0) {
         copy_tex(r, b->cover, hx, top, CW * c, CH, 0.55f + 0.45f * c);
@@ -1080,10 +1226,16 @@ static void draw(void *p, SDL_Renderer *r) {
     float S = (float)b->px;
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
     if (b->needTex) make_textures(b, r);
+    else if (b->page != b->leftPage && b->left) {        /* turned to the next page of the poem */
+        SDL_DestroyTexture(b->left);
+        Canvas lp = make_left_page(b);
+        b->left = canvas_texture(r, &lp);
+        b->leftPage = b->page;
+    }
     set_color(r, hexcol(0x24150C));
     SDL_RenderFillRect(r, NULL);
 
-    float fl = 0.95f + 0.05f * (0.5f + 0.5f * sinf(b->t * 2.3f) * sinf(b->t * 3.7f + 1));
+    float fl = 0.98f + 0.02f * (0.5f + 0.5f * sinf(b->t * 2.3f) * sinf(b->t * 3.7f + 1));
     Uint8 fv = (Uint8)(255 * fl);
     SDL_SetTextureColorMod(b->shelf, fv, fv, fv);
     SDL_Rect d = { 0, 0, b->W * b->px, b->H * b->px };
@@ -1111,7 +1263,7 @@ static void draw(void *p, SDL_Renderer *r) {
     else if (b->state >= OPEN && b->state <= CLOSE) focus = 1;
     else if (b->state == FLYBACK) focus = 1 - ease(k);
     if (focus > 0) {
-        frect(r, 0, 0, (float)b->w, (float)b->h, (SDL_Color){ 10, 5, 2, (Uint8)(110 * focus) });
+        frect(r, 0, 0, (float)b->w, (float)b->h, (SDL_Color){ 10, 5, 2, (Uint8)(150 * focus) });
         for (int i = 0; i < 4; i++)                     /* a warm glow around the book */
             fill_circle(r, b->w * 0.5f, b->h * 0.5f, b->ch * S * (1.05f - i * 0.1f), (SDL_Color){ 255, 205, 130, (Uint8)(11 * focus) });
     }
@@ -1133,7 +1285,13 @@ static void draw(void *p, SDL_Renderer *r) {
         int frame = (int)(b->picT * 12);
         if (frame != b->picFrame) { b->picFrame = frame; render_pic(b); }
         float th = b->state == OPEN ? PI_F * ease(k) : (b->state == SHOW ? PI_F : PI_F * (1 - ease(k)));
-        draw_open(b, r, th, b->state == SHOW ? sinf(PI_F * 4 * k) * S : 0);
+        draw_open(b, r, th, 0);
+        float f = fmodf(b->stateT, PAGE_SECS), fade = 0;  /* the words fade between pages */
+        if (b->state == SHOW && b->page > 0 && f < 0.5f) fade = 1 - f / 0.5f;
+        if (b->state == SHOW && b->page < b->npages - 1 && f > PAGE_SECS - 0.5f) fade = (f - PAGE_SECS + 0.5f) / 0.5f;
+        if (fade > 0)
+            frect(r, b->w * 0.5f - b->pw * S + 5 * S, b->h * 0.5f - b->ch * S * 0.5f + 2 * S, (b->pw - 10) * S, (b->ph - 8) * S,
+                  (SDL_Color){ 0xF4, 0xE8, 0xC8, (Uint8)(255 * fade) });
         break;
     }
     default: break;
