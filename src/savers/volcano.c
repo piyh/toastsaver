@@ -1218,4 +1218,13 @@ static int at_rest(void *p) {
     return s->fadeDir > 0 && s->fade > 0.95f;
 }
 
-const Saver saver_volcano = { "volcano", "VOLCANO", create, step, draw, destroy, at_rest };
+/* The read-out in the corner (I in windowed mode) is full of numbers. */
+static int keep_clear(void *p, SDL_Rect *out, int max) {
+    const Volcano *s = p;
+    if (!g_show_info || max < 1) return 0;
+    int sc = s->h / 360 > 2 ? s->h / 360 : 2;
+    out[0] = (SDL_Rect){ 0, 0, 12 + text_width("ENDS: SUMMIT REACHES 100%, THEN A NEW SEAMOUNT", sc) + 12, 12 + 6 * 9 * sc + 12 };
+    return 1;
+}
+
+const Saver saver_volcano = { "volcano", "VOLCANO", create, step, draw, destroy, at_rest, keep_clear };

@@ -1547,10 +1547,33 @@ static void destroy(void *p) {
     free(d);
 }
 
+/* Where numbers are on screen: the chalkboard, each die (its face numbers), and the
+   tallies and popups on their way. The clock keeps off these. */
+static int keep_clear(void *p, SDL_Rect *out, int max) {
+    const Dice *d = p;
+    int n = 0, S = d->S;
+    #define ADD(x, y, w, h) do { if (n < max) out[n++] = (SDL_Rect){ (int)((x) * S), (int)((y) * S), (int)((w) * S), (int)((h) * S) }; } while (0)
+    ADD(d->bx, d->by, d->bw, d->bh);
+    for (int i = 0; i < d->n; i++) {
+        const Die *e = &d->die[i];
+        float r = 1.2f * d->R;
+        ADD(e->x - r, e->y - e->z * 0.85f - r * 1.8f, 2 * r, 3.6f * r);   /* popups above, its name below */
+        const Fly *f = &d->fly[i];
+        if (f->on) {                       /* the whole way from the die to the board */
+            float tx, ty;
+            board_target(d, &tx, &ty);
+            float x0 = f->x0 < tx ? f->x0 : tx, x1 = f->x0 < tx ? tx : f->x0;
+            ADD(x0 - 12, ty - 8, x1 - x0 + 24, f->y0 - ty + 16);
+        }
+    }
+    #undef ADD
+    return n;
+}
+
 /* The tray is empty between one throw and the next. */
 static int at_rest(void *p) {
     const Dice *s = p;
     return s->state == GAP;
 }
 
-const Saver saver_dice = { "dice", "DICE", create, step, draw, destroy, at_rest };
+const Saver saver_dice = { "dice", "DICE", create, step, draw, destroy, at_rest, keep_clear };

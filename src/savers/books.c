@@ -1167,4 +1167,4 @@ static int at_rest(void *p) {
     return s->state == REST;
 }
 
-const Saver saver_books = { "books", "BOOKS", create, step, draw, destroy, at_rest };
+const Saver saver_books = { "books", "BOOKS", create, step, draw, destroy, at_rest, NULL };

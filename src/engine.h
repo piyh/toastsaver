@@ -87,8 +87,9 @@ Canvas text_canvas(const char *s, uint32_t col);         /* 1 canvas pixel per f
 
 /* ---------- clock overlay ---------- */
 
+#define CLEAR_MAX 32   /* the most keep-clear areas a saver reports */
 void clock_reset(int w, int h);
-void clock_step(float dt);
+void clock_step(float dt, const SDL_Rect *avoid, int n);   /* avoid: areas the clock stays off */
 void clock_draw(SDL_Renderer *r, int w, int h);
 
 /* Windowed mode: I toggles a read-out of what the saver is doing (savers may draw it). */
@@ -105,6 +106,8 @@ typedef struct Saver {
     void (*draw)(void *s, SDL_Renderer *r);  /* draws 0,0..w,h of the current viewport */
     void (*destroy)(void *s);
     int (*at_rest)(void *s);  /* optional: 1 at a natural place to cut away (SURPRISE rotation waits for it) */
+    int (*keep_clear)(void *s, SDL_Rect *out, int max);  /* optional: screen areas showing numbers, which
+                                                            the clock keeps off; returns how many */
 } Saver;
 
 extern const Saver saver_toasters, saver_pipes, saver_starfield, saver_mystify,

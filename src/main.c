@@ -311,7 +311,8 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, i
             if (xfade <= 0) { SDL_DestroyTexture(old); old = NULL; }
         }
         if (g_config.clock) {
-            clock_step(dt);
+            SDL_Rect avoid[CLEAR_MAX];
+            clock_step(dt, avoid, sv->keep_clear ? sv->keep_clear(st, avoid, CLEAR_MAX) : 0);
             clock_draw(r, w, h);
         }
         if (shot) {
@@ -423,7 +424,11 @@ static int snapshot(const char *path, const char *what, int w, int h, float seco
         if (!strcmp(what, "random")) printf("random: %s\n", sv->id);
         void *st = sv->create(r, w, h);
         clock_reset(w, h);
-        for (float t = 0; t < seconds; t += dt) { sv->step(st, dt); clock_step(dt); }
+        SDL_Rect avoid[CLEAR_MAX];
+        for (float t = 0; t < seconds; t += dt) {
+            sv->step(st, dt);
+            clock_step(dt, avoid, sv->keep_clear ? sv->keep_clear(st, avoid, CLEAR_MAX) : 0);
+        }
         sv->draw(st, r);
         if (g_config.clock) clock_draw(r, w, h);
         sv->destroy(st);
