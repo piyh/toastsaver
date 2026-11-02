@@ -2,7 +2,9 @@
    of its slot, flies to the middle, turns to show its cover and opens up. Sparkles
    float out, the left page shows a real old rhyme or poem (all public domain) and the
    right page a little moving picture to go with it: the moon, a rainbow, a fish, a
-   heart, a rocket, the Waffle Cat, a sheep or a clock. Long poems turn their pages.
+   heart, a rocket, the Waffle Cat, a sheep, a clock, a kite in the wind, the
+   Jumblies' sieve, glowing gems or paper boats on a river. Long poems turn their pages:
+   a leaf lifts off the right, swings over the spine and lands on the left.
    Then it closes and flies home.
    (Idea by a six-year-old.) */
 #include "../engine.h"
@@ -19,7 +21,8 @@
 Canvas make_waffle_cat(int frame);   /* rainbow.c */
 
 enum { REST, LIFT, FLYOUT, OPEN, SHOW, CLOSE, FLYBACK, DROP };
-enum { PIC_MOON, PIC_RAINBOW, PIC_FISH, PIC_HEART, PIC_ROCKET, PIC_CAT, PIC_SHEEP, PIC_CLOCK, PICS };
+enum { PIC_MOON, PIC_RAINBOW, PIC_FISH, PIC_HEART, PIC_ROCKET, PIC_CAT, PIC_SHEEP, PIC_CLOCK,
+       PIC_WIND, PIC_JUMBLIES, PIC_GEMS, PIC_BOATS, PICS };
 enum { P_SPARKLE, P_STAR, P_DOT };
 
 static const uint32_t SPINES[10] = { 0x7A1F2B, 0x1F3A68, 0x2D5A34, 0xC9A227, 0x1F7A7A,
@@ -30,7 +33,7 @@ static const uint32_t SPARKS[6] = { 0xFFE27A, 0xFFFFFF, 0xFF9EC8, 0x9ED8FF, 0xA8
 static const char *const TITLES[PICS] = {
     "HEY DIDDLE DIDDLE", "THE RAINBOW", "ONCE I CAUGHT A FISH ALIVE", "ROSES ARE RED",
     "TWINKLE, TWINKLE, LITTLE STAR", "THE OWL AND THE PUSSY-CAT", "BAA, BAA, BLACK SHEEP",
-    "HICKORY, DICKORY, DOCK",
+    "HICKORY, DICKORY, DOCK", "THE WIND", "THE JUMBLIES", "WHAT IS PINK?", "WHERE GO THE BOATS?",
 };
 static const char *const STORIES[PICS] = {
     "HEY DIDDLE DIDDLE,/THE CAT AND THE FIDDLE,/THE COW JUMPED OVER THE MOON.|"
@@ -60,6 +63,29 @@ static const char *const STORIES[PICS] = {
     "ONE FOR THE MASTER,/ONE FOR THE DAME,/AND ONE FOR THE LITTLE BOY/WHO LIVES DOWN THE LANE.",
     "HICKORY, DICKORY, DOCK,/THE MOUSE RAN UP THE CLOCK.|"
     "THE CLOCK STRUCK ONE,/THE MOUSE RAN DOWN,/HICKORY, DICKORY, DOCK.",
+    /* Robert Louis Stevenson, 1885 */
+    "I SAW YOU TOSS THE KITES ON HIGH/AND BLOW THE BIRDS ABOUT THE SKY,|"
+    "AND ALL AROUND I HEARD YOU PASS,/LIKE LADIES' SKIRTS ACROSS THE GRASS.|"
+    "O WIND, A-BLOWING ALL DAY LONG,/O WIND, THAT SINGS SO LOUD A SONG!",
+    /* Edward Lear, 1871 */
+    "THEY WENT TO SEA IN A SIEVE, THEY DID,/IN A SIEVE THEY WENT TO SEA,|"
+    "IN SPITE OF ALL THEIR FRIENDS COULD SAY,|ON A WINTER'S MORN, ON A STORMY DAY,/IN A SIEVE THEY WENT TO SEA!|"
+    "FAR AND FEW, FAR AND FEW,/ARE THE LANDS WHERE THE JUMBLIES LIVE,|"
+    "THEIR HEADS ARE GREEN, AND THEIR HANDS ARE BLUE,/AND THEY WENT TO SEA IN A SIEVE.",
+    /* Christina Rossetti, 1872 */
+    "WHAT IS PINK? A ROSE IS PINK/BY THE FOUNTAIN'S BRINK.|"
+    "WHAT IS RED? A POPPY'S RED/IN ITS BARLEY BED.|"
+    "WHAT IS BLUE? THE SKY IS BLUE/WHERE THE CLOUDS FLOAT THRO'.|"
+    "WHAT IS WHITE? A SWAN IS WHITE/SAILING IN THE LIGHT.|"
+    "WHAT IS YELLOW? PEARS ARE YELLOW,/RICH AND RIPE AND MELLOW.|"
+    "WHAT IS GREEN? THE GRASS IS GREEN,/WITH SMALL FLOWERS BETWEEN.|"
+    "WHAT IS VIOLET? CLOUDS ARE VIOLET/IN THE SUMMER TWILIGHT.|"
+    "WHAT IS ORANGE? WHY, AN ORANGE,/JUST AN ORANGE!",
+    /* Robert Louis Stevenson, 1885 */
+    "DARK BROWN IS THE RIVER,/GOLDEN IS THE SAND.|IT FLOWS ALONG FOR EVER,/WITH TREES ON EITHER HAND.|"
+    "GREEN LEAVES A-FLOATING,/CASTLES OF THE FOAM,|BOATS OF MINE A-BOATING,/WHERE WILL ALL COME HOME?|"
+    "ON GOES THE RIVER/AND OUT PAST THE MILL,/AWAY DOWN THE VALLEY,/AWAY DOWN THE HILL.|"
+    "AWAY DOWN THE RIVER,/A HUNDRED MILES OR MORE,|OTHER LITTLE CHILDREN/SHALL BRING MY BOATS ASHORE.",
 };
 
 #define GOLD 0xE2B84A
@@ -70,6 +96,7 @@ static const char *const STORIES[PICS] = {
 #define LINE_H (FONT_H + 2)
 #define MAXLINES 64
 #define PAGE_SECS 9.0f                   /* how long each page of a poem stays up */
+#define TURN_T 1.1f                      /* how long one page takes to turn over */
 #define PIC_SPEED 0.7f                   /* the pictures move a bit slower than real time */
 
 typedef struct { int x, y, w, h, col; unsigned seed; } Book;   /* art pixels, y = top */
@@ -86,8 +113,8 @@ typedef struct {
     int page, leftPage, nlines, npages;
     int lineS[MAXLINES], lineL[MAXLINES], pageStart[MAXLINES + 1];
     Book books[MAXBOOKS];
-    int nbooks;
-    SDL_Texture *shelf, *spine, *cover, *left, *right, *picTex, *cat[CAT_FRAMES];
+    int nbooks, home[PICS];               /* each story always lives in the same book */
+    SDL_Texture *shelf, *spine, *cover, *left, *next, *right, *picTex, *cat[CAT_FRAMES];
     Canvas art;
     Part parts[PARTS];
     Mote motes[MOTES];
@@ -486,6 +513,25 @@ static void emblem(Canvas *c, float cx, float cy, float r, int pic, uint32_t bg)
         fill_ellipse(c, cx + r * 0.58f, cy - r * 0.18f, r * 0.24f, r * 0.2f, g);
         fill_rect(c, (int)(cx - r * 0.4f), (int)(cy + r * 0.3f), (int)(cx - r * 0.3f), (int)(cy + r * 0.7f), g);
         fill_rect(c, (int)(cx + r * 0.15f), (int)(cy + r * 0.3f), (int)(cx + r * 0.25f), (int)(cy + r * 0.7f), g);
+        break;
+    case PIC_WIND:                                     /* a kite */
+        fill_poly(c, (float[]){ cx, cx + r * 0.5f, cx, cx - r * 0.5f }, (float[]){ cy - r * 0.8f, cy - r * 0.1f, cy + r * 0.5f, cy - r * 0.1f }, 4, g);
+        for (int i = 0; i < 4; i++) put(c, (int)(cx + (i % 2 ? 1 : -1) * r * 0.15f), (int)(cy + r * (0.6f + i * 0.12f)), g);
+        break;
+    case PIC_JUMBLIES:                                 /* a sieve with a sail */
+        fill_ellipse(c, cx, cy + r * 0.25f, r * 0.75f, r * 0.4f, g);
+        fill_rect(c, (int)(cx - r * 0.8f), (int)(cy - r * 0.2f), (int)(cx + r * 0.8f), (int)(cy + r * 0.25f), k);
+        fill_rect(c, (int)cx, (int)(cy - r * 0.85f), (int)cx, (int)(cy + r * 0.2f), g);
+        fill_poly(c, (float[]){ cx + 1, cx + r * 0.6f, cx + 1 }, (float[]){ cy - r * 0.8f, cy - r * 0.05f, cy - r * 0.05f }, 3, g);
+        break;
+    case PIC_GEMS:                                     /* a cut gem */
+        fill_poly(c, (float[]){ cx - r * 0.45f, cx + r * 0.45f, cx + r * 0.75f, cx, cx - r * 0.75f },
+                  (float[]){ cy - r * 0.55f, cy - r * 0.55f, cy - r * 0.15f, cy + r * 0.75f, cy - r * 0.15f }, 5, g);
+        for (int x = (int)(cx - r * 0.6f); x <= (int)(cx + r * 0.6f); x++) put(c, x, (int)(cy - r * 0.15f), k);
+        break;
+    case PIC_BOATS:                                    /* a paper boat */
+        fill_poly(c, (float[]){ cx - r * 0.8f, cx + r * 0.8f, cx + r * 0.5f, cx - r * 0.5f }, (float[]){ cy + r * 0.1f, cy + r * 0.1f, cy + r * 0.5f, cy + r * 0.5f }, 4, g);
+        fill_poly(c, (float[]){ cx - r * 0.35f, cx, cx + r * 0.35f }, (float[]){ cy + r * 0.1f, cy - r * 0.7f, cy + r * 0.1f }, 3, g);
         break;
     case PIC_CLOCK:
         fill_ellipse(c, cx, cy, r * 0.78f, r * 0.78f, g);
@@ -950,6 +996,141 @@ static void pic_clock(Canvas *c, float t) {
     mouse(c, mx, my, up, dir);
 }
 
+static void pic_wind(Canvas *c, float t) {
+    int W = c->w, H = c->h;
+    gradient(c, 0x8FD3FF, 0xE8F7FF);
+    cloud(c, fmodf(t * 3, W + 20.0f) - 10, H * 0.18f);
+    for (int i = 0; i < 2; i++) {                      /* birds tossed about */
+        float bx = fmodf(t * 9 + i * W * 0.45f, W + 10.0f) - 5, by = H * (0.12f + 0.1f * i) + sinf(t * 2 + i) * 3;
+        int up = (int)(t * 4 + i) % 2;
+        put(c, (int)bx - 1, (int)by - up, rgb(0x34405A)); put(c, (int)bx, (int)by, rgb(0x34405A)); put(c, (int)bx + 1, (int)by - up, rgb(0x34405A));
+    }
+    int hill[256];
+    for (int x = 0; x < W && x < 256; x++) {           /* a grassy hill, the grass all bent by the wind */
+        hill[x] = (int)(H * 0.72f - sinf(x * 0.05f + 0.6f) * H * 0.08f);
+        fill_rect(c, x, hill[x], x, H - 1, rgb(0x6CC25A));
+        put(c, x, hill[x], rgb(0x8FDB72));
+        if (x % 3 == 0) {
+            float lean = 1.5f + sinf(t * 2.5f - x * 0.15f) * 1.2f;
+            put(c, x + (int)(lean * 0.5f), hill[x] - 1, rgb(0x8FDB72));
+            put(c, x + (int)lean, hill[x] - 2, rgb(0xA8E888));
+        }
+    }
+    float kx = W * 0.66f + sinf(t * 0.8f) * 5, ky = H * 0.3f + sinf(t * 1.3f) * 3;
+    float hx = W * 0.2f, hy = (float)hill[(int)(W * 0.2f)] - 1;
+    for (int i = 0; i <= 30; i++) {                    /* the string, sagging a little */
+        float u = i / 30.0f;
+        put(c, (int)(hx + (kx - hx) * u), (int)(hy + (ky + 6 - hy) * u + sinf(u * PI_F) * 4), rgb(0x5A4A3A));
+    }
+    for (int i = 1; i <= 6; i++)                       /* the tail with its bows */
+        put(c, (int)(kx + sinf(t * 4 - i * 0.8f) * 2 - i), (int)(ky + 6 + i * 2), rgb(i % 2 ? 0xFF4D4D : 0xFFE14D));
+    fill_poly(c, (float[]){ kx, kx + 5, kx, kx - 5 }, (float[]){ ky - 7, ky - 1, ky + 6, ky - 1 }, 4, rgb(0xFF4D4D));
+    fill_poly(c, (float[]){ kx, kx + 5, kx }, (float[]){ ky - 7, ky - 1, ky - 1 }, 3, rgb(0xFFE14D));
+    fill_poly(c, (float[]){ kx, kx - 5, kx }, (float[]){ ky - 1, ky - 1, ky + 6 }, 3, rgb(0xFFE14D));
+    for (int i = 0; i < 6; i++) {                      /* leaves blowing past */
+        float u = fmodf(t * 0.3f + i / 6.0f, 1.0f);
+        int lx = (int)(u * (W + 8)) - 4, ly = (int)(H * (0.35f + 0.08f * (i % 4)) + sinf(u * 12 + i) * 4);
+        uint32_t lc = i % 3 == 0 ? 0xF0A040 : 0x5CB050;
+        put(c, lx, ly, rgb(lc)); put(c, lx + 1, ly + ((int)(t * 6 + i) % 2), rgb(lc));
+    }
+}
+
+static void pic_jumblies(Canvas *c, float t) {
+    int W = c->w, H = c->h;
+    gradient(c, 0x55679E, 0xB0BEDC);
+    twinkles(c, t, 6, H / 3);
+    float sx = W * 0.5f + sinf(t * 0.5f) * 4, sea = H * 0.64f;
+    float sy = sea + sinf(t * 1.6f) * 1.5f;
+    fill_rect(c, (int)sx, (int)(sy - 20), (int)sx, (int)sy - 2, rgb(0x6A4A2A));   /* the pipe for a mast */
+    float flap = sinf(t * 3) * 1.5f;                   /* and a pea-green veil for a sail */
+    fill_poly(c, (float[]){ sx + 1, sx + 11 + flap, sx + 1 }, (float[]){ sy - 19, sy - 9, sy - 5 }, 3, rgb(0x9BD45A));
+    for (int i = 0; i < 3; i++) {                      /* three Jumblies: green heads, blue hands */
+        float jx = sx - 8 + i * 6 + (i == 1 ? 2 : 0), jy = sy - 6 + (i == 1 ? sinf(t * 5) * 0.8f : 0);
+        fill_rect(c, (int)jx - 1, (int)jy, (int)jx + 1, (int)jy + 3, rgb(0xE8D8B0));
+        fill_ellipse(c, jx, jy - 2, 2, 2, rgb(0x5BC44A));
+        put(c, (int)jx + 1, (int)jy - 2, rgb(0x1A1A1A));
+        int wave = i == 0 && (int)(t * 3) % 2;         /* one of them waves */
+        put(c, (int)jx - 2, (int)jy + 1 - wave * 2, rgb(0x4D8CFF)); put(c, (int)jx + 2, (int)jy + 1, rgb(0x4D8CFF));
+    }
+    for (int y = (int)sy - 2; y <= (int)sy + 4; y++)   /* the sieve, holes and all */
+        for (int x = (int)sx - 14; x <= (int)sx + 14; x++) {
+            float dx = (x + 0.5f - sx) / 14, dy = (y + 0.5f - sy + 2) / 6;
+            if (dx * dx + dy * dy > 1) continue;
+            put(c, x, y, rgb(y == (int)sy - 2 ? 0xD8D8E0 : ((x + y) % 3 == 0 && y > sy - 1 ? 0x6A6A78 : 0xA8A8B4)));
+        }
+    for (int x = 0; x < W; x++) {                      /* the stormy sea */
+        int wy = (int)(sea + 1 + sinf(x * 0.22f + t * 2) * 1.5f + sinf(x * 0.09f - t * 1.3f) * 1.5f);
+        fill_rect(c, x, wy, x, H - 1, rgb(0x2E5E9A));
+        put(c, x, wy, rgb(0x9AD0FF));
+        if ((x + (int)(t * 6)) % 9 == 0) put(c, x, wy + 3, rgb(0x5A8AC8));
+    }
+}
+
+static void gem(Canvas *c, float cx, float cy, float r, uint32_t col, float glow) {
+    uint32_t hi = mixc(col, 0xFFFFFF, 0.45f + 0.3f * glow), lo = shade(col, 0.6f);
+    if (glow > 0.05f) fill_ellipse(c, cx, cy, r * (1.4f + glow * 0.4f), r * (1.4f + glow * 0.4f), rgb(mixc(0x241640, col, 0.22f * glow)));
+    fill_poly(c, (float[]){ cx - r, cx + r, cx }, (float[]){ cy - r * 0.2f, cy - r * 0.2f, cy + r * 1.1f }, 3, rgb(lo));
+    fill_poly(c, (float[]){ cx - r * 0.55f, cx + r * 0.55f, cx + r, cx - r }, (float[]){ cy - r * 0.8f, cy - r * 0.8f, cy - r * 0.2f, cy - r * 0.2f }, 4, rgb(col));
+    fill_poly(c, (float[]){ cx - r * 0.3f, cx + r * 0.3f, cx }, (float[]){ cy - r * 0.2f, cy - r * 0.2f, cy + r * 0.8f }, 3, rgb(col));
+    fill_rect(c, (int)(cx - r * 0.3f), (int)(cy - r * 0.7f), (int)(cx - r * 0.1f), (int)(cy - r * 0.5f), rgb(hi));
+}
+
+static void pic_gems(Canvas *c, float t) {
+    static const uint32_t GEMC[8] = { 0xFF8AC8, 0xFF4D4D, 0x4DA6FF, 0xF4F4FF, 0xFFE14D, 0x5BD46B, 0xA070FF, 0xFF9A3C };
+    int W = c->w, H = c->h, now = (int)(t / 2.2f) % 8;   /* one colour at a time takes its turn to shine */
+    gradient(c, 0x1A1035, 0x3A1F5C);
+    twinkles(c, t, 14, H);
+    for (int i = 0; i < 8; i++) {
+        float a = PI_F * (0.1f + 0.8f * i / 7.0f), rx = W * 0.4f, ry = H * 0.32f;
+        float x = W * 0.5f - cosf(a) * rx, y = H * 0.66f - sinf(a) * ry + sinf(t * 1.5f + i) * 1.2f;
+        float glow = i == now ? 0.5f + 0.5f * sinf(fmodf(t, 2.2f) / 2.2f * PI_F) : 0;
+        gem(c, x, y, 3.5f + glow * 1.5f, GEMC[i], glow);
+    }
+    float k = fmodf(t, 2.2f) / 2.2f;
+    gem(c, W * 0.5f, H * 0.62f, 7 + sinf(k * PI_F) * 1.5f, GEMC[now], 0.4f + 0.6f * sinf(k * PI_F));
+    if (k > 0.3f && k < 0.7f) {                        /* a twinkle on the big gem */
+        int tx = (int)(W * 0.5f - 3), ty = (int)(H * 0.62f - 6);
+        put(c, tx, ty, rgb(0xFFFFFF)); put(c, tx - 1, ty, rgb(0xFFFFFF)); put(c, tx + 1, ty, rgb(0xFFFFFF));
+        put(c, tx, ty - 1, rgb(0xFFFFFF)); put(c, tx, ty + 1, rgb(0xFFFFFF));
+    }
+}
+
+static void paper_boat(Canvas *c, float x, float y, uint32_t col) {
+    fill_poly(c, (float[]){ x - 6, x + 6, x + 4, x - 4 }, (float[]){ y, y, y + 3, y + 3 }, 4, rgb(col));
+    fill_poly(c, (float[]){ x - 3, x, x + 3 }, (float[]){ y, y - 5, y }, 3, rgb(shade(col, 0.88f)));
+    hline(c, (int)x - 4, (int)x + 4, (int)y + 3, shade(col, 0.7f));
+}
+
+static void pic_boats(Canvas *c, float t) {
+    int W = c->w, H = c->h, r0 = H * 30 / 100, r1 = H * 80 / 100;
+    gradient(c, 0x5CB050, 0x4A9A44);
+    for (int i = 0; i < 6; i++) {                      /* trees on either hand */
+        float tx = fmodf(i * 23 + 5, (float)W), ty = (i % 2 ? H - 4.0f : 6.0f);
+        fill_ellipse(c, tx, ty, 6, 5, rgb(0x2E7A3A));
+        fill_ellipse(c, tx - 1, ty - 1, 4, 3.5f, rgb(0x3E9A48));
+    }
+    fill_rect(c, 0, r0 - 3, W - 1, r0 - 1, rgb(0xE8C870));   /* golden sand */
+    fill_rect(c, 0, r1 + 1, W - 1, r1 + 3, rgb(0xE8C870));
+    fill_rect(c, 0, r0, W - 1, r1, rgb(0x6B4A2E));            /* dark brown river */
+    for (int i = 0; i < 10; i++) {                     /* the current */
+        int y = r0 + 2 + (i * 7) % (r1 - r0 - 3), x = (int)fmodf(i * 31 + t * 10, W + 8.0f) - 8;
+        hline(c, x, x + 4, y, 0x86613E);
+    }
+    for (int i = 0; i < 3; i++) {                      /* castles of the foam */
+        float fx = fmodf(i * 37 + t * 8, W + 6.0f) - 3, fy = r0 + 4 + i * (r1 - r0) / 3.0f;
+        fill_ellipse(c, fx, fy, 2, 1, rgb(0xF0EAD8)); put(c, (int)fx + 2, (int)fy - 1, rgb(0xF0EAD8));
+    }
+    for (int i = 0; i < 4; i++) {                      /* green leaves a-floating */
+        float lx = fmodf(i * 19 + t * 7, W + 4.0f) - 2, ly = r0 + 6 + (i * 11) % (r1 - r0 - 8);
+        put(c, (int)lx, (int)ly, rgb(0x7AD05A)); put(c, (int)lx + 1, (int)ly, rgb(0x5CB04A));
+    }
+    static const uint32_t BOAT[3] = { 0xFFFFFF, 0xFFE9A8, 0xCFE8FF };
+    for (int i = 0; i < 3; i++) {                      /* boats of mine a-boating */
+        float bx = fmodf(i * W / 3.0f + t * 6, W + 16.0f) - 8, by = r0 + (r1 - r0) * (0.3f + 0.25f * i) + sinf(t * 2 + i) * 0.8f;
+        paper_boat(c, bx, by, BOAT[i]);
+    }
+}
+
 static void render_pic(Books *b) {
     Canvas *c = &b->art;
     float t = b->picT * PIC_SPEED;
@@ -961,6 +1142,10 @@ static void render_pic(Books *b) {
     case PIC_ROCKET: pic_rocket(c, t); break;
     case PIC_SHEEP: pic_sheep(c, t); break;
     case PIC_CLOCK: pic_clock(c, t); break;
+    case PIC_WIND: pic_wind(c, t); break;
+    case PIC_JUMBLIES: pic_jumblies(c, t); break;
+    case PIC_GEMS: pic_gems(c, t); break;
+    case PIC_BOATS: pic_boats(c, t); break;
     default: pic_cat(b, c, t); break;
     }
     if (b->picTex) SDL_UpdateTexture(b->picTex, NULL, c->px, c->w * 4);
@@ -969,14 +1154,28 @@ static void render_pic(Books *b) {
 /* ---------- life cycle ---------- */
 
 static void drop_textures(Books *b) {
-    SDL_Texture **ts[4] = { &b->spine, &b->cover, &b->left, &b->right };
-    for (int i = 0; i < 4; i++)
+    SDL_Texture **ts[5] = { &b->spine, &b->cover, &b->left, &b->next, &b->right };
+    for (int i = 0; i < 5; i++)
         if (*ts[i]) { SDL_DestroyTexture(*ts[i]); *ts[i] = NULL; }
 }
 
+/* Gives every story its own book on the shelf: a fairly thick one, not right next to
+   another story's book, so it is the same spine that slides out each time. */
+static void pick_homes(Books *b) {
+    for (int p = 0; p < PICS; p++) {
+        int best = -1;
+        for (int tries = 0; tries < 400 && best < 0; tries++) {
+            int i = irand(b->nbooks), ok = b->books[i].w >= (tries < 200 ? 7 : 4);
+            for (int q = 0; q < p && ok; q++) ok = abs(b->home[q] - i) > 3;
+            if (ok) best = i;
+        }
+        b->home[p] = best >= 0 ? best : p % b->nbooks;
+    }
+}
+
 static void choose_book(Books *b) {
-    b->cur = irand(b->nbooks);
     do b->pic = irand(PICS); while (b->pic == b->lastPic);
+    b->cur = b->home[b->pic];
     b->lastPic = b->pic;
     b->picT = 0;
     b->picFrame = -1;
@@ -1041,6 +1240,7 @@ static void *create(SDL_Renderer *ren, int w, int h) {
     for (int i = 0; i < MOTES; i++)
         b->motes[i] = (Mote){ frand(0, (float)w), frand(0, (float)h), frand(-1, 1) * b->px, frand(-0.8f, 0.4f) * b->px, frand(0, 6.28f) };
     b->lastPic = -1;
+    pick_homes(b);
     b->state = REST;
     b->dur = 1.2f;
     choose_book(b);
@@ -1221,15 +1421,38 @@ static void draw_open(Books *b, SDL_Renderer *r, float th, float bob) {
     frect(r, hx - S, top + S, 2 * S, CH - 2 * S, (SDL_Color){ 60, 30, 10, 70 });
 }
 
+/* A page turning over, k = 0..1: it lifts off the right page (its blank back towards
+   us), stands up over the spine, then lays down on the left showing the next verse. */
+static void turn_leaf(Books *b, SDL_Renderer *r, float k) {
+    float S = (float)b->px, PW = b->pw * S, PH = b->ph * S, spine = b->w * 0.5f;
+    float top = b->h * 0.5f - b->ch * S * 0.5f + S;
+    float a = PI_F * ease(k), c = cosf(a), w = PW * fabsf(c), lift = sinf(a) * S * 3;
+    if (c > 0) {                                       /* over the picture: shade the page it uncovers */
+        frect(r, spine + w, top, PW * 0.18f * sinf(a), PH, (SDL_Color){ 60, 35, 15, (Uint8)(70 * sinf(a)) });
+        float v = 0.8f + 0.2f * c;
+        frect(r, spine, top - lift, w, PH + lift, (SDL_Color){ (Uint8)(0xF4 * v), (Uint8)(0xE8 * v), (Uint8)(0xC8 * v), 255 });
+        frect(r, spine + w - S, top - lift, S, PH + lift, (SDL_Color){ 0xB8, 0xA4, 0x7E, 255 });
+    } else {                                           /* over the old verse, which it covers as it lands */
+        frect(r, spine - w - PW * 0.18f * sinf(a), top, PW * 0.18f * sinf(a), PH, (SDL_Color){ 60, 35, 15, (Uint8)(70 * sinf(a)) });
+        copy_tex(r, b->next, spine - w, top - lift, w, PH + lift, 0.7f + 0.3f * -c);
+        frect(r, spine - w, top - lift, S, PH + lift, (SDL_Color){ 0xB8, 0xA4, 0x7E, 255 });
+    }
+}
+
 static void draw(void *p, SDL_Renderer *r) {
     Books *b = p;
     float S = (float)b->px;
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
     if (b->needTex) make_textures(b, r);
-    else if (b->page != b->leftPage && b->left) {        /* turned to the next page of the poem */
-        SDL_DestroyTexture(b->left);
+    else if (b->page != b->leftPage && !b->next) {       /* the next page of the poem, shown as it turns */
         Canvas lp = make_left_page(b);
-        b->left = canvas_texture(r, &lp);
+        b->next = canvas_texture(r, &lp);
+    }
+    float turnK = b->state == SHOW && b->next ? fmodf(b->stateT, PAGE_SECS) / TURN_T : 1;
+    if (b->next && turnK >= 1) {                        /* the leaf has landed: it is the left page now */
+        SDL_DestroyTexture(b->left);
+        b->left = b->next;
+        b->next = NULL;
         b->leftPage = b->page;
     }
     set_color(r, hexcol(0x24150C));
@@ -1286,12 +1509,7 @@ static void draw(void *p, SDL_Renderer *r) {
         if (frame != b->picFrame) { b->picFrame = frame; render_pic(b); }
         float th = b->state == OPEN ? PI_F * ease(k) : (b->state == SHOW ? PI_F : PI_F * (1 - ease(k)));
         draw_open(b, r, th, 0);
-        float f = fmodf(b->stateT, PAGE_SECS), fade = 0;  /* the words fade between pages */
-        if (b->state == SHOW && b->page > 0 && f < 0.5f) fade = 1 - f / 0.5f;
-        if (b->state == SHOW && b->page < b->npages - 1 && f > PAGE_SECS - 0.5f) fade = (f - PAGE_SECS + 0.5f) / 0.5f;
-        if (fade > 0)
-            frect(r, b->w * 0.5f - b->pw * S + 5 * S, b->h * 0.5f - b->ch * S * 0.5f + 2 * S, (b->pw - 10) * S, (b->ph - 8) * S,
-                  (SDL_Color){ 0xF4, 0xE8, 0xC8, (Uint8)(255 * fade) });
+        if (b->next && turnK < 1) turn_leaf(b, r, turnK);
         break;
     }
     default: break;
