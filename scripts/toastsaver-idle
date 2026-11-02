@@ -65,7 +65,9 @@ case "${1:-}" in
         pids=$(watcher_pids)
         # shellcheck disable=SC2086  # one word per PID is intended
         [ -n "$pids" ] && kill $pids && sleep 0.3
-        [ -n "${WAYLAND_DISPLAY:-}" ] && setsid -f "$0" >/dev/null 2>&1
+        # The old watcher can hold the lock for a couple of seconds more (the gamepad loop
+        # only notices swayidle is gone between polls), so the new one waits for it.
+        [ -n "${WAYLAND_DISPLAY:-}" ] && TOASTSAVER_LOCK_WAIT=10 setsid -f "$0" >/dev/null 2>&1
         exit 0 ;;
     "") ;;
     *) echo "usage: toastsaver-idle [--now [SAVER]|--check|--restart|--stop]" >&2; exit 2 ;;
@@ -79,7 +81,7 @@ fi
 
 # One watcher per login session.
 exec 9>"${XDG_RUNTIME_DIR:-/tmp}/toastsaver-idle.lock"
-flock -n 9 || exit 0
+if [ -n "${TOASTSAVER_LOCK_WAIT:-}" ]; then flock -w "$TOASTSAVER_LOCK_WAIT" 9 || exit 0; else flock -n 9 || exit 0; fi
 
 # The saver reads its settings each time it starts, so picker changes apply at once.
 # 'pkill -x toastsaver' doesn't touch the picker or settings (different process names).
