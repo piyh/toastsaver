@@ -36,7 +36,8 @@ typedef struct {
     int pstate, ncond, chX0, chX1, cw, ch, heatTick;   /* plumbing */
     int whale, finStage;                  /* easter egg: a whale; the finale: 1 = building up, 2 = after the blast */
     float whX, whY, whDir, whDepth, whU0, whScare, whSea, eggT, wmax, finT;
-    int chTop, chBot, nChamber;           /* the chamber's extent, for drawing how full it is */
+    int chTop, chBot, nChamber;           /* the chamber's extent */
+    float churn;                          /* phase of the chamber's swirl: it churns faster under pressure */
     float mass;                           /* lava the plumbing owes the surface this tick (cells); bombs and flows share it */
     float pressure, trigger, pstateT, crackX, crackY, crackA, wander, tgtX, stepAcc, meanderPh;
     int *cond;                            /* the channel's cells, in the order they were opened */
@@ -58,6 +59,7 @@ static uint32_t hash2(int x, int y) {
     return h ^ (h >> 16);
 }
 #define AT(s, x, y) ((s)->m[(y) * (s)->gw + (x)])
+#define DIKE 0x80                  /* shade bit: rock that was once a magma channel */
 #define SOLID(m) ((m) == ROCK || (m) == RUBBLE || (m) == MAGMA)
 #define LOOSE_OR_ROCK(m) ((m) == ROCK || (m) == RUBBLE)
 static int inside(const Volcano *s, int x, int y) { return x >= 0 && x < s->gw && y >= 0 && y < s->gh; }
@@ -108,7 +110,7 @@ static void build_world(Volcano *s) {
     memset(s->m, AIR, (size_t)gw * gh);
     memset(s->heat, 0, (size_t)gw * gh);
     memset(s->age, 0, (size_t)gw * gh);
-    for (int i = 0; i < gw * gh; i++) s->shade[i] = (uint8_t)irand(256);
+    for (int i = 0; i < gw * gh; i++) s->shade[i] = (uint8_t)irand(DIKE);   /* random tint; the DIKE bit starts clear */
     s->np = s->ns = 0;
     float K = s->k;
     s->seaY = gh * 38 / 100;                          /* sea level */
@@ -437,6 +439,13 @@ static void carve(Volcano *s, int cx, int cy, int r) {
         }
 }
 
+/* The coarse rock temperature at a point, 0..1. */
+static float rock_temp(const Volcano *s, float x, float y) {
+    int cx = (int)(x / 4), cy = (int)(y / 4);
+    if (cx < 0 || cy < 0 || cx >= s->cw || cy >= s->ch) return 0;
+    return s->T[cy * s->cw + cx];
+}
+
 static void start_crack(Volcano *s) {
     int x = 0, y = 0;
     for (int tries = 0; tries < 40; tries++) {
@@ -477,7 +486,11 @@ static void crack_advance(Volcano *s) {
         float dist = sqrtf(dx * dx + dy * dy);
         float steer = 0.025f + 0.09f * clampf(1.0f - dist / (70 * K), 0, 1);
         s->wander = clampf((s->wander + frand(-1, 1) * 0.12f) * 0.95f, -0.7f, 0.7f);
-        s->crackA += da * steer + s->wander * 0.09f + 0.045f * sinf(s->crackY * 0.09f / K + s->meanderPh);
+        /* magma takes the easy way: rock still warm from earlier channels is weak, so it bends toward heat */
+        float look = 5 * K, al = s->crackA - 0.6f, ar = s->crackA + 0.6f;
+        float warm = rock_temp(s, s->crackX + cosf(ar) * look, s->crackY + sinf(ar) * look) -
+                     rock_temp(s, s->crackX + cosf(al) * look, s->crackY + sinf(al) * look);
+        s->crackA += da * steer + s->wander * 0.09f + 0.045f * sinf(s->crackY * 0.09f / K + s->meanderPh) + 0.35f * warm;
         s->crackA = clampf(s->crackA, -3.1416f + 0.45f, -0.45f);
         s->crackX += cosf(s->crackA);
         s->crackY += sinf(s->crackA);
@@ -524,6 +537,7 @@ static void plumb(Volcano *s) {
             int i = s->cond[--s->ncond];
             if (s->m[i] == MAGMA && s->age[i] == 1) {
                 s->m[i] = ROCK;
+                s->shade[i] |= DIKE;                     /* the frozen channel stays in the rock as a dike */
                 s->heat[i] = 140;
                 s->age[i] = 0;
             }
@@ -1039,6 +1053,7 @@ static void tick_world(Volcano *s) {
 
 static void step(void *p, float dt) {
     Volcano *s = p;
+    s->churn += dt * (0.15f + 0.6f * s->pressure);
     s->acc += dt;
     int n = 0;
     while (s->acc >= TICK && n++ < 4) {
@@ -1119,10 +1134,9 @@ static void paint(Volcano *s) {
             if (m == MAGMA) {
                 int sh = s->shade[i] & 7, kind = s->age[i];
                 float br;
-                if (kind == 2) {                                       /* the chamber: slow churning; emptied above the level */
-                    float level = s->chBot - s->pressure * (s->chBot - s->chTop);
-                    float swirl = 0.5f + 0.5f * sinf((x * 0.09f + y * 0.13f) / K + s->t * 0.35f + sh * 0.2f);
-                    br = y < level ? 0.12f + 0.08f * swirl : 0.5f + 0.3f * swirl;
+                if (kind == 2) {                                       /* the chamber: always full; pressure shows as heat and churn */
+                    float swirl = 0.5f + 0.5f * sinf((x * 0.09f + y * 0.13f) / K + s->churn + sh * 0.2f);
+                    br = 0.3f + 0.35f * s->pressure + (0.12f + 0.2f * s->pressure) * swirl;
                 } else if (kind == 3) {                                /* the feeder from below */
                     br = 0.42f + 0.35f * rowFeed[y] + sh * 0.01f;
                 } else {                                               /* the channel */
@@ -1144,7 +1158,9 @@ static void paint(Volcano *s) {
                     /* rock facing the crater glows a little */
                     float lit = colLit[x] * (y < s->top[x] + (int)(3 * K) ? 1.0f : 0.4f);
                     if (y > s->floorY - (int)(3 * K)) v += rowStrata[y];       /* layers show in the cutaway */
-                    c = pack(v * depth * 1.1f + 70 * lit, v * depth * 0.95f + 24 * lit, v * depth * 0.9f + 8 * lit);
+                    float dk = (sh & DIKE) && m == ROCK ? 1.0f : 0.0f;          /* old channels: darker, rust-red basalt */
+                    float vr = v * (1 + 0.28f * dk) + 6 * dk, vg = v * (1 - 0.12f * dk), vb = v * (1 - 0.18f * dk);
+                    c = pack(vr * depth * 1.1f + 70 * lit, vg * depth * 0.95f + 24 * lit, vb * depth * 0.9f + 8 * lit);
                     {                                                          /* hot rock glows dull red */
                         int cx0 = x >> 2, cy0 = y >> 2;
                         float t0 = s->T[(cy0 < s->ch ? cy0 : s->ch - 1) * s->cw + (cx0 < s->cw ? cx0 : s->cw - 1)];
@@ -1158,7 +1174,7 @@ static void paint(Volcano *s) {
                             float t = (s->T[iy * s->cw + ix] * (1 - ax) + s->T[iy * s->cw + ix1] * ax) * (1 - ay) +
                                       (s->T[iy1 * s->cw + ix] * (1 - ax) + s->T[iy1 * s->cw + ix1] * ax) * ay;
                             float k = clampf((t - 0.12f) / 0.7f, 0, 1);
-                            c = pack(v * depth * 1.1f + 70 * lit + 105 * k * depth, v * depth * 0.95f + 24 * lit + 22 * k * k, v * depth * 0.9f + 8 * lit);
+                            c = pack(vr * depth * 1.1f + 70 * lit + 105 * k * depth, vg * depth * 0.95f + 24 * lit + 22 * k * k, vb * depth * 0.9f + 8 * lit);
                         }
                     }
                     if (s->heat[i]) {
@@ -1289,7 +1305,7 @@ static void draw(void *p, SDL_Renderer *r) {
         draw_text_shadow(r, line, x0, y0 + step, sc, white);
         {
             static const char *const names[4] = { "RECHARGING", "CRACKING UP", "ERUPTING", "SEALING" };
-            snprintf(line, sizeof line, "%s   CHAMBER %d%% FULL", names[s->pstate], (int)(s->pressure * 100));
+            snprintf(line, sizeof line, "%s   CHAMBER PRESSURE %d%%", names[s->pstate], (int)(s->pressure * 100));
             draw_text_shadow(r, line, x0, y0 + 2 * step, sc, white);
             float core = 0, coast = 0;
             int nc = 0, nk = 0, vcx = s->ventX / 4;
