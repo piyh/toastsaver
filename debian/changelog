@@ -1,3 +1,12 @@
+toastsaver (1.10.0) stable; urgency=medium
+
+  * Books: each page of a poem now stays up as long as its words take to
+    read, so a long poem no longer gets the same few seconds as a short
+    one. BOOK_WORDS_PER_MINUTE (75 by default; BOOKS: READING SPEED in
+    settings) replaces BOOK_PAGE_SECONDS, which is converted on upgrade.
+
+ -- piyh <10518137+piyh@users.noreply.github.com>  Tue, 03 Nov 2026 18:21:57 +0000
+
 toastsaver (1.9.1) stable; urgency=medium
 
   * City: pugs join the dog walkers. Now and then a masked pizza thief runs
