@@ -1,3 +1,20 @@
+toastsaver (1.8.0) stable; urgency=medium
+
+  * Picker: tap a picture to watch that saver full screen; nothing changes.
+    Tap its heart to keep it in your screensaver. One heart plays that
+    saver, several take turns, and the last heart stays. A bar under the
+    tiles says what will play. This replaces SURPRISE ME! and the TRY IT!
+    band; existing settings carry over as hearts.
+  * Watching a saver from the picker holds off the idle watcher, so the
+    kept saver no longer starts over the top of it.
+  * Picker: tiles no longer clip: frames and rings are even all round and
+    stay clear of the titles.
+  * Settings: rows are grouped, and BOOKS: EACH PAGE sets how long each
+    poem page stays up.
+  * Rainbow: astronaut pugs in glass helmets drift through space.
+
+ -- piyh <10518137+piyh@users.noreply.github.com>  Tue, 03 Nov 2026 03:00:00 +0000
+
 toastsaver (1.7.0) stable; urgency=medium
 
   * New CITY saver: a sunny pixel-art street with towers, shops and houses.
