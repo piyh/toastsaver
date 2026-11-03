@@ -10,7 +10,7 @@ curl -fsSL https://piyh.github.io/toastsaver/setup.sh | sh
 
 ## What's inside
 
-Fourteen screensavers. Give the ones you like a heart: one heart plays that saver, several take turns. All of the artwork is original and drawn by the program itself.
+Fifteen screensavers. Give the ones you like a heart: one heart plays that saver, several take turns. All of the artwork is original and drawn by the program itself.
 
 <table>
   <tr>
@@ -41,6 +41,10 @@ Fourteen screensavers. Give the ones you like a heart: one heart plays that save
     <td align="center"><img src="docs/volcano.png" width="400"><br><b>VOLCANO</b></td>
     <td align="center"><img src="docs/city.png" width="400"><br><b>CITY</b></td>
   </tr>
+  <tr>
+    <td align="center"><img src="docs/germs.png" width="400"><br><b>GERMS</b></td>
+    <td></td>
+  </tr>
 </table>
 
 - **TOASTERS**: winged chrome toasters and slices of toast flying down and to the left.
@@ -56,6 +60,7 @@ Fourteen screensavers. Give the ones you like a heart: one heart plays that save
 - **LAVA**: a glowing lava lamp with wax that warms, rises, merges and sinks, in a new color each time.
 - **VOLCANO**: a night-time island volcano. Lava oozes and erupts, flows down the slopes and cools into rock so the mountain slowly grows, and hisses into steam where it reaches the sea. Smoke, ash, flying fire-bombs and rock chunks fill the sky. When it gets tall it blows up and a new island begins.
 - **CITY**: a sunny city street in pixel art. People stroll, chat on their phones, wear very cool sunglasses and ride bikes; dogs go for walks (one corgi has a very big butt); cats sit on fences, awnings and rooftops; pigeons scatter when someone walks by; cars and a bus stop at the traffic light; chimneys smoke and flocks of birds cross the sky.
+- **GERMS**: a drop of water under a microscope. Soft blue cells drift about while spiky green germs chase them, and a cell a germ touches turns into a germ. Big white helper cells blow soap bubbles that wash germs back into healthy cells. A bar in the corner shows the mix, with a dot for each round the cells or the germs win; if every cell turns green, a wave of bubbles washes across the slide. Cells can go off one edge and come back on the other, like Pac-Man (`GERM_WRAP`). Inspired by the Android live wallpaper Pixel Zombies. Tune it with the `GERM_*` settings below.
 - **NAME**: your name bounces around like the old DVD logo, with confetti when it hits a corner.
 
 ### Easter eggs
@@ -160,10 +165,16 @@ Settings live in `~/.config/toastsaver.conf`. The app edits it for you and keeps
 
 ```sh
 ENABLED=1               # 0 = turn the screensaver off
-SAVER=toasters          # toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava volcano city name random
+SAVER=toasters          # toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava volcano city germs name random
 RANDOM_SAVERS=          # savers SAVER=random picks from, e.g. toasters,pipes,lava (empty = all)
 CYCLE_MINUTES=10        # minutes before SAVER=random switches to another saver (0 = never)
 BOOK_PAGE_SECONDS=9     # seconds each page of a poem stays up in the books saver
+GERM_CELLS=60           # healthy cells the germs saver starts with (0-300)
+GERM_HELPERS=2          # helper cells that blow soap bubbles (0-100)
+GERM_SEEDS=5            # germs at the start, and how many come back when none are left (0-50)
+GERM_SPEED=6            # how fast germs chase, 1-10 (a dashing cell is about 5)
+GERM_RANGE=4            # how far a soap bubble flies, 1-10
+GERM_WRAP=1             # 1 = off one edge and back on the other, like Pac-Man
 NAME='HELLO'            # letters, digits, space and ! ? - . *  (* draws a heart)
 IDLE_MINUTES=5          # minutes of no input before the screensaver appears
 SCREEN_OFF_MINUTES=30   # minutes before the display turns off (0 = never)

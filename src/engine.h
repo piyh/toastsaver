@@ -30,6 +30,12 @@ typedef struct {
     char randomSavers[256];  /* RANDOM_SAVERS: ids SURPRISE picks from ("" = every saver) */
     int cycleMinutes;        /* CYCLE_MINUTES: SURPRISE moves on to another saver this often (0 = never) */
     int bookPageSecs;        /* BOOK_PAGE_SECONDS: how long each page of a poem stays up in BOOKS */
+    int germCells;           /* GERM_CELLS: healthy cells the GERMS saver starts with */
+    int germHelpers;         /* GERM_HELPERS: helper cells that blow soap bubbles */
+    int germSeeds;           /* GERM_SEEDS: germs it starts with, and how many come back when none are left */
+    int germSpeed;           /* GERM_SPEED: 1 (slow) to 10 (twice as fast as a dashing cell) */
+    int germRange;           /* GERM_RANGE: 1 to 10, how far a bubble flies */
+    int germWrap;            /* GERM_WRAP: 1 = off one edge and back on the other, like Pac-Man */
 } Config;
 
 #define CONFIG_MAX_MINUTES 9999   /* the most any minutes setting can be */
@@ -116,7 +122,7 @@ typedef struct Saver {
 extern const Saver saver_toasters, saver_pipes, saver_starfield, saver_mystify,
                    saver_matrix, saver_aquarium, saver_lava, saver_name,
                    saver_rainbow, saver_books, saver_birds,
-                   saver_dice, saver_volcano, saver_city;
+                   saver_dice, saver_volcano, saver_city, saver_germs;
 extern const Saver *const SAVERS[];
 extern const int SAVER_COUNT;
 const Saver *saver_find(const char *id);   /* NULL if unknown */
