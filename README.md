@@ -45,6 +45,10 @@ Sixteen screensavers. Give the ones you like a heart: one heart plays that saver
     <td align="center"><img src="docs/germs.png" width="400"><br><b>GERMS</b></td>
     <td align="center"><img src="docs/water.png" width="400"><br><b>WATER</b></td>
   </tr>
+  <tr>
+    <td align="center"><img src="docs/word.png" width="400"><br><b>WORD</b></td>
+    <td></td>
+  </tr>
 </table>
 
 - **TOASTERS**: winged chrome toasters and slices of toast flying down and to the left.
@@ -63,6 +67,7 @@ Sixteen screensavers. Give the ones you like a heart: one heart plays that saver
 - **GERMS**: a drop of water under a microscope. Soft blue cells drift about while spiky green germs chase them, and a cell a germ touches turns into a germ. Big white helper cells blow soap bubbles that wash germs back into healthy cells. A bar in the corner shows the mix, with a dot for each round the cells or the germs win; if every cell turns green, a wave of bubbles washes across the slide. Cells can go off one edge and come back on the other, like Pac-Man (`GERM_WRAP`). Inspired by the Android live wallpaper Pixel Zombies. Tune it with the `GERM_*` settings below.
 - **WATER**: the water cycle in a cutaway landscape, from sunrise to a starry night. Wisps of vapor rise off the sea and the lake in the sunshine, gather into clouds that grow, darken and drift inland, and rain on the hills and snow on the mountains. The snowcap grows and melts back, a stream fills the lake, a river winds down to the sea, and groundwater seeps back under the hills. Short labels (EVAPORATION, CONDENSATION, PRECIPITATION, COLLECTION) fade in beside each stage while it happens, and a ring in the corner lights up where the water is in the cycle. A boat bobs on the sea, a fish jumps in the lake, flowers open after rain and a rainbow comes out when a shower ends in sunshine.
 - **NAME**: your name bounces around like the old DVD logo, with confetti when it hits a corner.
+- **WORD**: a word of the day on a classroom chalkboard, for a kid learning to read. A picture card shows the word as a little moving picture (a cat blinks and flicks its tail, the sun's rays turn, a chick hatches). The word is spelled out in chalk one letter at a time while that letter lights up on the alphabet strip, dots and dashes mark its sounds (a dash where two letters make one sound, like the SH in FISH), a star slides under them to sound it out, and the word bounces. Then a short sentence writes itself, and the eraser wipes the board for the next round, sometimes with the vowels in pink. Now and then it shows yesterday's and tomorrow's words too. The word changes at midnight, so it can be talked about at dinner. 41 words, each with its own picture.
 
 ### Easter eggs
 
@@ -166,7 +171,7 @@ Settings live in `~/.config/toastsaver.conf`. The app edits it for you and keeps
 
 ```sh
 ENABLED=1               # 0 = turn the screensaver off
-SAVER=toasters          # toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava volcano city germs name water random
+SAVER=toasters          # toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava volcano city germs water word name random
 RANDOM_SAVERS=          # savers SAVER=random picks from, e.g. toasters,pipes,lava (empty = all)
 CYCLE_MINUTES=10        # minutes before SAVER=random switches to another saver (0 = never)
 BOOK_WORDS_PER_MINUTE=75 # reading speed in the books saver: a page with more words stays up longer

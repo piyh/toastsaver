@@ -18,7 +18,7 @@ const Saver *const SAVERS[] = {
     &saver_toasters, &saver_rainbow, &saver_pipes, &saver_books, &saver_dice, &saver_aquarium,
     &saver_birds, &saver_starfield, &saver_mystify, &saver_matrix, &saver_lava, &saver_name,
     &saver_volcano, &saver_city, &saver_germs,
-    &saver_water,
+    &saver_water, &saver_word,
 };
 const int SAVER_COUNT = sizeof SAVERS / sizeof SAVERS[0];
 
@@ -220,6 +220,8 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, i
                 } else if (k == SDLK_e && has_key(sv, 'E')) {
                     g_force_egg = 1;
                 } else if (k == SDLK_b && has_key(sv, 'B')) {
+                    g_force_boom = 1;
+                } else if (k == SDLK_n && has_key(sv, 'N')) {   /* next: WORD's next word */
                     g_force_boom = 1;
                 } else if (k == SDLK_f && has_key(sv, 'F')) {
                     g_rush = !g_rush;
