@@ -1,3 +1,9 @@
+toastsaver (1.8.1) stable; urgency=medium
+
+  * Books: "I Love Little Kitty" replaces "I Love Little Pussy".
+
+ -- piyh <10518137+piyh@users.noreply.github.com>  Tue, 03 Nov 2026 12:00:00 +0000
+
 toastsaver (1.8.0) stable; urgency=medium
 
   * Picker: tap a picture to watch that saver full screen; nothing changes.
