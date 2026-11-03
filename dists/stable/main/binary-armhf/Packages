@@ -430,3 +430,34 @@ Description: retro screensavers for Wayland desktops
  drifting clock, power saving and an on/off switch. Works with labwc
  (Raspberry Pi OS), Wayfire, sway and other wlroots-based compositors.
 
+Package: toastsaver
+Architecture: armhf
+Version: 1.9.1
+Priority: optional
+Section: x11
+Maintainer: piyh <10518137+piyh@users.noreply.github.com>
+Installed-Size: 396
+Depends: libc6 (>= 2.35), libsdl2-2.0-0 (>= 2.0.18), swayidle, procps, libegl1, libgl1
+Recommends: wlopm, libegl-mesa0, libgl1-mesa-dri
+Filename: pool/main/t/toastsaver/toastsaver_1.9.1_armhf.deb
+Size: 189220
+MD5sum: a6ec6358ac13377362ab797301231216
+SHA1: 9cf2836cb82c8fcd32b894b0762681cf24c27d0e
+SHA256: 12a294f6255c0f32f55b5ac7668bd986d3b98b7fa71146c36fab5039d3a8b1c3
+SHA512: f9c9e4bbcc7f66fd73eedef3ef8f487aaa9db147f87ca93803d12a4dd7d05aeccd4ff7f0e0b7e064fc9f6efacff59bee3f24d428895c4a2c97f9cb02983254e0
+Homepage: https://github.com/piyh/toastsaver
+Description: retro screensavers for Wayland desktops
+ A collection of screensavers with original pixel art: flying toasters,
+ a cat on a rainbow, 3D pipes, a cozy bookshelf, 3D dice, an aquarium,
+ birds in a summer sky, a starfield, mystify, matrix rain, a lava lamp and
+ a bouncing name banner.
+ .
+ The screensaver starts after a period without input and goes away on any
+ key, click, touch or mouse movement. It never blocks screen blanking, and
+ apps that inhibit idle (such as video players) keep it from starting.
+ .
+ Includes a fullscreen picker with big tiles that young children can use,
+ with a settings page behind its gear for timings, an optional
+ drifting clock, power saving and an on/off switch. Works with labwc
+ (Raspberry Pi OS), Wayfire, sway and other wlroots-based compositors.
+
