@@ -1,3 +1,22 @@
+toastsaver (1.7.0) stable; urgency=medium
+
+  * New CITY saver: a sunny pixel-art street with towers, shops and houses.
+    People stroll, look at their phones, wear very cool sunglasses, ride
+    bikes and walk dogs (one corgi has a very big butt); cats sit on
+    fences, awnings and roofs; pigeons scatter; cars and a bus stop at the
+    traffic light; chimneys smoke and flocks of birds cross the sky.
+  * Picker: every tile has a glassy TRY IT! band over the bottom of its
+    picture that plays just that saver, without changing the choice or the
+    SURPRISE mix, so a quick look at one saver needs no deselecting. Each
+    saver's name is now a title above its picture, and the picture and the
+    band light up separately on hover. The big TRY IT! button is gone.
+  * Books: a wider, larger open book with the poem set smaller, several
+    stanzas to a page, and the clock keeps off the open book. "I Love
+    Little Pussy" replaces The Owl and the Pussy-Cat.
+  * New BOOK_PAGE_SECONDS setting: how long each page of a poem stays up.
+
+ -- piyh <10518137+piyh@users.noreply.github.com>  Mon, 02 Nov 2026 23:30:00 +0000
+
 toastsaver (1.6.0) stable; urgency=medium
 
   * Volcano: the finale throws the cone apart. Thin rock near the summit
