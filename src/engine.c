@@ -102,7 +102,7 @@ static const char *const KEYS[NKEYS] = {
     "GERM_CELLS=", "GERM_HELPERS=", "GERM_SEEDS=", "GERM_SPEED=", "GERM_RANGE=", "GERM_WRAP=" };
 static const char *const HELP[NKEYS] = {
     "# 0 = turn the screensaver off",
-    "# toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava volcano city germs name random",
+    "# toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava volcano city germs name water random",
     "# shown by the name saver",
     "# minutes of no input before the screensaver appears",
     "# minutes before the display turns off (0 = never)",

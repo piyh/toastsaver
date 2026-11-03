@@ -10,7 +10,7 @@ curl -fsSL https://piyh.github.io/toastsaver/setup.sh | sh
 
 ## What's inside
 
-Fifteen screensavers. Give the ones you like a heart: one heart plays that saver, several take turns. All of the artwork is original and drawn by the program itself.
+Sixteen screensavers. Give the ones you like a heart: one heart plays that saver, several take turns. All of the artwork is original and drawn by the program itself.
 
 <table>
   <tr>
@@ -43,7 +43,7 @@ Fifteen screensavers. Give the ones you like a heart: one heart plays that saver
   </tr>
   <tr>
     <td align="center"><img src="docs/germs.png" width="400"><br><b>GERMS</b></td>
-    <td></td>
+    <td align="center"><img src="docs/water.png" width="400"><br><b>WATER</b></td>
   </tr>
 </table>
 
@@ -61,6 +61,7 @@ Fifteen screensavers. Give the ones you like a heart: one heart plays that saver
 - **VOLCANO**: a night-time island volcano. Lava oozes and erupts, flows down the slopes and cools into rock so the mountain slowly grows, and hisses into steam where it reaches the sea. Smoke, ash, flying fire-bombs and rock chunks fill the sky. When it gets tall it blows up and a new island begins.
 - **CITY**: a sunny city street in pixel art. People stroll, chat on their phones, wear very cool sunglasses and ride bikes; dogs go for walks (one corgi has a very big butt); cats sit on fences, awnings and rooftops; pigeons scatter when someone walks by; cars and a bus stop at the traffic light; chimneys smoke and flocks of birds cross the sky.
 - **GERMS**: a drop of water under a microscope. Soft blue cells drift about while spiky green germs chase them, and a cell a germ touches turns into a germ. Big white helper cells blow soap bubbles that wash germs back into healthy cells. A bar in the corner shows the mix, with a dot for each round the cells or the germs win; if every cell turns green, a wave of bubbles washes across the slide. Cells can go off one edge and come back on the other, like Pac-Man (`GERM_WRAP`). Inspired by the Android live wallpaper Pixel Zombies. Tune it with the `GERM_*` settings below.
+- **WATER**: the water cycle in a cutaway landscape, from sunrise to a starry night. Wisps of vapor rise off the sea and the lake in the sunshine, gather into clouds that grow, darken and drift inland, and rain on the hills and snow on the mountains. The snowcap grows and melts back, a stream fills the lake, a river winds down to the sea, and groundwater seeps back under the hills. Short labels (EVAPORATION, CONDENSATION, PRECIPITATION, COLLECTION) fade in beside each stage while it happens, and a ring in the corner lights up where the water is in the cycle. A boat bobs on the sea, a fish jumps in the lake, flowers open after rain and a rainbow comes out when a shower ends in sunshine.
 - **NAME**: your name bounces around like the old DVD logo, with confetti when it hits a corner.
 
 ### Easter eggs
@@ -165,7 +166,7 @@ Settings live in `~/.config/toastsaver.conf`. The app edits it for you and keeps
 
 ```sh
 ENABLED=1               # 0 = turn the screensaver off
-SAVER=toasters          # toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava volcano city germs name random
+SAVER=toasters          # toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava volcano city germs name water random
 RANDOM_SAVERS=          # savers SAVER=random picks from, e.g. toasters,pipes,lava (empty = all)
 CYCLE_MINUTES=10        # minutes before SAVER=random switches to another saver (0 = never)
 BOOK_WORDS_PER_MINUTE=75 # reading speed in the books saver: a page with more words stays up longer
