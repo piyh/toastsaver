@@ -1566,4 +1566,4 @@ static int keep_clear(void *p, SDL_Rect *out, int max) {
     return 1;
 }
 
-const Saver saver_books = { "books", "BOOKS", create, step, draw, destroy, at_rest, keep_clear };
+const Saver saver_books = { "books", "BOOKS", create, step, draw, destroy, at_rest, keep_clear, NULL };

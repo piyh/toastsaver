@@ -65,7 +65,7 @@ typedef struct {
     int back, curb, laneBike, laneL, laneR;        /* y rows of the scene */
     int crossX, crossW, lightX, lightY, stopX;
     float t;
-    SDL_Texture *sky, *far, *near, *cloudTex[3];
+    SDL_Texture *sky, *far, *near, *front, *cloudTex[3];
     int cloudW[3], cloudH[3];
     Actor a[MAXA];
     int na;
@@ -95,8 +95,21 @@ static uint32_t mix(uint32_t a, uint32_t b, float k) {
 
 /* ---------- drawing on the renderer, in scene pixels ---------- */
 
+/* Drawing a sprite smaller or larger than it was drawn: while xf.on, every box is scaled about (ox, oy).
+   Both edges are rounded, so neighbouring boxes still meet. */
+static struct { int on; float ox, oy, kx, ky; } xf;
+static void scaled(float ox, float oy, float kx, float ky) { xf.on = 1; xf.ox = ox; xf.oy = oy; xf.kx = kx; xf.ky = ky; }
+#define UNSCALED() (xf.on = 0)
+
 static void box(const City *s, SDL_Renderer *r, int x, int y, int w, int h, uint32_t hex, int a) {
     if (w <= 0 || h <= 0) return;
+    if (xf.on) {
+        int x0 = (int)roundf(xf.ox + (x - xf.ox) * xf.kx), x1 = (int)roundf(xf.ox + (x + w - xf.ox) * xf.kx);
+        int y0 = (int)roundf(xf.oy + (y - xf.oy) * xf.ky), y1 = (int)roundf(xf.oy + (y + h - xf.oy) * xf.ky);
+        x = x0; y = y0;
+        w = x1 > x0 ? x1 - x0 : 1;
+        h = y1 > y0 ? y1 - y0 : 1;
+    }
     SDL_SetRenderDrawColor(r, (hex >> 16) & 255, (hex >> 8) & 255, hex & 255, (Uint8)a);
     SDL_Rect d = { x * s->px, y * s->px, w * s->px, h * s->px };
     SDL_RenderFillRect(r, &d);
@@ -499,6 +512,29 @@ static void bike_sign(Canvas *c, int x, int y) {
     cline(c, x + 3, y - 4, x + 5, y, 0xF4F0E8);
 }
 
+/* Lamps and street trees stand in front of the buildings, so a cat on a roof or fire escape is
+   drawn behind them: they are their own layer, drawn after the perched cats. */
+static void build_front(City *s, Canvas *c) {
+    int W = s->W;
+    for (int x = 50; x < W; x += 180) {                              /* lamps */
+        int y0 = s->back + 4;
+        rect(c, x - 2, y0 - 4, 5, 5, 0x2E3A3A);
+        rect(c, x, y0 - 46, 2, 44, 0x2E3A3A);
+        cline(c, x + 1, y0 - 46, x + 6, y0 - 50, 0x2E3A3A);
+        rect(c, x + 5, y0 - 50, 6, 2, 0x2E3A3A);
+        rect(c, x + 6, y0 - 48, 4, 4, 0xFFF2B0);
+        rect(c, x + 2, y0 - 38, 6, 10, SHIRT[irand(6)]);
+        rect(c, x + 2, y0 - 38, 6, 1, 0xFFFFFF);
+    }
+    for (int x = 20; x < W; x += 150) {                              /* street trees */
+        if (abs(x - s->crossX) < 30 || abs(x - s->stopX) < 30) continue;
+        rect(c, x - 6, s->back + 7, 12, 3, 0x6A5A48);
+        for (int i = -5; i < 6; i += 2) dot(c, x + i, s->back + 8, 0x3A3028);
+        tree(c, x, s->back + 8, 26, 0);
+    }
+    outline(c, rgb(0x2A2230));
+}
+
 static void build_ground(City *s, Canvas *c) {
     int W = s->W, H = s->H;
     rect(c, 0, s->back + 1, W, s->curb - s->back, 0xCEC7B8);          /* sidewalk */
@@ -536,22 +572,6 @@ static void build_ground(City *s, Canvas *c) {
     for (int x = 130; x < W; x += 260) {                             /* storm drains */
         rect(c, x, s->curb + 3, 12, 3, 0x2A2C32);
         for (int i = 1; i < 12; i += 2) rect(c, x + i, s->curb + 3, 1, 3, 0x6A6E76);
-    }
-    for (int x = 50; x < W; x += 180) {                              /* lamps */
-        int y0 = s->back + 4;
-        rect(c, x - 2, y0 - 4, 5, 5, 0x2E3A3A);
-        rect(c, x, y0 - 46, 2, 44, 0x2E3A3A);
-        cline(c, x + 1, y0 - 46, x + 6, y0 - 50, 0x2E3A3A);
-        rect(c, x + 5, y0 - 50, 6, 2, 0x2E3A3A);
-        rect(c, x + 6, y0 - 48, 4, 4, 0xFFF2B0);
-        rect(c, x + 2, y0 - 38, 6, 10, SHIRT[irand(6)]);
-        rect(c, x + 2, y0 - 38, 6, 1, 0xFFFFFF);
-    }
-    for (int x = 20; x < W; x += 150) {                              /* street trees */
-        if (abs(x - s->crossX) < 30 || abs(x - s->stopX) < 30) continue;
-        rect(c, x - 6, s->back + 7, 12, 3, 0x6A5A48);
-        for (int i = -5; i < 6; i += 2) dot(c, x + i, s->back + 8, 0x3A3028);
-        tree(c, x, s->back + 8, 26, 0);
     }
     outline(c, rgb(0x2A2230));
 }
@@ -627,8 +647,12 @@ static Canvas make_cloud(int w) {
 /* ---------- actors ---------- */
 
 static int car_len(const Actor *a) {
-    return a->role == R_BUS ? 86 : a->kind == 1 ? 38 : a->kind == 3 ? 46 : 44;
+    return a->role == R_BUS ? 150 : a->kind == 1 ? 66 : a->kind == 3 ? 80 : 77;
 }
+
+#define CAR_KX 1.75f                                                 /* cars are drawn this much longer ... */
+#define CAR_KY 1.2f                                                  /* ... and taller than they are laid out */
+#define CAT_K 0.5f                                                   /* cats are drawn at half size */
 
 static float ground_y(const City *s, int lane) {
     return (float)(s->back + 12 + lane * (s->curb - s->back - 18) / 4);
@@ -784,6 +808,9 @@ static void *create(SDL_Renderer *ren, int w, int h) {
     build_near(s, &c);
     build_ground(s, &c);
     s->near = canvas_texture(ren, &c);
+    c = canvas_new(s->W, s->H);
+    build_front(s, &c);
+    s->front = canvas_texture(ren, &c);
     build_props(s, ren);
     for (int i = 0; i < 3; i++) {
         c = make_cloud(50 + i * 22);
@@ -828,6 +855,7 @@ static void destroy(void *p) {
     SDL_DestroyTexture(s->sky);
     SDL_DestroyTexture(s->far);
     SDL_DestroyTexture(s->near);
+    SDL_DestroyTexture(s->front);
     for (int i = 0; i < 3; i++) SDL_DestroyTexture(s->cloudTex[i]);
     if (s->small) SDL_DestroyTexture(s->small);
     for (int i = 0; i < s->nprop; i++) SDL_DestroyTexture(s->prop[i].t);
@@ -935,7 +963,7 @@ static void step_actor(City *s, Actor *a, float dt) {
     case R_THIEF: case R_COP:
         if (a->state == S_AWAY) break;
         a->x += a->dir * a->vx * dt;
-        a->ph += a->vx * dt * 0.24f;
+        a->ph += a->vx * dt * 0.3f;
         if (off_screen(s, a)) a->state = S_AWAY;
         break;
     case R_PIGEON:
@@ -988,11 +1016,12 @@ static void step(void *p, float dt) {
     if (dt > 0.1f) dt = 0.1f;
     s->t += dt;
     s->egg -= dt;
-    if (s->egg <= 0) {
+    if (s->egg <= 0 || g_force_egg) {
         int busy = 0;
         for (int i = 0; i < s->na; i++) busy |= s->a[i].role >= R_THIEF && s->a[i].state != S_AWAY;
         if (!busy) { chase(s); s->egg = frand(90, 240); }
         else s->egg = 5;
+        g_force_egg = 0;
     }
     for (int i = 0; i < s->na; i++) step_actor(s, &s->a[i], dt);
     for (int i = 0; i < MAXCLOUD; i++) {
@@ -1056,13 +1085,16 @@ static void draw_person(const City *s, SDL_Renderer *r, const Actor *a, int movi
     int X = (int)floorf(a->x), Y = (int)floorf(a->y), D = a->dir;
     int legH = a->kid ? 8 : 12, torH = a->kid ? 8 : 11;
     float sw = moving ? sinf(a->ph) : 0, cw = moving ? cosf(a->ph) : 0;
-    int hipY = Y - legH, shY = hipY - torH, top = shY - 9;
+    int run = moving && (a->role == R_THIEF || a->role == R_COP);      /* long strides, knees up, arms pumping */
+    int bob = run ? (int)roundf(fabsf(cw) * 2) : 0;                  /* both feet leave the ground now and then */
+    float stride = run ? 8 : 4;
+    int hipY = Y - legH - bob, shY = hipY - torH, top = shY - 9;
     uint32_t sh = a->shirt, shD = shade(sh, 0.78f), pa = a->pants, paD = shade(pa, 0.75f);
     uint32_t skin = a->skin, skinD = shade(skin, 0.8f);
     int dress = a->outfit == 2, standing = a->role == R_STANDER && a->state == S_STAND;
     ell(s, r, X, Y, 7, 1.2f, 0x000000, 45);
     /* far arm, far leg (behind the body) */
-    float fhx = X + D * sw * 3, fhy = shY + 10;
+    float fhx = X + D * sw * (run ? 6 : 3), fhy = shY + (run ? 8 - (int)roundf(sw * 3) : 10);
     if (a->prop == 2) {                                              /* paper bag in the far hand */
         R((int)fhx - 3, (int)fhy, 7, 8, 0xC8A070);
         R((int)fhx - 3, (int)fhy, 7, 1, 0xA88050);
@@ -1070,8 +1102,9 @@ static void draw_person(const City *s, SDL_Renderer *r, const Actor *a, int movi
     }
     line(s, r, X, shY + 2, fhx, fhy, 2, shD);
     R((int)fhx - 1, (int)fhy, 2, 2, skinD);
-    float ffx = X - D * sw * 4, nfx = X + D * sw * 4;
-    int ffy = Y - 2 - (cw < -0.3f ? 2 : 0), nfy = Y - 2 - (cw > 0.3f ? 2 : 0);
+    float ffx = X - D * sw * stride, nfx = X + D * sw * stride;
+    int kick = run ? 6 : 2;                                          /* how high the back foot comes up */
+    int ffy = Y - 2 - (cw < -0.3f ? kick : 0), nfy = Y - 2 - (cw > 0.3f ? kick : 0);
     line(s, r, X - D, hipY, ffx, ffy, 3, dress ? skinD : paD);
     line(s, r, X, hipY, nfx, nfy, 3, dress ? skin : pa);
     R(D > 0 ? (int)ffx - 1 : (int)ffx - 2, ffy + 1, 4, 2, shade(a->shoe, 0.8f));
@@ -1114,7 +1147,7 @@ static void draw_person(const City *s, SDL_Renderer *r, const Actor *a, int movi
         R((int)bx - 2, (int)by - 3, 2, 2, 0xFFA0A8);
         R((int)bx, (int)by + 5, 1, 1, 0xB82A3A);
     } else {
-        float hx = X - D * sw * 3, hy = shY + 10;
+        float hx = X - D * sw * (run ? 6 : 3), hy = shY + (run ? 8 + (int)roundf(sw * 3) : 10);
         float mx = sx + (hx - sx) * 0.45f, my = sy + (hy - sy) * 0.45f;
         line(s, r, sx, sy, mx, my, 2, shade(sh, 0.92f));
         line(s, r, mx, my, hx, hy, 2, skin);
@@ -1199,6 +1232,7 @@ static void draw_cat_walk(const City *s, SDL_Renderer *r, const Actor *a) {
     uint32_t body = a->pet[0], dark = a->pet[1], belly = a->pet[2];
     int moving = a->state == S_WALK, legH = 5, r0 = -8, f = 8;
     float bcy = Y - legH - 3;
+    scaled((float)X, (float)Y, CAT_K, CAT_K);
     ell(s, r, X, Y, 10, 1.2f, 0x000000, 45);
     int sway = (int)roundf(sinf(a->t * 2.2f) * 2);
     FL(r0 + 1, bcy - 1, r0 - 2, bcy - 7, 2, body);                   /* tail up, tip curling */
@@ -1222,6 +1256,7 @@ static void draw_cat_walk(const City *s, SDL_Renderer *r, const Actor *a) {
     F(f + 5, (int)hy + 1, 1, 1, 0xF07890);
     box(s, r, D > 0 ? X + f + 5 : X - f - 8, (int)hy + 1, 4, 1, 0xF4F4F4, 150);   /* whiskers */
     box(s, r, D > 0 ? X + f + 5 : X - f - 8, (int)hy + 3, 4, 1, 0xF4F4F4, 150);
+    UNSCALED();
 }
 
 static void draw_cat_sit(const City *s, SDL_Renderer *r, const Actor *a) {
@@ -1229,6 +1264,7 @@ static void draw_cat_sit(const City *s, SDL_Renderer *r, const Actor *a) {
     uint32_t body = a->pet[0], dark = a->pet[1], belly = a->pet[2];
     int lick = a->pose == 1, blink = a->pose == 2 && fmodf(a->t * 3, 2) < 0.25f, front = a->pose == 3;
     int flick = (int)roundf(sinf(a->t * 3) * 2);
+    scaled((float)X, (float)Y, CAT_K, CAT_K);
     FL(-3, Y - 1, -8, Y - 1, 2, body);                               /* tail along the ledge */
     FL(-8, Y - 1, -10, Y - 4 - flick, 2, body);
     F(-11, Y - 6 - flick, 2, 2, dark);
@@ -1252,6 +1288,7 @@ static void draw_cat_sit(const City *s, SDL_Renderer *r, const Actor *a) {
         box(s, r, D > 0 ? X + ho + 4 : X - ho - 7, hy + 2, 4, 1, 0xF4F4F4, 150);
     }
     if (lick) { F(ho + 3, hy + 3, 2, 4, belly); F(ho + 4, hy + 2, 1, 1, 0xF07890); }
+    UNSCALED();
 }
 
 static void draw_pigeon(const City *s, SDL_Renderer *r, const Actor *a) {
@@ -1338,10 +1375,11 @@ static void draw_bike(const City *s, SDL_Renderer *r, const Actor *a) {
 }
 
 static void draw_car(const City *s, SDL_Renderer *r, const Actor *a) {
-    int X = (int)a->x, Y = (int)a->y, D = a->dir, L = car_len(a), hl = L / 2;
+    int X = (int)a->x, Y = (int)a->y, D = a->dir, L = (int)roundf(car_len(a) / CAR_KX), hl = L / 2;
     int bus = a->role == R_BUS, van = !bus && a->kind == 3, taxi = !bus && a->kind == 2, ice = van && a->pose == 1;
     uint32_t col = bus ? a->car : taxi ? 0xF2C230 : ice ? 0xF7B8C8 : a->car;
     uint32_t glass = 0x9FCFEA, dk = shade(col, 0.7f);
+    scaled((float)X, (float)Y, CAR_KX, bus ? 1.45f : CAR_KY);
     ell(s, r, X, Y, hl + 2, 2, 0x000000, 70);
     if (bus || van) {
         int bh = bus ? 30 : 22;
@@ -1409,13 +1447,14 @@ static void draw_car(const City *s, SDL_Renderer *r, const Actor *a) {
     }
     F(hl - 1, Y - 8, 2, 3, 0x9A9EA8);
     F(-hl - 1, Y - 8, 2, 3, 0x9A9EA8);
-    int wo = bus ? hl - 15 : hl - 9;
+    UNSCALED();                                                      /* wheels stay round */
+    int wo = (int)roundf((bus ? hl - 15 : hl - 9) * CAR_KX), wr = bus ? 8 : 7;
     for (int i = -1; i <= 1; i += 2) {
-        float cx = X + i * wo;
-        ell(s, r, cx, Y - 5, 6, 5, 0x2A2A30, 255);
-        ell(s, r, cx, Y - 4, 4.5f, 4.5f, 0x1E1E24, 255);
-        ell(s, r, cx, Y - 4, 2.2f, 2.2f, 0xB8BCC8, 255);
-        R((int)roundf(cx + cosf(a->ph) * 2), (int)roundf(Y - 4 + sinf(a->ph) * 2), 1, 1, 0x4A4E58);
+        float cx = X + i * wo, cy = Y - wr + 1;
+        ell(s, r, cx, cy, wr, wr, 0x2A2A30, 255);
+        ell(s, r, cx, cy, wr - 1.5f, wr - 1.5f, 0x1E1E24, 255);
+        ell(s, r, cx, cy, wr * 0.45f, wr * 0.45f, 0xB8BCC8, 255);
+        R((int)roundf(cx + cosf(a->ph) * wr * 0.4f), (int)roundf(cy + sinf(a->ph) * wr * 0.4f), 1, 1, 0x4A4E58);
     }
 }
 
@@ -1428,9 +1467,19 @@ static void draw_actor(const City *s, SDL_Renderer *r, const Actor *a, int dog) 
         draw_person(s, r, a, 1, 0);
         if (a->role == R_COP) F(1, Y - 21, 2, 2, 0xFFD24A);          /* badge */
         else {                                                       /* the stolen pizza, held out in front */
-            F(2, Y - 21, 12, 2, 0xC8A070); F(2, Y - 23, 12, 2, 0xE8D8B0);
-            F(2, Y - 23, 12, 1, 0xF4EAD0);
-            F(5, Y - 25, 3, 1, 0xE8B83A); F(9, Y - 26, 2, 2, 0xD23A3A);
+            float px = X + D * 11, py = Y - 25;                      /* a whole round pie, held up in the hand */
+            line(s, r, X + D * 1, Y - 21, X + D * 6, Y - 20, 2, a->skin);
+            ell(s, r, px, py, 8, 8, 0x2A2230, 255);
+            ell(s, r, px, py, 7, 7, 0xC9893A, 255);                  /* crust */
+            ell(s, r, px, py, 5.5f, 5.5f, 0xF6C94E, 255);           /* cheese */
+            for (int i = 0; i < 4; i++) {                            /* the slices */
+                float an = i * PI_F / 4, dx = cosf(an) * 5.5f, dy = sinf(an) * 5.5f;
+                line(s, r, px - dx, py - dy, px + dx, py + dy, 1, 0xD9992E);
+            }
+            ell(s, r, px - 2.5f, py - 2.5f, 1.3f, 1.3f, 0xC8372A, 255);   /* pepperoni */
+            ell(s, r, px + 2.5f, py - 1.5f, 1.3f, 1.3f, 0xC8372A, 255);
+            ell(s, r, px - 1.0f, py + 3.0f, 1.3f, 1.3f, 0xC8372A, 255);
+            R((int)px - D * 7 - (D > 0 ? 1 : 0), (int)py + 3, 3, 3, a->skin);   /* fingers around the rim */
         }
         break;
     case R_WALKER: case R_SHADES: case R_STANDER:
@@ -1512,8 +1561,10 @@ static void draw_scene(City *s, SDL_Renderer *r) {
         key[j + 1] = k;
         what[j + 1] = w;
     }
+    int fronted = 0;
     for (int i = 0; i < n; i++) {
         int w = what[i];
+        if (!fronted && key[i] > -500) { SDL_RenderCopy(r, s->front, NULL, &full); fronted = 1; }
         if (w >= 0) draw_actor(s, r, &s->a[w], 0);
         else if (w > -100) draw_actor(s, r, &s->a[-1 - w], 1);
         else {
@@ -1529,6 +1580,7 @@ static void draw_scene(City *s, SDL_Renderer *r) {
             }
         }
     }
+    if (!fronted) SDL_RenderCopy(r, s->front, NULL, &full);
 }
 
 /* A small view (a picker tile) is drawn full size off screen, then shrunk into place. */
@@ -1553,4 +1605,12 @@ static void draw(void *p, SDL_Renderer *r) {
     SDL_RenderCopy(r, s->small, NULL, &d);
 }
 
-const Saver saver_city = { "city", "CITY", create, step, draw, destroy, NULL, NULL };
+/* The street is busy, so the clock keeps to the sky above the buildings. */
+static int keep_clear(void *p, SDL_Rect *out, int max) {
+    const City *s = p;
+    if (max < 1) return 0;
+    out[0] = (SDL_Rect){ 0, s->h * 22 / 100, s->w, s->h };
+    return 1;
+}
+
+const Saver saver_city = { "city", "CITY", create, step, draw, destroy, NULL, keep_clear, "E CHASE" };

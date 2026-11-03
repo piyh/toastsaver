@@ -133,4 +133,4 @@ static void destroy(void *p) {
     free(m);
 }
 
-const Saver saver_matrix = { "matrix", "MATRIX", create, step, draw, destroy, NULL, NULL };
+const Saver saver_matrix = { "matrix", "MATRIX", create, step, draw, destroy, NULL, NULL, NULL };

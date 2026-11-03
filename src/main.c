@@ -67,7 +67,17 @@ static SDL_Rect reset_button(int w, int h) {
     return (SDL_Rect){ t.x + t.w + 36, t.y - 3 * sc, text_width("RESET", sc) + 8 * sc, 11 * sc };
 }
 
-static void draw_speed_ui(SDL_Renderer *r, int w, int h, float lg, int paused) {
+/* Does the saver list this key among the ones it answers to? (see Saver.keys) */
+static int has_key(const Saver *sv, int letter) {
+    for (const char *p = sv->keys; p && *p;) {
+        if (*p == letter && p[1] == ' ') return 1;
+        p = strstr(p, "   ");
+        if (p) p += 3;
+    }
+    return 0;
+}
+
+static void draw_speed_ui(SDL_Renderer *r, int w, int h, float lg, int paused, const Saver *sv) {
     SDL_Rect t = speed_track(w, h);
     int sc = h / 240 > 2 ? h / 240 : 2;
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
@@ -95,8 +105,9 @@ static void draw_speed_ui(SDL_Renderer *r, int w, int h, float lg, int paused) {
     SDL_SetRenderDrawColor(r, 255, 255, 255, 200);
     SDL_RenderDrawRect(r, &rb);
     draw_text_shadow(r, "RESET", rb.x + 4 * sc, rb.y + 2 * sc, sc, (SDL_Color){ 255, 255, 255, 255 });
-    draw_text_shadow(r, "[ ] SPEED   1 NORMAL SPEED   R RESTART   E EGG   B BOOM   F TO FINALE   SPACE PAUSE   S SHOT   I INFO", t.x + t.w / 2 - text_width("[ ] SPEED   1 NORMAL SPEED   R RESTART   E EGG   B BOOM   F TO FINALE   SPACE PAUSE   S SHOT   I INFO", 1) / 2,
-                     t.y + t.h + 8, 1, (SDL_Color){ 220, 220, 220, 255 });
+    char keys[200];
+    snprintf(keys, sizeof keys, "[ ] SPEED   1 NORMAL SPEED   R RESTART   SPACE PAUSE   S SHOT%s%s", sv->keys ? "   " : "", sv->keys ? sv->keys : "");
+    draw_text_shadow(r, keys, t.x + t.w / 2 - text_width(keys, 1) / 2, t.y + t.h + 8, 1, (SDL_Color){ 220, 220, 220, 255 });
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
 
@@ -201,15 +212,15 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, i
                     lg = fminf(SPEED_MAX_LOG, lg + 1);
                 } else if (k == SDLK_1) {
                     lg = 0;
-                } else if (k == SDLK_i) {
+                } else if (k == SDLK_i && has_key(sv, 'I')) {
                     g_show_info = !g_show_info;
                 } else if (k == SDLK_r) {
                     reset = 1;
-                } else if (k == SDLK_e) {
+                } else if (k == SDLK_e && has_key(sv, 'E')) {
                     g_force_egg = 1;
-                } else if (k == SDLK_b) {
+                } else if (k == SDLK_b && has_key(sv, 'B')) {
                     g_force_boom = 1;
-                } else if (k == SDLK_f) {
+                } else if (k == SDLK_f && has_key(sv, 'F')) {
                     g_rush = !g_rush;
                     if (!g_rush) lg = 0;
                 }
@@ -334,7 +345,7 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, i
         }
         if (windowed) {
             if (uiT > 0) uiT -= dt;
-            if (uiT > 0 || paused || drag || g_rush) draw_speed_ui(r, w, h, g_rush ? SPEED_MAX_LOG : lg, paused);
+            if (uiT > 0 || paused || drag || g_rush) draw_speed_ui(r, w, h, g_rush ? SPEED_MAX_LOG : lg, paused, sv);
             if (g_rush) draw_text_shadow(r, "FAST FORWARD TO THE FINALE   F TO STOP", 12, h - 24, 2, (SDL_Color){ 255, 220, 120, 255 });
         }
         if (flash > 0) {                          /* a quick white flash so you know it worked */
@@ -549,8 +560,9 @@ static void usage(void) {
            "  toastsaver --list           list savers\n"
            "  toastsaver --windowed ...   use a window: clicks and keys no longer quit it. S = screenshot\n"
            "                              (saved to ~/Pictures), Space = pause, [ ] = slower/faster (or drag the\n"
-           "                              slider), R = restart, E = easter egg, B = boom, F = fast-forward to the finale,\n"
-           "                              I = info, Esc or Q = quit\n\n"
+           "                              slider), R = restart, Esc or Q = quit. Some savers add keys of their\n"
+           "                              own (E = easter egg, B and F = the volcano's finale); the bar at the\n"
+           "                              bottom of the window lists the ones the saver has\n\n"
            "Savers: random", VERSION, config_path());
     for (int i = 0; i < SAVER_COUNT; i++) printf(", %s", SAVERS[i]->id);
     printf("\n\nrandom picks a different saver each time from RANDOM_SAVERS, e.g.\n"

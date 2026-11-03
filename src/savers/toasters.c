@@ -274,7 +274,7 @@ static void destroy(void *p) {
     free(t);
 }
 
-const Saver saver_toasters = { "toasters", "TOASTERS", create, step, draw, destroy, NULL, NULL };
+const Saver saver_toasters = { "toasters", "TOASTERS", create, step, draw, destroy, NULL, NULL, NULL };
 
 /* Debug/README helper: every toaster sprite side by side (toastsaver --snapshot x.png sprites). */
 Canvas toasters_sheet(void) {

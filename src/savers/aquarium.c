@@ -582,4 +582,4 @@ static void destroy(void *p) {
     free(a);
 }
 
-const Saver saver_aquarium = { "aquarium", "FISH", create, step, draw, destroy, NULL, NULL };
+const Saver saver_aquarium = { "aquarium", "FISH", create, step, draw, destroy, NULL, NULL, NULL };

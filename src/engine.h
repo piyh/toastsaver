@@ -117,6 +117,8 @@ typedef struct Saver {
     int (*at_rest)(void *s);  /* optional: 1 at a natural place to cut away (SURPRISE rotation waits for it) */
     int (*keep_clear)(void *s, SDL_Rect *out, int max);  /* optional: screen areas showing numbers, which
                                                             the clock keeps off; returns how many */
+    const char *keys;    /* optional: the windowed-mode keys it answers to beyond the usual ones, as "E EGG   B BOOM":
+                            a letter, a space, a label, three spaces between keys. Other letters do nothing. */
 } Saver;
 
 extern const Saver saver_toasters, saver_pipes, saver_starfield, saver_mystify,
