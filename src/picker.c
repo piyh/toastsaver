@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define MAX_TILES 16
+#define MAX_TILES 32   /* room to grow: the grid lays itself out for SAVER_COUNT tiles */
 #define TILES SAVER_COUNT
 
 typedef struct {
