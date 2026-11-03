@@ -455,4 +455,4 @@ static void *create(SDL_Renderer *r, int w, int h) {
 
 static void destroy(void *pp) { free(pp); }
 
-const Saver saver_germs = { "germs", "GERMS", create, step, draw, destroy, NULL, keep_clear };
+const Saver saver_germs = { "germs", "GERMS", create, step, draw, destroy, NULL, keep_clear, "I INFO" };
