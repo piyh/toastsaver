@@ -1,3 +1,17 @@
+toastsaver (1.9.0) stable; urgency=medium
+
+  * GERMS: a new saver. Blue cells drift about with a little Brownian
+    motion while spiky green germs chase them; a cell a germ touches turns
+    into a germ, and white helper cells blow soap bubbles that wash germs
+    back. A bar shows the mix, with a dot for each round won, and if every
+    cell turns green a wave of bubbles washes across. Inspired by the
+    Android live wallpaper Pixel Zombies.
+  * New settings for it: GERM_CELLS, GERM_HELPERS, GERM_SEEDS, GERM_SPEED,
+    GERM_RANGE, and GERM_WRAP (on by default: off one edge and back on the
+    other, like Pac-Man).
+
+ -- piyh <10518137+piyh@users.noreply.github.com>  Tue, 03 Nov 2026 16:33:34 +0000
+
 toastsaver (1.8.1) stable; urgency=medium
 
   * Books: "I Love Little Kitty" replaces "I Love Little Pussy".
