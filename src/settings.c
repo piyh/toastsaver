@@ -1,10 +1,11 @@
-/* The settings page, reached from the gear in the picker's corner: on/off, timings,
-   clock, power saving, a test run and a reset to the defaults.
+/* The settings page, reached from the gear in the picker's corner. Rows come in groups:
+   when it starts, taking turns, what's on screen, saver options and this computer, then
+   a test run and a reset to the defaults.
    Every change is saved at once; timing changes restart the idle watcher when the page
    closes so they apply without logging out. The rows that need the idle watcher are
    greyed out where it isn't installed (the Mac preview), instead of doing nothing.
-   The minutes rows step through a list with - and +, keep going past its end, and take
-   any number typed in after tapping the value itself. */
+   The number rows (minutes, and the books' seconds per page) step through a list with
+   - and +, keep going past its end, and take any number typed in after tapping the value. */
 #define _POSIX_C_SOURCE 200809L
 #include "engine.h"
 #include <stdio.h>
@@ -12,10 +13,12 @@
 #include <string.h>
 #include <unistd.h>
 
-#define ROWS 7
+#define ROWS 8
+#define GROUPS 5
 static const int IDLE_OPTS[] = { 1, 2, 3, 5, 10, 15, 20, 30, 45, 60 };
 static const int OFF_OPTS[] = { 0, 5, 10, 15, 20, 30, 45, 60, 90, 120 };
 static const int CYCLE_OPTS[] = { 0, 2, 5, 10, 15, 20, 30, 45, 60, 120 };
+static const int BOOK_OPTS[] = { 3, 5, 7, 9, 12, 15, 20, 30, 45, 60 };
 #define NOPTS 10
 #define PAST_END 30   /* past the end of a list, - and + move this many minutes */
 
@@ -25,35 +28,48 @@ typedef struct {
     int edit;              /* the minutes row being typed into, or -1 */
     char typed[5];
     float t, rowH, resetArm;   /* resetArm: seconds left to tap RESET again and confirm */
-    SDL_Rect row[ROWS], minus[ROWS], plus[ROWS], field[ROWS], toggle[ROWS], test, reset, done;
+    SDL_Rect row[ROWS], minus[ROWS], plus[ROWS], field[ROWS], toggle[ROWS], group[GROUPS], test, reset, done;
 } Settings;
 
-enum { R_ENABLED, R_IDLE, R_OFF, R_CYCLE, R_CLOCK, R_CLOCK24, R_POWER };   /* row order */
+enum { R_ENABLED, R_IDLE, R_OFF, R_CYCLE, R_CLOCK, R_CLOCK24, R_BOOKS, R_POWER };   /* row order */
 
-static int is_minutes(int row) { return row >= R_IDLE && row <= R_CYCLE; }
+/* Each group's heading and the row it starts at. */
+static const char *const GROUP_NAME[GROUPS] = { "WHEN IT STARTS", "WHEN SEVERAL HAVE A HEART", "ON SCREEN",
+                                                "SAVER OPTIONS", "THIS COMPUTER" };
+static const int GROUP_START[GROUPS] = { R_ENABLED, R_CYCLE, R_CLOCK, R_BOOKS, R_POWER };
+
+static int is_number(int row) { return (row >= R_IDLE && row <= R_CYCLE) || row == R_BOOKS; }
 
 static int *minutes_of(int row) {
     return row == R_IDLE ? &g_config.idleMinutes : row == R_OFF ? &g_config.screenOffMinutes
-                                                                : &g_config.cycleMinutes;
+         : row == R_BOOKS ? &g_config.bookPageSecs : &g_config.cycleMinutes;
 }
 
-static const int *opts_of(int row) { return row == R_IDLE ? IDLE_OPTS : row == R_OFF ? OFF_OPTS : CYCLE_OPTS; }
+static const int *opts_of(int row) {
+    return row == R_IDLE ? IDLE_OPTS : row == R_OFF ? OFF_OPTS : row == R_BOOKS ? BOOK_OPTS : CYCLE_OPTS;
+}
 
 /* Can this row be changed right now? Timings need the idle watcher; all of them need ENABLED. */
 static int live(const Settings *s, int row) {
     if (row == R_ENABLED) return s->watcher;
-    if (row == R_POWER) return 1;
+    if (row == R_POWER || row == R_BOOKS) return 1;
     if (!g_config.enabled) return 0;
     if (row == R_IDLE || row == R_OFF) return s->watcher;
     return row != R_CLOCK24 || g_config.clock;
 }
 
 static void layout(Settings *s) {
-    float top = s->h * 0.14f, bottom = s->h * 0.82f;
-    s->rowH = (bottom - top) / ROWS;
-    int pad = (int)(s->rowH * 0.1f), btn = (int)(s->rowH * 0.62f);
+    float top = s->h * 0.12f, bottom = s->h * 0.83f, headH = 0.6f;
+    s->rowH = (bottom - top) / (ROWS + GROUPS * headH);
+    int pad = (int)(s->rowH * 0.1f), btn = (int)(s->rowH * 0.62f), g = 0;
+    float y = top;
     for (int i = 0; i < ROWS; i++) {
-        SDL_Rect rw = { s->w / 20, (int)(top + i * s->rowH) + pad / 2, s->w - s->w / 10, (int)s->rowH - pad };
+        if (g < GROUPS && GROUP_START[g] == i) {                 /* a group's heading goes first */
+            s->group[g++] = (SDL_Rect){ s->w / 20, (int)y, s->w - s->w / 10, (int)(s->rowH * headH) };
+            y += s->rowH * headH;
+        }
+        SDL_Rect rw = { s->w / 20, (int)y + pad / 2, s->w - s->w / 10, (int)s->rowH - pad };
+        y += s->rowH;
         s->row[i] = rw;
         int cy = rw.y + (rw.h - btn) / 2, right = rw.x + rw.w - pad * 2;
         s->plus[i] = (SDL_Rect){ right - btn, cy, btn, btn };
@@ -133,10 +149,10 @@ static void end_edit(Settings *s, int keep) {
     SDL_StopTextInput();
     if (!keep || !s->typed[0]) return;
     int n = atoi(s->typed);
-    if (row == R_IDLE && n < 1) n = 1;
+    if ((row == R_IDLE || row == R_BOOKS) && n < 1) n = 1;
     *minutes_of(row) = n;
     fix_order();
-    if (row != R_CYCLE) s->timingChanged = 1;
+    if (row == R_IDLE || row == R_OFF) s->timingChanged = 1;
     config_save();
 }
 
@@ -190,7 +206,7 @@ static void minutes_value(const Settings *s, SDL_Renderer *r, int row, int sc, i
     if (s->edit == row) {
         SDL_Rect box = { f.x, cy - FONT_H * sc, f.w, FONT_H * sc * 2 };
         fill_rrect(r, box, box.h / 4, hexcol(0xFFFFFF));
-        snprintf(val, sizeof val, "%s MIN", s->typed);
+        snprintf(val, sizeof val, "%s %s", s->typed, row == R_BOOKS ? "SEC" : "MIN");
         int x = f.x + (f.w - text_width(val, sc)) / 2;
         draw_text(r, val, x, cy - FONT_H * sc / 2, sc, hexcol(0x10233A));
         if ((int)(s->t * 2) % 2 == 0) {                      /* a blinking caret after the digits */
@@ -201,7 +217,7 @@ static void minutes_value(const Settings *s, SDL_Renderer *r, int row, int sc, i
         return;
     }
     if (v == 0) snprintf(val, sizeof val, "NEVER");
-    else snprintf(val, sizeof val, "%d MIN", v);
+    else snprintf(val, sizeof val, "%d %s", v, row == R_BOOKS ? "SEC" : "MIN");
     text_at(r, val, f.x + (f.w - text_width(val, sc)) / 2, cy, sc, dim ? hexcol(0x7F93A6) : hexcol(0xFFFFFF));
 }
 
@@ -214,11 +230,14 @@ void settings_draw(void *p, SDL_Renderer *r) {
     text_at(r, "SETTINGS", (s->w - text_width("SETTINGS", tsc)) / 2,
             (int)(s->h * 0.07f), tsc, hexcol(0xFFE45C));
 
-    static const char *const labels[ROWS] = { "SCREENSAVER", "START AFTER", "SCREEN OFF AFTER", "SURPRISE SWITCH",
-                                              "SHOW CLOCK", "CLOCK STYLE", "SAVE POWER" };
+    static const char *const labels[ROWS] = { "SCREENSAVER", "START AFTER", "SCREEN OFF AFTER", "TAKE TURNS EVERY",
+                                              "SHOW CLOCK", "CLOCK STYLE", "BOOKS: EACH PAGE", "SAVE POWER" };
     int sc = (int)(s->rowH * 0.3f / FONT_H);
     if (sc < 1) sc = 1;
     while (sc > 1 && text_width("SCREEN OFF AFTER", sc) > s->w * 0.46f) sc--;
+    int gsc = sc;
+    for (int g = 0; g < GROUPS; g++)                             /* group headings */
+        text_at(r, GROUP_NAME[g], s->group[g].x + s->rowH / 6, s->group[g].y + s->group[g].h * 6 / 10, gsc, hexcol(0x9FB6CC));
     for (int i = 0; i < ROWS; i++) {
         SDL_Rect rw = s->row[i];
         fill_rrect(r, rw, rw.h / 4, i == s->hover ? hexcol(0x1D5578) : hexcol(0x163F5E));
@@ -226,9 +245,9 @@ void settings_draw(void *p, SDL_Renderer *r) {
         /* Rows that don't matter right now, or can't work here, are drawn dimmed. */
         int dim = !live(s, i);
         text_at(r, labels[i], rw.x + rw.h / 3, cy, sc, dim ? hexcol(0x7F93A6) : hexcol(0xFFFFFF));
-        if (is_minutes(i)) {
+        if (is_number(i)) {
             int v = *minutes_of(i);
-            int lo = i == R_IDLE ? v > 1 : v != 0;
+            int lo = i == R_IDLE || i == R_BOOKS ? v > 1 : v != 0;
             int hi = v + PAST_END <= CONFIG_MAX_MINUTES;
             round_button(r, s->minus[i], 0, lo && !dim);
             round_button(r, s->plus[i], 1, hi && !dim);
@@ -293,12 +312,12 @@ static void click(Settings *s, SDL_Window *win, int x, int y) {
         config_save();
         return;
     }
-    for (int i = R_IDLE; i <= R_CYCLE; i++) {
-        if (!live(s, i)) continue;
+    for (int i = R_IDLE; i < ROWS; i++) {
+        if (!is_number(i) || !live(s, i)) continue;
         int dir = hit(s->minus[i], x, y) ? -1 : hit(s->plus[i], x, y) ? 1 : 0;
         if (dir) {
             stepper(i, dir);
-            if (i != R_CYCLE) s->timingChanged = 1;
+            if (i == R_IDLE || i == R_OFF) s->timingChanged = 1;
             config_save();
             return;
         }

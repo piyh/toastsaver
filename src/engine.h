@@ -139,8 +139,8 @@ void settings_destroy(void *p);
 /* For tests: render the picker or a saver offscreen. */
 void *picker_create(SDL_Renderer *r, int w, int h);
 void picker_step(void *p, float dt);
-int picker_hit_strip(void *p, int x, int y);     /* tile whose TRY strip is at x,y, or -1 */
-int picker_hit_picture(void *p, int x, int y);   /* tile whose picture zone is at x,y, or -1 */
+int picker_hit_heart(void *p, int x, int y);     /* tile whose heart is at x,y, or -1 */
+int picker_hit_picture(void *p, int x, int y);   /* tile whose picture (tap to watch) is at x,y, or -1 */
 void picker_draw(void *p, SDL_Renderer *r);
 void picker_destroy(void *p);
 

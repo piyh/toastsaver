@@ -1,10 +1,9 @@
-/* The picker, the app's front page: big live tiles a six-year-old can use. Tap a tile to
-   choose it (saved immediately). SURPRISE ME (below the tiles) switches to a random saver
-   each time; while it is on, tapping a tile puts it in or takes it out of the surprise
-   mix. The bottom third of each picture is a smoky-glass TRY IT! band: tapping it runs just
-   that saver full screen, and changes neither the choice, the mix nor the saved config.
-   The gear in the top-left corner
-   opens the settings page in the same window. */
+/* The picker, the app's front page: big live tiles a six-year-old can use. Tap a picture to
+   watch that saver right now (any touch comes back; nothing is changed). Tap a tile's heart
+   to keep it in your screensaver or take it out. One heart: that saver plays when the
+   computer is idle. Several: they take turns. At least one always stays in. The bar under
+   the tiles says what will play. The gear in the top-left corner opens the settings page.
+   On disk this is still SAVER (one id, or "random") and RANDOM_SAVERS (who takes turns). */
 #include "engine.h"
 #include <math.h>
 #include <stdlib.h>
@@ -14,25 +13,64 @@
 #define TILES SAVER_COUNT
 
 typedef struct {
-    SDL_Rect box, pic, preview, band;   /* pic: the framed picture under the title */   /* band: the TRY IT! zone over the bottom of the picture */
+    SDL_Rect box, pic, preview;   /* pic: the framed picture under the title */
+    float hx, hy, hr;             /* the heart: centre and radius */
     const Saver *sv;
     void *st;
 } Tile;
 
 typedef struct {
     SDL_Renderer *r;
-    int w, h, sel, hover, hoverBand, quit;
-    int surprise;          /* SAVER=random; sel is then just the keyboard cursor */
-    float t, bump, titleH, labelH;
+    int w, h, sel, hover, hoverHeart, quit, keys;   /* keys: the keyboard is in use, show its cursor */
+    int deny;                     /* the tile whose heart just refused to go (the last one) */
+    float t, bump, denyT, titleH, labelH;
     Tile tile[MAX_TILES];
     int cols;
-    SDL_Rect nameBox, surpriseBtn;
+    SDL_Rect bar, nameBox;
     SDL_Point closeC, gearC;
     int closeR;
     int openSettings;
 } Picker;
 
-static int name_selected(const Picker *p) { return !p->surprise && p->tile[p->sel].sv == &saver_name; }
+/* ---------- what is kept ---------- */
+
+static int kept(const Saver *sv) {
+    return !strcmp(g_config.saver, "random") ? saver_in_mix(sv) : !strcmp(g_config.saver, sv->id);
+}
+
+static int kept_count(void) {
+    int n = 0;
+    for (int i = 0; i < SAVER_COUNT; i++) n += kept(SAVERS[i]);
+    return n;
+}
+
+static int name_kept(void) { return kept(&saver_name); }
+
+/* Flips one heart. The last heart stays: returns 0 then. */
+static int flip_heart(const Saver *sv) {
+    int on[MAX_TILES], n = 0, only = -1;
+    for (int i = 0; i < SAVER_COUNT; i++) {
+        on[i] = SAVERS[i] == sv ? !kept(sv) : kept(SAVERS[i]);
+        if (on[i]) { n++; only = i; }
+    }
+    if (n == 0) return 0;
+    if (n == 1) {
+        snprintf(g_config.saver, sizeof g_config.saver, "%s", SAVERS[only]->id);
+    } else {
+        char list[sizeof g_config.randomSavers] = "";
+        size_t len = 0;
+        for (int i = 0, c = 0; i < SAVER_COUNT; i++)
+            if (on[i]) len += (size_t)snprintf(list + len, sizeof list - len, "%s%s", c++ ? "," : "", SAVERS[i]->id);
+        if (len >= sizeof list) return 0;
+        /* Everything on is written as empty, so savers added later join in too. */
+        snprintf(g_config.randomSavers, sizeof g_config.randomSavers, "%s", n == SAVER_COUNT ? "" : list);
+        snprintf(g_config.saver, sizeof g_config.saver, "random");
+    }
+    config_save();
+    return 1;
+}
+
+/* ---------- layout ---------- */
 
 static void destroy_previews(Picker *p) {
     for (int i = 0; i < TILES; i++)
@@ -43,7 +81,7 @@ static void layout(Picker *p) {
     destroy_previews(p);
     int W = p->w, H = p->h, m = H / 56 > 4 ? H / 56 : 4;
     p->titleH = H * 0.12f;
-    float bottomH = H * 0.16f, gridTop = p->titleH, gridBottom = H - bottomH;
+    float bottomH = H * 0.14f, gridTop = p->titleH, gridBottom = H - bottomH;
     /* Every preview is 16:9, like the screen it stands for. Try each column count and keep
        the one that gives the biggest previews; the last, shorter row is centered. */
     int pad = H / 150 > 3 ? H / 150 : 3, label = (int)(H * 0.034f);
@@ -69,51 +107,24 @@ static void layout(Picker *p) {
         t->box = (SDL_Rect){ left + col * (tw + m), top + row * (th + m), tw, th };
         t->pic = (SDL_Rect){ t->box.x + pad / 2, t->box.y + label, tw - pad, bestPh + pad };
         t->preview = (SDL_Rect){ t->pic.x + pad / 2, t->pic.y + pad / 2, bestPw, bestPh };
-        int bh = bestPh * 33 / 100;
-        t->band = (SDL_Rect){ t->preview.x, t->preview.y + bestPh - bh, bestPw, bh };
+        t->hr = t->pic.h * 0.13f;                      /* the heart sits on the picture's corner */
+        t->hx = t->pic.x + t->pic.w - t->hr * 0.75f;
+        t->hy = t->pic.y + t->hr * 0.95f;
         t->st = t->sv->create(p->r, t->preview.w, t->preview.h);
     }
     int bh = (int)(bottomH * 0.62f), by = (int)gridBottom + (int)(bottomH - bh) / 2;
-    p->surpriseBtn = (SDL_Rect){ 0, by, W * 29 / 100, bh };
-    p->nameBox = (SDL_Rect){ W * 68 / 100, by, W * 28 / 100, bh };
+    p->bar = (SDL_Rect){ W * 8 / 100, by, W * 84 / 100, bh };
+    p->nameBox = (SDL_Rect){ W * 66 / 100, by, W * 26 / 100, bh };
     p->closeR = (int)(p->titleH * 0.3f);
     p->closeC = (SDL_Point){ W - m - p->closeR, (int)(p->titleH / 2) };
     p->gearC = (SDL_Point){ m + p->closeR, (int)(p->titleH / 2) };
 }
 
-static void save_choice(Picker *p) {
-    snprintf(g_config.saver, sizeof g_config.saver, "%s", p->surprise ? "random" : p->tile[p->sel].sv->id);
-    config_save();
-    if (name_selected(p)) SDL_StartTextInput();
-    else SDL_StopTextInput();
-}
-
-/* Arrow keys and taps both land here. With SURPRISE on they only move the cursor. */
-/* Footer: SURPRISE ME in the middle. When NAME is chosen it moves left to make room for
-   the name box on the right. */
-static void place_footer(Picker *p) {
-    int W = p->w;
-    p->surpriseBtn.x = name_selected(p) ? W * 4 / 100 : (W - p->surpriseBtn.w) / 2;
-}
-
-static void select_tile(Picker *p, int i) {
-    if (i < 0 || i >= TILES || (p->surprise && i == p->sel)) return;
-    p->sel = i;
-    p->bump = 1;
-    if (!p->surprise) save_choice(p);
-}
-
-static void toggle_surprise(Picker *p) {
-    p->surprise = !p->surprise;
-    p->bump = 1;
-    save_choice(p);
-}
-
-/* Puts a saver in or out of the surprise mix. The last one can't be taken out. */
-static void toggle_mix(Picker *p, int i) {
-    p->sel = i;
-    p->bump = 1;
-    if (saver_set_in_mix(p->tile[i].sv, !saver_in_mix(p->tile[i].sv))) config_save();
+/* With NAME kept, the bar shares the footer with the box where you type the name. */
+static SDL_Rect bar_rect(const Picker *p) {
+    SDL_Rect b = p->bar;
+    if (name_kept()) b.w = p->nameBox.x - b.x - p->w * 2 / 100;
+    return b;
 }
 
 static void refresh_name_preview(Picker *p) {
@@ -124,14 +135,21 @@ static void refresh_name_preview(Picker *p) {
         }
 }
 
+static void heart_tapped(Picker *p, int i) {
+    p->sel = i;
+    if (!flip_heart(p->tile[i].sv)) { p->deny = i; p->denyT = 0.6f; return; }   /* the last one stays */
+    p->bump = 1;
+    if (name_kept()) SDL_StartTextInput();
+    else SDL_StopTextInput();
+}
+
 void *picker_create(SDL_Renderer *r, int w, int h) {
     Picker *p = calloc(1, sizeof *p);
     p->r = r;
     p->w = w;
     p->h = h;
-    p->hover = p->hoverBand = -1;
+    p->hover = p->hoverHeart = p->deny = -1;
     layout(p);
-    p->surprise = !strcmp(g_config.saver, "random");
     for (int i = 0; i < SAVER_COUNT; i++)
         if (!strcmp(g_config.saver, SAVERS[i]->id)) p->sel = i;
     return p;
@@ -146,40 +164,17 @@ void picker_step(void *v, float dt) {
     Picker *p = v;
     p->t += dt;
     p->bump = p->bump > 0 ? p->bump - dt * 3 : 0;
+    p->denyT = p->denyT > 0 ? p->denyT - dt : 0;
     for (int i = 0; i < TILES; i++)
         if (p->tile[i].st) p->tile[i].sv->step(p->tile[i].st, dt);
 }
 
-/* The SURPRISE ME die: it bounces and keeps changing its number while SURPRISE is on. */
-static void draw_dice(Picker *p, SDL_Rect area, int rolling) {
-    int s = (int)((area.w < area.h ? area.w : area.h) * 0.8f);
-    int bounce = rolling ? (int)(fabsf(sinf(p->t * 4)) * area.h * 0.1f) : 0;
-    SDL_Rect d = { area.x + (area.w - s) / 2, area.y + (area.h - s) / 2 - bounce, s, s };
-    fill_rrect(p->r, (SDL_Rect){ d.x, d.y + s / 12, s, s }, s / 6, hexcol(0x9AA0C8));
-    fill_rrect(p->r, d, s / 6, hexcol(0xFFFFFF));
-    static const float pips[7][7][2] = {
-        {{0}}, {{.5f,.5f}}, {{.25f,.25f},{.75f,.75f}}, {{.25f,.25f},{.5f,.5f},{.75f,.75f}},
-        {{.25f,.25f},{.75f,.25f},{.25f,.75f},{.75f,.75f}},
-        {{.25f,.25f},{.75f,.25f},{.5f,.5f},{.25f,.75f},{.75f,.75f}},
-        {{.25f,.25f},{.75f,.25f},{.25f,.5f},{.75f,.5f},{.25f,.75f},{.75f,.75f}},
-    };
-    int face = rolling ? 1 + (int)(p->t * 2.5f) % 6 : 5;
-    for (int k = 0; k < face; k++)
-        fill_circle(p->r, d.x + pips[face][k][0] * s, d.y + pips[face][k][1] * s, s * 0.09f, hexcol(0x222244));
-}
+/* ---------- drawing ---------- */
 
-/* The empty ring on a tile that is out of the surprise mix. */
-static void empty_badge(SDL_Renderer *r, float cx, float cy, float rad) {
-    fill_circle(r, cx, cy, rad + rad * 0.15f, hexcol(0xFFFFFF));
-    fill_circle(r, cx, cy, rad * 0.8f, hexcol(0x4A4E6A));
-}
-
-static void check_badge(SDL_Renderer *r, float cx, float cy, float rad) {
-    fill_circle(r, cx, cy, rad + rad * 0.15f, hexcol(0xFFFFFF));
-    fill_circle(r, cx, cy, rad, hexcol(0x2E9E44));
-    SDL_Color w = hexcol(0xFFFFFF);
-    thick_line(r, cx - rad * 0.45f, cy, cx - rad * 0.1f, cy + rad * 0.38f, rad * 0.24f, w);
-    thick_line(r, cx - rad * 0.1f, cy + rad * 0.38f, cx + rad * 0.5f, cy - rad * 0.36f, rad * 0.24f, w);
+static void heart_shape(SDL_Renderer *r, float cx, float cy, float s, SDL_Color c) {
+    fill_circle(r, cx - s * 0.5f, cy - s * 0.25f, s * 0.55f, c);
+    fill_circle(r, cx + s * 0.5f, cy - s * 0.25f, s * 0.55f, c);
+    fill_triangle(r, cx - s * 1.02f, cy - s * 0.05f, cx + s * 1.02f, cy - s * 0.05f, cx, cy + s * 1.0f, c);
 }
 
 static void centered_text(SDL_Renderer *r, const char *s, SDL_Rect box, float height, SDL_Color c) {
@@ -189,81 +184,46 @@ static void centered_text(SDL_Renderer *r, const char *s, SDL_Rect box, float he
     draw_text_shadow(r, s, box.x + (box.w - text_width(s, sc)) / 2, box.y + (box.h - FONT_H * sc) / 2, sc, c);
 }
 
-/* A chunky button with a darker shadow underneath, like SURPRISE ME. */
-static void push_button(SDL_Renderer *r, SDL_Rect b, uint32_t face, uint32_t shadow) {
-    fill_rrect(r, (SDL_Rect){ b.x, b.y + b.h / 12, b.w, b.h }, b.h / 3, hexcol(shadow));
-    fill_rrect(r, b, b.h / 3, hexcol(face));
-}
-
 static void draw_tile(Picker *p, SDL_Renderer *r, int i) {
     Tile *t = &p->tile[i];
-    int cur = i == p->sel, inMix = saver_in_mix(t->sv);
-    int lit = p->surprise ? inMix : cur;   /* lit tiles get the check mark */
-    SDL_Rect box = t->pic;                 /* the picture's frame: glow, rings and badges live here */
-    /* Growing keeps the top edge put, so the pop never runs into the title above. */
-    if (cur && !p->surprise) {                         /* chosen tile pops out a little */
-        int grow = (int)(box.h * (0.03f + 0.04f * p->bump));
-        box = (SDL_Rect){ box.x - grow, box.y, box.w + 2 * grow, box.h + grow };
-        int glow = (int)(box.h * 0.035f * (1.0f + 0.3f * sinf(p->t * 5)));
-        SDL_Rect outer = { box.x - glow, box.y - glow / 3, box.w + 2 * glow, box.h + glow + glow / 3 };   /* little above: the title sits there */
-        fill_rrect(r, outer, box.h / 8, hexcol(0xFFE45C));
-    } else if (p->surprise && (cur || inMix)) {
-        if (cur) {                                     /* keyboard cursor / just tapped */
-            int grow = (int)(box.h * 0.04f * p->bump);
-            box = (SDL_Rect){ box.x - grow, box.y, box.w + 2 * grow, box.h + grow };
-        }
-        int ring = (int)(box.h * (cur ? 0.045f : 0.03f));
-        SDL_Rect outer = { box.x - ring, box.y - ring / 3, box.w + 2 * ring, box.h + ring + ring / 3 };
-        fill_rrect(r, outer, box.h / 8, cur ? hexcol(0xFFE45C) : i == p->hover ? hexcol(0xFFD2B0) : hexcol(0xFF8A3D));
-    } else if (i == p->hover) {                        /* pointer on the picture: tap to choose / toggle */
-        SDL_Rect outer = { box.x - 3, box.y - 1, box.w + 6, box.h + 4 };
-        fill_rrect(r, outer, box.h / 8, hexcol(0xFFD2B0));
-    }
-    fill_rrect(r, box, box.h / 9, hexcol(0x16133A));
+    int on = kept(t->sv), cur = p->keys && i == p->sel;
+    SDL_Rect box = t->pic;
+    /* Rings go the same width all round and stay inside the gaps, so they never run into
+       the title above or the next row's title below. The frame's corners are only as round
+       as the inset allows, so the square picture never pokes out of them. */
+    int gap = p->h / 56 > 4 ? p->h / 56 : 4, inset = t->preview.x - box.x;
+    int ringMax = (int)(p->labelH * 0.2f) < gap / 2 ? (int)(p->labelH * 0.2f) : gap / 2;
+    if (ringMax < 2) ringMax = 2;
+    int rad = inset * 3 > 2 ? inset * 3 : 2, ring = 0;
+    uint32_t ringCol = 0;
+    if (cur) { ring = ringMax; ringCol = 0xFFE45C; }                  /* keyboard cursor */
+    else if (i == p->hover) { ring = ringMax; ringCol = 0xFFFFFF; }   /* pointer on the picture: tap to watch */
+    else if (on) { ring = ringMax * 6 / 10; ringCol = 0xFF4D7A; }     /* kept: a pink frame */
+    if (ring < 1 && !on) { ring = 1; ringCol = 0x4A3F8A; }
+    if (ring > 0) fill_rrect(r, (SDL_Rect){ box.x - ring, box.y - ring, box.w + 2 * ring, box.h + 2 * ring }, rad + ring, hexcol(ringCol));
+    fill_rrect(r, box, rad, hexcol(0x16133A));
 
     SDL_RenderSetViewport(r, &t->preview);
     t->sv->draw(t->st, r);
     SDL_RenderSetViewport(r, NULL);
-    if (p->surprise && !inMix) {                       /* out of the mix: dimmed */
-        SDL_SetRenderDrawColor(r, 0x16, 0x13, 0x3A, 175);
-        SDL_RenderFillRect(r, &t->preview);
-    }
-
-    /* The TRY IT! band: smoky glass over the picture, never dimmed by the mix. It lights up
-       on its own when the pointer is on it; the frame around the picture stays as it was. */
-    {
-        SDL_Rect b = t->band;
-        int hot = i == p->hoverBand;
+    if (i == p->hover) {                                             /* a play sign says what a tap does */
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-        SDL_SetRenderDrawColor(r, 0x14, 0x10, 0x30, hot ? 150 : 95);
-        SDL_RenderFillRect(r, &b);
-        SDL_Rect wash = { b.x, b.y, b.w, b.h / 2 };
-        SDL_SetRenderDrawColor(r, 0xFF, 0xFF, 0xFF, hot ? 80 : 20);
-        SDL_RenderFillRect(r, &wash);
-        int et = b.h / 40 > 1 ? b.h / 40 : 1;
-        SDL_Rect edge = { b.x, b.y, b.w, hot ? 2 * et : et };
-        SDL_SetRenderDrawColor(r, 0xFF, 0xFF, 0xFF, hot ? 255 : 170);
-        SDL_RenderFillRect(r, &edge);
-        float ts = b.h * (hot ? 0.30f : 0.26f);
-        int sc = (int)(b.h * 0.46f / FONT_H);
-        if (sc < 1) sc = 1;
-        int icon = (int)(ts * 2.0f), gap = (int)(ts * 0.5f);
-        const char *word = "TRY IT!";
-        if (icon + gap + text_width(word, sc) > b.w * 0.92f) word = "TRY";   /* narrow tile */
-        if (hot && icon + gap + text_width(word, sc + 1) <= b.w * 0.92f && sc * FONT_H * 14 < b.h * 10) sc++;
-        int x0 = b.x + (b.w - (icon + gap + text_width(word, sc))) / 2, cy = b.y + b.h / 2 + 1;
-        fill_triangle(r, (float)x0, cy - ts, (float)x0, cy + ts, x0 + ts * 1.6f, (float)cy, hexcol(0xFFFFFF));
-        draw_text_shadow(r, word, x0 + icon + gap, cy - FONT_H * sc / 2, sc, hexcol(0xFFFFFF));
+        float cx = t->preview.x + t->preview.w / 2.0f, cy = t->preview.y + t->preview.h / 2.0f, s = t->preview.h * 0.16f;
+        fill_circle(r, cx, cy, s * 1.6f, (SDL_Color){ 20, 16, 48, 140 });
+        fill_triangle(r, cx - s * 0.55f, cy - s * 0.8f, cx - s * 0.55f, cy + s * 0.8f, cx + s * 0.85f, cy, hexcol(0xFFFFFF));
     }
 
-    /* The saver's name: a title above the picture. */
     SDL_Rect title = { t->box.x, t->box.y, t->box.w, (int)p->labelH };
-    SDL_Color lc = p->surprise ? (inMix ? hexcol(0xFFFFFF) : hexcol(0x8088AA))
-                               : (cur ? hexcol(0xFFE45C) : hexcol(0xFFFFFF));
-    centered_text(r, t->sv->label, title, p->labelH * 0.62f, lc);
-    float bx = (float)(box.x + box.w - box.h * 0.06f), by = (float)(box.y + box.h * 0.06f), br = box.h * 0.11f;
-    if (lit) check_badge(r, bx, by, br);
-    else if (p->surprise) empty_badge(r, bx, by, br);
+    centered_text(r, t->sv->label, title, p->labelH * 0.62f, on ? hexcol(0xFFB3C8) : hexcol(0xFFFFFF));
+
+    /* The heart: filled pink when kept, an empty outline when not. It wiggles if it's the last. */
+    float hx = t->hx, hy = t->hy, hr = t->hr * (i == p->hoverHeart ? 1.18f : 1.0f);
+    if (on && i == p->sel) hr *= 1 + 0.25f * p->bump;
+    if (i == p->deny && p->denyT > 0) hx += sinf(p->denyT * 40) * t->hr * 0.25f * (p->denyT / 0.6f);
+    fill_circle(r, hx, hy, hr * 1.12f, hexcol(on ? 0xFFFFFF : 0x8088AA));
+    fill_circle(r, hx, hy, hr, hexcol(on ? 0xFF4D7A : 0x1A1240));
+    heart_shape(r, hx, hy + hr * 0.08f, hr * 0.5f, on ? hexcol(0xFFFFFF) : hexcol(0x8088AA));
+    if (!on) heart_shape(r, hx, hy + hr * 0.08f + hr * 0.04f, hr * 0.32f, hexcol(0x1A1240));
 }
 
 /* The settings gear, in quiet colours. */
@@ -279,6 +239,20 @@ static void draw_gear(Picker *p, SDL_Renderer *r) {
     fill_circle(r, cx, cy, rad * 0.3f, hexcol(0x3A1C71));
 }
 
+/* "YOUR SCREENSAVER: *VOLCANO", or who takes turns. Long lists just give the count. */
+static void bar_text(char *out, size_t n) {
+    int count = kept_count();
+    if (count == 1) {
+        for (int i = 0; i < SAVER_COUNT; i++)
+            if (kept(SAVERS[i])) snprintf(out, n, "YOUR SCREENSAVER: *%s", SAVERS[i]->label);
+        return;
+    }
+    if (count > 3) { snprintf(out, n, "YOUR SCREENSAVER: *%d TAKE TURNS", count); return; }
+    size_t len = (size_t)snprintf(out, n, "TAKING TURNS:");
+    for (int i = 0, c = 0; i < SAVER_COUNT && len < n; i++)
+        if (kept(SAVERS[i])) len += (size_t)snprintf(out + len, n - len, "%s *%s", c++ ? "," : "", SAVERS[i]->label);
+}
+
 void picker_draw(void *v, SDL_Renderer *r) {
     Picker *p = v;
     SDL_RenderSetViewport(r, NULL);
@@ -286,8 +260,7 @@ void picker_draw(void *v, SDL_Renderer *r) {
 
     int tpad = p->closeR * 3;   /* keep the title between the gear and the X */
     SDL_Rect title = { tpad, 0, p->w - 2 * tpad, (int)p->titleH };
-    centered_text(r, p->surprise ? "PICK YOUR SURPRISE MIX!" : "PICK A SCREENSAVER!", title,
-                  p->titleH * 0.5f, hexcol(0xFFE45C));
+    centered_text(r, "TAP TO WATCH  * TO KEEP", title, p->titleH * 0.42f, hexcol(0xFFE45C));
 
     fill_circle(r, (float)p->closeC.x, (float)p->closeC.y, p->closeR * 1.12f, hexcol(0xFFFFFF));
     fill_circle(r, (float)p->closeC.x, (float)p->closeC.y, (float)p->closeR, hexcol(0xE53935));
@@ -297,24 +270,14 @@ void picker_draw(void *v, SDL_Renderer *r) {
 
     for (int i = 0; i < TILES; i++) draw_tile(p, r, i);
     draw_gear(p, r);
-    place_footer(p);
 
-    /* SURPRISE ME: a toggle. On, it glows like a chosen tile and its die rolls. */
-    SDL_Rect sb = p->surpriseBtn;
-    if (p->surprise) {
-        int glow = (int)(sb.h * 0.08f * (1.0f + 0.3f * sinf(p->t * 5)));
-        fill_rrect(r, (SDL_Rect){ sb.x - glow, sb.y - glow, sb.w + 2 * glow, sb.h + sb.h / 12 + 2 * glow },
-                   sb.h / 3 + glow, hexcol(0xFFE45C));
-        push_button(r, sb, 0xFF6F3C, 0xB23A12);
-    } else {
-        push_button(r, sb, 0x8E24AA, 0x5E1675);
-    }
-    draw_dice(p, (SDL_Rect){ sb.x + sb.h / 6, sb.y, sb.h, sb.h }, p->surprise);
-    SDL_Rect st = { sb.x + sb.h * 7 / 6, sb.y, sb.w - sb.h * 7 / 6 - sb.h / 8, sb.h };
-    centered_text(r, "SURPRISE ME!", st, sb.h * 0.36f, hexcol(0xFFFFFF));
-    if (p->surprise) check_badge(r, (float)(sb.x + sb.w - sb.h * 0.08f), (float)(sb.y + sb.h * 0.08f), sb.h * 0.2f);
+    SDL_Rect b = bar_rect(p);                                       /* what will play */
+    fill_rrect(r, b, b.h / 3, hexcol(0x1A1240));
+    char text[160];
+    bar_text(text, sizeof text);
+    centered_text(r, text, (SDL_Rect){ b.x + b.h / 4, b.y, b.w - b.h / 2, b.h }, b.h * 0.34f, hexcol(0xFFFFFF));
 
-    if (name_selected(p)) {
+    if (name_kept()) {
         SDL_Rect nb = p->nameBox;
         fill_rrect(r, nb, nb.h / 4, hexcol(0xFFFFFF));
         SDL_Rect cap = { nb.x, nb.y + nb.h / 14, nb.w, nb.h * 3 / 10 };
@@ -331,25 +294,36 @@ void picker_draw(void *v, SDL_Renderer *r) {
     }
 }
 
+/* ---------- input ---------- */
+
 static int hit(SDL_Rect rc, int x, int y) { return x >= rc.x && y >= rc.y && x < rc.x + rc.w && y < rc.y + rc.h; }
 
-/* Runs one saver full screen. Touches nothing: not the choice, not the mix, not the config. */
-static void try_tile(Picker *p, SDL_Window *win, int i) {
+/* Runs one saver full screen. Touches nothing: not the hearts, not the config. */
+static void watch(Picker *p, SDL_Window *win, int i) {
+    /* Someone is watching on purpose, so hold off the idle watcher like a video player would;
+       otherwise after IDLE_MINUTES it starts the kept saver over the top of this one. */
+    SDL_DisableScreenSaver();
     if (run_saver(win, p->r, p->tile[i].sv, 0, 0) == 1) p->quit = 1;
+    SDL_EnableScreenSaver();
     SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
+    p->hover = p->hoverHeart = -1;
 }
 
-/* Which tile's TRY IT! band is at (x, y); -1 if none. */
-int picker_hit_strip(void *v, int x, int y) {
+/* Which tile's heart is at (x, y); -1 if none. A little generous, for small fingers. */
+int picker_hit_heart(void *v, int x, int y) {
     Picker *p = v;
-    for (int i = 0; i < TILES; i++) if (hit(p->tile[i].band, x, y)) return i;
+    for (int i = 0; i < TILES; i++) {
+        const Tile *t = &p->tile[i];
+        float dx = x - t->hx, dy = y - t->hy, rr = t->hr * 1.5f;
+        if (dx * dx + dy * dy <= rr * rr) return i;
+    }
     return -1;
 }
 
-/* Which tile's choose/mix area (the tile except its band) is at (x, y); -1 if none. */
+/* Which tile's picture (or title) is at (x, y), not counting its heart; -1 if none. */
 int picker_hit_picture(void *v, int x, int y) {
     Picker *p = v;
-    if (picker_hit_strip(p, x, y) >= 0) return -1;
+    if (picker_hit_heart(p, x, y) >= 0) return -1;
     for (int i = 0; i < TILES; i++) if (hit(p->tile[i].box, x, y)) return i;
     return -1;
 }
@@ -359,15 +333,16 @@ static void click(Picker *p, SDL_Window *win, int x, int y) {
     if (dx * dx + dy * dy <= p->closeR * p->closeR * 1.6f) { p->quit = 1; return; }
     dx = x - p->gearC.x; dy = y - p->gearC.y;
     if (dx * dx + dy * dy <= p->closeR * p->closeR * 1.6f) { p->openSettings = 1; return; }
-    place_footer(p);
-    if (hit(p->surpriseBtn, x, y)) { toggle_surprise(p); return; }
-    int i = picker_hit_strip(p, x, y);
-    if (i >= 0) { try_tile(p, win, i); return; }
+    p->keys = 0;
+    int i = picker_hit_heart(p, x, y);
+    if (i >= 0) { heart_tapped(p, i); return; }
     i = picker_hit_picture(p, x, y);
-    if (i >= 0) {
-        if (p->surprise) toggle_mix(p, i);
-        else select_tile(p, i);
-    }
+    if (i >= 0) { p->sel = i; watch(p, win, i); }
+}
+
+static void move_cursor(Picker *p, int i) {
+    if (i >= 0 && i < TILES) p->sel = i;
+    p->keys = 1;
 }
 
 int run_picker(SDL_Window *win, SDL_Renderer *r) {
@@ -377,7 +352,7 @@ int run_picker(SDL_Window *win, SDL_Renderer *r) {
     int ww, wh;
     SDL_GetWindowSize(win, &ww, &wh);
     float sx = (float)w / ww, sy = (float)h / wh;   /* mouse is in window units, drawing in pixels */
-    if (name_selected(p)) SDL_StartTextInput(); else SDL_StopTextInput();
+    if (name_kept()) SDL_StartTextInput(); else SDL_StopTextInput();
     Uint64 last = SDL_GetPerformanceCounter();
     while (!p->quit) {
         SDL_Event e;
@@ -386,15 +361,15 @@ int run_picker(SDL_Window *win, SDL_Renderer *r) {
             case SDL_QUIT: p->quit = 1; break;
             case SDL_MOUSEMOTION: {
                 int x = (int)(e.motion.x * sx), y = (int)(e.motion.y * sy);
+                p->hoverHeart = picker_hit_heart(p, x, y);
                 p->hover = picker_hit_picture(p, x, y);
-                p->hoverBand = picker_hit_strip(p, x, y);
                 break;
             }
             case SDL_MOUSEBUTTONDOWN:
                 if (e.button.button == SDL_BUTTON_LEFT) click(p, win, (int)(e.button.x * sx), (int)(e.button.y * sy));
                 break;
             case SDL_TEXTINPUT:
-                if (name_selected(p)) {
+                if (name_kept()) {
                     char buf[64];
                     snprintf(buf, sizeof buf, "%s%s", g_config.name, e.text.text);
                     config_set_name(buf);
@@ -405,15 +380,13 @@ int run_picker(SDL_Window *win, SDL_Renderer *r) {
             case SDL_KEYDOWN: {
                 SDL_Keycode k = e.key.keysym.sym;
                 if (k == SDLK_ESCAPE) p->quit = 1;
-                else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) try_tile(p, win, p->sel);
-                else if (k == SDLK_TAB) toggle_surprise(p);
-                else if (k == SDLK_SPACE && p->surprise) toggle_mix(p, p->sel);
-                else if (k == SDLK_SPACE && !name_selected(p)) try_tile(p, win, p->sel);
-                else if (k == SDLK_LEFT) select_tile(p, p->sel > 0 ? p->sel - 1 : p->sel);
-                else if (k == SDLK_RIGHT) select_tile(p, p->sel < TILES - 1 ? p->sel + 1 : p->sel);
-                else if (k == SDLK_UP) select_tile(p, p->sel >= p->cols ? p->sel - p->cols : p->sel);
-                else if (k == SDLK_DOWN) select_tile(p, p->sel + p->cols < TILES ? p->sel + p->cols : p->sel);
-                else if (k == SDLK_BACKSPACE && name_selected(p) && g_config.name[0]) {
+                else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) watch(p, win, p->sel);
+                else if (k == SDLK_SPACE && !name_kept()) { p->keys = 1; heart_tapped(p, p->sel); }
+                else if (k == SDLK_LEFT) move_cursor(p, p->sel - 1);
+                else if (k == SDLK_RIGHT) move_cursor(p, p->sel + 1);
+                else if (k == SDLK_UP) move_cursor(p, p->sel >= p->cols ? p->sel - p->cols : p->sel);
+                else if (k == SDLK_DOWN) move_cursor(p, p->sel + p->cols < TILES ? p->sel + p->cols : p->sel);
+                else if (k == SDLK_BACKSPACE && name_kept() && g_config.name[0]) {
                     g_config.name[strlen(g_config.name) - 1] = 0;
                     config_save();
                     refresh_name_preview(p);
@@ -441,7 +414,7 @@ int run_picker(SDL_Window *win, SDL_Renderer *r) {
             SDL_StopTextInput();
             run_settings(win, r);
             SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
-            if (name_selected(p)) SDL_StartTextInput();
+            if (name_kept()) SDL_StartTextInput();
             last = SDL_GetPerformanceCounter();
             continue;
         }

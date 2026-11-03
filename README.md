@@ -10,7 +10,7 @@ curl -fsSL https://piyh.github.io/toastsaver/setup.sh | sh
 
 ## What's inside
 
-Thirteen screensavers, plus a SURPRISE ME button that picks a random one each time from the ones you put in the mix. All of the artwork is original and drawn by the program itself.
+Fourteen screensavers. Give the ones you like a heart: one heart plays that saver, several take turns. All of the artwork is original and drawn by the program itself.
 
 <table>
   <tr>
@@ -38,7 +38,8 @@ Thirteen screensavers, plus a SURPRISE ME button that picks a random one each ti
     <td align="center"><img src="docs/name.png" width="400"><br><b>NAME</b></td>
   </tr>
   <tr>
-    <td align="center" colspan="2"><img src="docs/volcano.png" width="400"><br><b>VOLCANO</b></td>
+    <td align="center"><img src="docs/volcano.png" width="400"><br><b>VOLCANO</b></td>
+    <td align="center"><img src="docs/city.png" width="400"><br><b>CITY</b></td>
   </tr>
 </table>
 
@@ -108,16 +109,14 @@ Open **Screensavers** from the app menu. To put an icon on the desktop too, run 
 
 ![The picker](docs/picker.png)
 
-- **Tap a tile** to choose it. Your choice is saved right away. There is no Save button.
-- **Each tile** has the saver's name as a title above its picture. Tap the picture to choose it; its border lightens when the pointer is over it.
-- **Tap the smoky glass TRY IT! band** on the bottom of a picture to watch that saver full screen (the band brightens on its own when the pointer is over it). It works on any tile, with SURPRISE ME! on or off, and never changes your choice, your surprise mix or the saved setting, so a quick look at VOLCANO needs no deselecting.
+- **Tap a picture** to watch that saver full screen right now. It changes nothing, so a quick look at VOLCANO is one tap. A play sign shows on the picture under the pointer.
 - **Move the mouse, touch the screen, or press any key** to go back to the picker.
-- **SURPRISE ME!** (under the tiles) shows a different saver each time, and keeps switching about every 10 minutes while the screen stays idle (fading from one to the next, and waiting for a natural break where a saver has one: a new volcano island, a fresh pipes tangle, a book back on the shelf, an empty dice tray). While it is on, the tiles show which savers are **in the mix**: tap a tile (above its TRY IT! band) to put it in (green check) or take it out (dimmed); the band is never dimmed. At least one always stays in. Tap **SURPRISE ME!** again to turn it off and choose a single tile.
-- **VOLCANO**: a night-time island volcano. Lava oozes and erupts, flows down the slopes and cools into rock so the mountain slowly grows, and hisses into steam where it reaches the sea. Smoke, ash, flying fire-bombs and rock chunks fill the sky. When it gets tall it blows up and a new island begins.
-- **NAME**: when it is chosen, type your name on the keyboard.
+- **Tap a heart** to keep that saver in your screensaver, or take it out. Kept savers have a pink heart and frame. With one heart, that saver plays when the computer is idle; with several, they **take turns**, switching about every 10 minutes (fading from one to the next, and waiting for a natural break where a saver has one: a new volcano island, a fresh pipes tangle, a book back on the shelf, an empty dice tray). At least one heart always stays: the last one just wiggles.
+- **The bar under the tiles** says what will play, e.g. *YOUR SCREENSAVER: VOLCANO* or *TAKING TURNS: VOLCANO, CITY, RAINBOW*.
+- **NAME**: give it a heart, then type your name on the keyboard.
 - The **big red X** closes the app.
 
-On a keyboard, use the arrow keys to move, **Enter** to watch the highlighted saver, **Tab** to turn SURPRISE ME on or off, **Space** to put the highlighted saver in or out of the mix, and **Esc** to close.
+On a keyboard, use the arrow keys to move, **Enter** to watch the highlighted saver, **Space** to flip its heart, and **Esc** to close.
 
 ### Settings (for grown-ups)
 
@@ -128,10 +127,11 @@ Click the **gear** in the top-left corner of the app. Changes are saved right aw
 - **Screensaver**: turn it on or off.
 - **Start after**: how long the computer waits before showing the screensaver.
 - **Screen off after**: when the display turns off, or **NEVER**. It is always later than the screensaver.
-- **Surprise switch**: with SURPRISE ME on, how often it moves on to another saver, or **NEVER** to keep one.
+- **Take turns every**: when several savers have a heart, how often it moves on to the next, or **NEVER** to keep one.
 - Tap a time to type in any number of minutes (up to 9999); **-** and **+** also keep going past the usual choices.
 - **Show clock**: puts the time over any screensaver. It drifts to a new spot about once a minute, so it never sits in one place.
 - **Clock style**: 12-hour or 24-hour.
+- **Books: each page**: how many seconds each page of a poem stays up in BOOKS.
 - **Save power**: draws savers at 30 frames a second instead of as fast as the display can, which roughly halves the work and looks the same for these savers. On by default.
 - **Test it** shows the current screensaver; **Reset** (tap it twice) puts every setting on this page back to how it started; **Back** returns to the tiles.
 

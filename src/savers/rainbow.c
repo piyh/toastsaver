@@ -18,6 +18,9 @@
 #define STREAKS 4
 #define UNI_W 56
 #define UNI_H 40
+#define PUG_W 38
+#define PUG_H 32
+#define PUGS 3
 
 static const uint32_t BANDS[6] = { 0xFF4D4D, 0xFF9A3C, 0xFFE14D, 0x5BD46B, 0x4DA6FF, 0x9B6BFF };
 
@@ -119,6 +122,51 @@ static Canvas make_unicorn(int frame) {
     return c;
 }
 
+/* An astronaut pug in a glass bubble helmet, facing right, paddling its stubby legs. */
+static Canvas make_pug(int frame) {
+    Canvas c = canvas_new(PUG_W, PUG_H);
+    uint32_t fawn = 0xE8C496, deep = 0xC89A64, mask = 0x3A2A22;
+    int pd = frame ? 1 : -1;
+    fill_ellipse(&c, 7, 13, 2.2f, 2.2f, rgb(deep));                 /* curly tail */
+    put(&c, 7, 13, rgb(fawn));
+    static const int legs[4] = { 9, 12, 19, 22 };
+    for (int i = 0; i < 4; i++) {                                    /* stubby legs, paddling */
+        int dx = (i % 2 ? pd : -pd);
+        fill_rect(&c, legs[i] + dx, 22, legs[i] + dx + 2, 25, rgb(i % 2 ? fawn : deep));
+        fill_rect(&c, legs[i] + dx, 25, legs[i] + dx + 2, 25, rgb(mask));
+    }
+    fill_ellipse(&c, 15, 18, 9.5f, 6.5f, rgb(fawn));
+    fill_ellipse(&c, 16, 21, 7, 2.5f, rgb(0xF4DCB8));
+    fill_rect(&c, 9, 13, 12, 18, rgb(0xB8BCC8));                     /* oxygen pack */
+    fill_rect(&c, 9, 13, 12, 13, rgb(0xE0E4EC));
+    put(&c, 10, 15, rgb(0xFF4D4D));
+    fill_ellipse(&c, 26, 13, 7, 6.5f, rgb(fawn));                   /* the head */
+    fill_rect(&c, 21, 19, 24, 20, rgb(0xD94F4F));                    /* collar and tag */
+    put(&c, 23, 21, rgb(0xFFD24A));
+    fill_ellipse(&c, 30, 15.5f, 4, 3.2f, rgb(mask));                 /* black squishy muzzle */
+    fill_rect(&c, 32, 13, 33, 14, rgb(0x111111));
+    fill_rect(&c, 24, 8, 27, 8, rgb(deep));                          /* forehead wrinkles */
+    fill_rect(&c, 25, 10, 27, 10, rgb(deep));
+    fill_ellipse(&c, 21, 9, 2.4f, 3, rgb(mask));                     /* ears */
+    fill_ellipse(&c, 29, 11, 2.4f, 2.4f, rgb(0xFFFFFF));             /* big round eye */
+    fill_ellipse(&c, 29.5f, 11, 1.6f, 1.6f, rgb(0x1A1A1A));
+    put(&c, 29, 10, rgb(0xFFFFFF));
+    fill_rect(&c, 30, 18 + frame, 31, 19 + frame, rgb(0xF07890));    /* tongue out */
+    outline(&c, rgb(0x2A1A10));
+    for (int y = 3; y < PUG_H; y++)                                  /* the glass helmet */
+        for (int x = 14; x < PUG_W; x++) {
+            float dx = (x - 26.5f) / 10.5f, dy = (y - 13.0f) / 10.5f, d = dx * dx + dy * dy;
+            if (d > 1) continue;
+            if (d > 0.82f) put(&c, x, y, 0xCFEFFFD0);
+            else if (!get(&c, x, y)) put(&c, x, y, 0xA0D8FF38);
+        }
+    for (int i = 0; i < 6; i++) put(&c, 19 + i, 6 - (i < 3 ? i : 5 - i) / 2 - (i > 1 && i < 4), 0xFFFFFFF0);   /* shine */
+    put(&c, 20, 8, 0xFFFFFFF0);
+    return c;
+}
+
+typedef struct { float x, y, vx, vy, ang, spin, ph, k; int far; } Pug;
+
 enum { FLY, SHIMMER, POOF, STREAK };
 
 /* Flying is the main show: the trick is a short treat every 20-30 seconds. */
@@ -137,7 +185,8 @@ typedef struct {
     int w, h, sc, frame, state, head, count, brkNext;
     float t, x, baseY, phase, speed, boost, frameAcc, stateT, nextTrick, fromX;
     float streakT, ringT, ringX, ringY, flash;
-    SDL_Texture *cat[CAT_FRAMES], *uni[CAT_FRAMES];
+    SDL_Texture *cat[CAT_FRAMES], *uni[CAT_FRAMES], *pugTex[2];
+    Pug pug[PUGS];
     int unicorn, hearts;                  /* easter egg */
     float uniX, uniY, uniT, eggT, pop;
     TrailPt trail[TRAIL];
@@ -219,6 +268,34 @@ static void unicorn_tick(Rainbow *r, float dt) {
     if (r->uniX < -uni_w(r)) r->unicorn = 0;
 }
 
+/* ---------- astronaut pugs drifting through space ---------- */
+
+static void spawn_pug(Rainbow *r, Pug *p, int initial) {
+    int dir = rand() % 2 ? 1 : -1;
+    p->far = rand() % 2;
+    p->k = p->far && r->sc > 1 ? (float)(r->sc * 2 / 3) : (float)r->sc;
+    float pw = PUG_W * p->k;
+    p->x = initial ? frand(0, (float)r->w) : (dir > 0 ? -pw : r->w + pw);
+    p->y = frand(0.1f, 0.9f) * r->h;
+    p->vx = dir * r->w * frand(0.025f, 0.05f) * (p->far ? 0.7f : 1);
+    p->vy = r->h * frand(-0.02f, 0.02f);
+    p->ang = frand(-30, 30);
+    p->spin = frand(8, 22) * (rand() % 2 ? 1 : -1);
+    p->ph = frand(0, 6);
+}
+
+static void pug_tick(Rainbow *r, float dt) {
+    for (int i = 0; i < PUGS; i++) {
+        Pug *p = &r->pug[i];
+        p->x += p->vx * dt;
+        p->y += p->vy * dt;
+        p->ang += p->spin * dt;
+        p->ph += dt * 5;
+        float m = PUG_W * p->k * 1.5f;
+        if (p->x < -m || p->x > r->w + m || p->y < -m || p->y > r->h + m) spawn_pug(r, p, 0);
+    }
+}
+
 /* Start a fresh pass just off the left edge. */
 static void new_pass(Rainbow *r) {
     r->x = -catw(r);
@@ -241,6 +318,11 @@ static void *create(SDL_Renderer *ren, int w, int h) {
         Canvas u = make_unicorn(i);
         r->uni[i] = canvas_texture(ren, &u);
     }
+    for (int i = 0; i < 2; i++) {
+        Canvas g = make_pug(i);
+        r->pugTex[i] = canvas_texture(ren, &g);
+    }
+    for (int i = 0; i < PUGS; i++) spawn_pug(r, &r->pug[i], 1);
     r->eggT = frand(90, 150);
     for (int i = 0; i < STARS; i++) {
         r->star[i][0] = frand(0, (float)w);
@@ -341,6 +423,7 @@ static void step(void *p, float dt) {
         b->vy *= 1 - 2.0f * dt;
     }
     unicorn_tick(r, dt);
+    pug_tick(r, dt);
     r->shootT += dt;
     if (r->shootT > 1.2f) { r->shootT = -frand(4, 9); r->shootX = frand(0.3f, 1.0f) * r->w; r->shootY = frand(0, 0.4f) * r->h; }
 }
@@ -409,6 +492,16 @@ static void draw(void *p, SDL_Renderer *ren) {
             thick_line(ren, x + r->w * 0.08f * f, y - r->h * 0.04f * f, x + r->w * 0.08f * g, y - r->h * 0.04f * g,
                        r->sc * 1.6f * (1 - f * 0.8f), c);
         }
+    }
+
+    for (int i = 0; i < PUGS; i++) {                     /* the pugs float behind the rainbow */
+        const Pug *g = &r->pug[i];
+        float pw = PUG_W * g->k, ph = PUG_H * g->k;
+        SDL_Rect d = { (int)(g->x - pw / 2), (int)(g->y - ph / 2), (int)pw, (int)ph };
+        SDL_Texture *t = r->pugTex[(int)g->ph % 2];
+        SDL_SetTextureColorMod(t, g->far ? 190 : 255, g->far ? 190 : 255, g->far ? 215 : 255);
+        SDL_RenderCopyEx(ren, t, NULL, &d, g->ang, NULL, g->vx < 0 ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE);
+        SDL_SetTextureColorMod(t, 255, 255, 255);
     }
 
     float bandH = 3.0f * r->sc;
@@ -496,6 +589,7 @@ static void draw(void *p, SDL_Renderer *ren) {
 static void destroy(void *p) {
     Rainbow *r = p;
     for (int i = 0; i < CAT_FRAMES; i++) { SDL_DestroyTexture(r->cat[i]); SDL_DestroyTexture(r->uni[i]); }
+    for (int i = 0; i < 2; i++) SDL_DestroyTexture(r->pugTex[i]);
     free(r);
 }
 
