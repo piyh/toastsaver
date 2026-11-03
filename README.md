@@ -43,7 +43,7 @@ Fifteen screensavers. Give the ones you like a heart: one heart plays that saver
   </tr>
   <tr>
     <td align="center"><img src="docs/germs.png" width="400"><br><b>GERMS</b></td>
-    <td></td>
+    <td align="center"><img src="docs/butterfly.png" width="400"><br><b>BUTTERFLY</b></td>
   </tr>
 </table>
 
@@ -61,6 +61,7 @@ Fifteen screensavers. Give the ones you like a heart: one heart plays that saver
 - **VOLCANO**: a night-time island volcano. Lava oozes and erupts, flows down the slopes and cools into rock so the mountain slowly grows, and hisses into steam where it reaches the sea. Smoke, ash, flying fire-bombs and rock chunks fill the sky. When it gets tall it blows up and a new island begins.
 - **CITY**: a sunny city street in pixel art. People stroll, chat on their phones, wear very cool sunglasses and ride bikes; dogs go for walks (one corgi has a very big butt); cats sit on fences, awnings and rooftops; pigeons scatter when someone walks by; cars and a bus stop at the traffic light; chimneys smoke and flocks of birds cross the sky.
 - **GERMS**: a drop of water under a microscope. Soft blue cells drift about while spiky green germs chase them, and a cell a germ touches turns into a germ. Big white helper cells blow soap bubbles that wash germs back into healthy cells. A bar in the corner shows the mix, with a dot for each round the cells or the germs win; if every cell turns green, a wave of bubbles washes across the slide. Cells can go off one edge and come back on the other, like Pac-Man (`GERM_WRAP`). Inspired by the Android live wallpaper Pixel Zombies. Tune it with the `GERM_*` settings below.
+- **BUTTERFLY**: the life cycle of a butterfly, close up in a garden. A butterfly lays an egg on its plant; the egg hatches, and the caterpillar eats its shell, chews holes in the leaves and eats them down, growing and shedding its skin. Then it hangs from a twig and turns into a chrysalis that slowly changes colour until the wings show through, and the butterfly comes out, pumps up its crumpled wings, dries them and flies off. A ring in the corner shows the four stages: egg, caterpillar, chrysalis, butterfly. Each round is a different kind on its own plant: a monarch on milkweed, a black swallowtail on parsley, a painted lady on thistle and a cabbage white on kale.
 - **NAME**: your name bounces around like the old DVD logo, with confetti when it hits a corner.
 
 ### Easter eggs
@@ -165,7 +166,7 @@ Settings live in `~/.config/toastsaver.conf`. The app edits it for you and keeps
 
 ```sh
 ENABLED=1               # 0 = turn the screensaver off
-SAVER=toasters          # toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava volcano city germs name random
+SAVER=toasters          # toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava volcano city germs name butterfly random
 RANDOM_SAVERS=          # savers SAVER=random picks from, e.g. toasters,pipes,lava (empty = all)
 CYCLE_MINUTES=10        # minutes before SAVER=random switches to another saver (0 = never)
 BOOK_WORDS_PER_MINUTE=75 # reading speed in the books saver: a page with more words stays up longer
