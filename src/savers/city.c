@@ -14,6 +14,7 @@
 #define MAXCLOUD 8
 #define MAXPERCH 40
 #define MAXSPOT 24
+#define MAXPROP 6
 
 enum { R_WALKER, R_SHADES, R_STANDER, R_DOGWALK, R_BIGBUTT, R_BIKE, R_CAR, R_BUS, R_CATWALK,
        R_CATSIT, R_PIGEON };
@@ -52,6 +53,8 @@ typedef struct {
 typedef struct { float x, y, vx, ph, size; int gull; } Bird;
 typedef struct { float x, y, v; int k; } Cloud;
 typedef struct { int x, y; float ph; } Spot;
+/* Street furniture that people walk in front of or behind, so it is sorted with them. */
+typedef struct { SDL_Texture *t; int x, y, w, h, base, light; } Prop;
 
 typedef struct {
     int w, h, px, W, H;
@@ -69,6 +72,8 @@ typedef struct {
     Cloud cloud[MAXCLOUD];
     Spot perch[MAXPERCH], chimney[MAXSPOT], antenna[MAXSPOT];
     int nperch, nchim, nant;
+    Prop prop[MAXPROP];
+    int nprop;
 } City;
 
 /* ---------- colours ---------- */
@@ -545,26 +550,56 @@ static void build_ground(City *s, Canvas *c) {
         for (int i = -5; i < 6; i += 2) dot(c, x + i, s->back + 8, 0x3A3028);
         tree(c, x, s->back + 8, 26, 0);
     }
-    int bx = s->stopX;                                               /* bus stop */
-    rect(c, bx, s->back + 2, 2, 40, 0x3A3D45);
-    rect(c, bx - 9, s->back + 4, 21, 11, 0x2F6FD0);
-    stamp_text(c, "BUS", bx - 7, s->back + 6, 0xFFFFFF);
-    rect(c, bx + 8, s->back + 22, 20, 2, 0x8A5A32);
-    rect(c, bx + 8, s->back + 16, 20, 2, 0x7A4A2A);
-    rect(c, bx + 9, s->back + 24, 1, 5, 0x3A3A3A); rect(c, bx + 26, s->back + 24, 1, 5, 0x3A3A3A);
-    int lx = s->lightX;                                              /* traffic light */
-    rect(c, lx, s->curb - 52, 2, 52, 0x2E3A3A);
-    rect(c, lx - 4, s->curb - 2, 10, 3, 0x2E3A3A);
-    rect(c, lx - 3, s->lightY - 1, 8, 20, 0x22262C);
-    for (int i = 0; i < 3; i++) fill_ellipse(c, lx + 1.0f, s->lightY + 3.0f + i * 6, 2, 2, rgb(0x3A3E46));
-    int hx = s->crossX - 40;                                         /* hydrant */
-    rect(c, hx, s->curb - 10, 6, 10, 0xD23A3A);
-    rect(c, hx - 1, s->curb - 12, 8, 2, 0xA82A2A);
-    rect(c, hx + 1, s->curb - 14, 4, 2, 0xD23A3A);
-    rect(c, hx - 2, s->curb - 7, 10, 2, 0xE85A5A);
-    rect(c, hx + 1, s->curb - 9, 1, 8, 0xF07A7A);
-    rect(c, hx - 1, s->curb - 1, 8, 1, 0x8A2222);
     outline(c, rgb(0x2A2230));
+}
+
+/* Cuts what was drawn on a full-size canvas down to its own small sprite. */
+static void add_prop(City *s, SDL_Renderer *ren, Canvas *full, int base, int light) {
+    outline(full, rgb(0x2A2230));
+    int x0 = full->w, y0 = full->h, x1 = -1, y1 = -1;
+    for (int y = 0; y < full->h; y++)
+        for (int x = 0; x < full->w; x++)
+            if (full->px[y * full->w + x]) {
+                if (x < x0) x0 = x;
+                if (x > x1) x1 = x;
+                if (y < y0) y0 = y;
+                if (y > y1) y1 = y;
+            }
+    if (x1 < 0 || s->nprop >= MAXPROP) { free(full->px); return; }
+    Canvas c = canvas_new(x1 - x0 + 1, y1 - y0 + 1);
+    for (int y = y0; y <= y1; y++) memcpy(&c.px[(y - y0) * c.w], &full->px[y * full->w + x0], (size_t)c.w * 4);
+    free(full->px);
+    s->prop[s->nprop++] = (Prop){ canvas_texture(ren, &c), x0, y0, x1 - x0 + 1, y1 - y0 + 1, base, light };
+}
+
+static void build_props(City *s, SDL_Renderer *ren) {
+    int bx = s->stopX;
+    Canvas c = canvas_new(s->W, s->H);                               /* bus stop sign */
+    rect(&c, bx, s->back + 2, 2, 40, 0x3A3D45);
+    rect(&c, bx - 9, s->back + 4, 21, 11, 0x2F6FD0);
+    stamp_text(&c, "BUS", bx - 7, s->back + 6, 0xFFFFFF);
+    add_prop(s, ren, &c, s->back + 42, 0);
+    c = canvas_new(s->W, s->H);                                      /* its bench */
+    rect(&c, bx + 8, s->back + 22, 20, 2, 0x8A5A32);
+    rect(&c, bx + 8, s->back + 16, 20, 2, 0x7A4A2A);
+    rect(&c, bx + 9, s->back + 24, 1, 5, 0x3A3A3A); rect(&c, bx + 26, s->back + 24, 1, 5, 0x3A3A3A);
+    add_prop(s, ren, &c, s->back + 29, 0);
+    int lx = s->lightX;
+    c = canvas_new(s->W, s->H);                                      /* traffic light */
+    rect(&c, lx, s->curb - 52, 2, 52, 0x2E3A3A);
+    rect(&c, lx - 4, s->curb - 2, 10, 3, 0x2E3A3A);
+    rect(&c, lx - 3, s->lightY - 1, 8, 20, 0x22262C);
+    for (int i = 0; i < 3; i++) fill_ellipse(&c, lx + 1.0f, s->lightY + 3.0f + i * 6, 2, 2, rgb(0x3A3E46));
+    add_prop(s, ren, &c, s->curb, 1);
+    int hx = s->crossX - 40;
+    c = canvas_new(s->W, s->H);                                      /* hydrant */
+    rect(&c, hx, s->curb - 10, 6, 10, 0xD23A3A);
+    rect(&c, hx - 1, s->curb - 12, 8, 2, 0xA82A2A);
+    rect(&c, hx + 1, s->curb - 14, 4, 2, 0xD23A3A);
+    rect(&c, hx - 2, s->curb - 7, 10, 2, 0xE85A5A);
+    rect(&c, hx + 1, s->curb - 9, 1, 8, 0xF07A7A);
+    rect(&c, hx - 1, s->curb - 1, 8, 1, 0x8A2222);
+    add_prop(s, ren, &c, s->curb, 0);
 }
 
 static Canvas make_cloud(int w) {
@@ -746,6 +781,7 @@ static void *create(SDL_Renderer *ren, int w, int h) {
     build_near(s, &c);
     build_ground(s, &c);
     s->near = canvas_texture(ren, &c);
+    build_props(s, ren);
     for (int i = 0; i < 3; i++) {
         c = make_cloud(50 + i * 22);
         s->cloudW[i] = c.w;
@@ -787,6 +823,7 @@ static void destroy(void *p) {
     SDL_DestroyTexture(s->near);
     for (int i = 0; i < 3; i++) SDL_DestroyTexture(s->cloudTex[i]);
     if (s->small) SDL_DestroyTexture(s->small);
+    for (int i = 0; i < s->nprop; i++) SDL_DestroyTexture(s->prop[i].t);
     free(s);
 }
 
@@ -1333,7 +1370,8 @@ static void draw_car(const City *s, SDL_Renderer *r, const Actor *a) {
     }
 }
 
-static void draw_actor(const City *s, SDL_Renderer *r, const Actor *a) {
+/* dog: for a dog walker, draw just the dog (it is sorted on its own, a step nearer). */
+static void draw_actor(const City *s, SDL_Renderer *r, const Actor *a, int dog) {
     switch (a->role) {
     case R_WALKER: case R_SHADES: case R_STANDER:
         draw_person(s, r, a, a->state == S_WALK, 0);
@@ -1343,7 +1381,7 @@ static void draw_actor(const City *s, SDL_Renderer *r, const Actor *a) {
         const Breed *b = &BREEDS[a->breed];
         int L = big ? 16 : b->L;
         float dx = a->x + D * (L / 2 + 16), dy = a->y + 2;
-        draw_dog(s, r, dx, dy, D, a->ph * 1.8f, moving, a->state == S_SNIFF, b, big, a->t);
+        if (dog) { draw_dog(s, r, dx, dy, D, a->ph * 1.8f, moving, a->state == S_SNIFF, b, big, a->t); break; }
         draw_person(s, r, a, moving, a->state == S_SNIFF);
         float hx = a->x - D * sinf(a->ph) * 3, hy = a->y - (a->kid ? 8 : 12) - 1;
         line(s, r, hx, hy, dx + D * (L / 2 - 3), dy - (big ? 4 : b->legH) - (big ? 8 : b->bh) - 1, 1, 0xC83A3A);
@@ -1394,21 +1432,43 @@ static void draw_scene(City *s, SDL_Renderer *r) {
             box(s, r, s->antenna[i].x - 2, s->antenna[i].y - 2, 5, 5, 0xFF3A3A, 80);
             box(s, r, s->antenna[i].x - 1, s->antenna[i].y - 1, 3, 3, 0xFF4A4A, 255);
         }
-    int lt = light(s);                                               /* the traffic light */
-    static const uint32_t LAMP[3] = { 0x3AE86A, 0xFFC82A, 0xFF3A3A };
-    float ly = s->lightY + 3.0f + (2 - lt) * 6;
-    ell(s, r, s->lightX + 1.0f, ly, 4, 4, LAMP[lt], 70);
-    ell(s, r, s->lightX + 1.0f, ly, 2, 2, LAMP[lt], 255);
-    int order[MAXA];
-    for (int i = 0; i < s->na; i++) order[i] = i;
-    for (int i = 1; i < s->na; i++) {                                /* back to front */
-        int k = order[i];
-        float ky = s->a[k].role == R_CATSIT ? s->a[k].y - 1000 : s->a[k].y;
-        int j = i - 1;
-        while (j >= 0 && (s->a[order[j]].role == R_CATSIT ? s->a[order[j]].y - 1000 : s->a[order[j]].y) > ky) { order[j + 1] = order[j]; j--; }
-        order[j + 1] = k;
+    /* Everything standing on the ground is drawn back to front by where its feet are:
+       people, their dogs (a step nearer than them), the cars and the street furniture.
+       Perched cats sit on the buildings, behind all of it. */
+    enum { MAXITEM = MAXA * 2 + MAXPROP };
+    float key[MAXITEM];
+    int what[MAXITEM], n = 0;                                        /* >= 0 actor, -1-k dog of actor k, -100-k prop k */
+    for (int i = 0; i < s->na; i++) {
+        const Actor *a = &s->a[i];
+        key[n] = a->role == R_CATSIT ? a->y - 1000 : a->y;
+        what[n++] = i;
+        if (a->role == R_DOGWALK || a->role == R_BIGBUTT) { key[n] = a->y + 2; what[n++] = -1 - i; }
     }
-    for (int i = 0; i < s->na; i++) draw_actor(s, r, &s->a[order[i]]);
+    for (int i = 0; i < s->nprop; i++) { key[n] = (float)s->prop[i].base; what[n++] = -100 - i; }
+    for (int i = 1; i < n; i++) {                                    /* back to front */
+        float k = key[i];
+        int w = what[i], j = i - 1;
+        while (j >= 0 && key[j] > k) { key[j + 1] = key[j]; what[j + 1] = what[j]; j--; }
+        key[j + 1] = k;
+        what[j + 1] = w;
+    }
+    for (int i = 0; i < n; i++) {
+        int w = what[i];
+        if (w >= 0) draw_actor(s, r, &s->a[w], 0);
+        else if (w > -100) draw_actor(s, r, &s->a[-1 - w], 1);
+        else {
+            const Prop *p = &s->prop[-100 - w];
+            SDL_Rect d = { p->x * s->px, p->y * s->px, p->w * s->px, p->h * s->px };
+            SDL_RenderCopy(r, p->t, NULL, &d);
+            if (p->light) {                                          /* the lit lamp */
+                static const uint32_t LAMP[3] = { 0x3AE86A, 0xFFC82A, 0xFF3A3A };
+                int lt = light(s);
+                float ly = s->lightY + 3.0f + (2 - lt) * 6;
+                ell(s, r, s->lightX + 1.0f, ly, 4, 4, LAMP[lt], 70);
+                ell(s, r, s->lightX + 1.0f, ly, 2, 2, LAMP[lt], 255);
+            }
+        }
+    }
 }
 
 /* A small view (a picker tile) is drawn full size off screen, then shrunk into place. */

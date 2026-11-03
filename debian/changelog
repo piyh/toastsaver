@@ -12,6 +12,9 @@ toastsaver (1.8.0) stable; urgency=medium
   * Settings: rows are grouped, and BOOKS: EACH PAGE sets how long each
     poem page stays up.
   * Rainbow: astronaut pugs in glass helmets drift through space.
+  * City: people walk in front of or behind the traffic light, hydrant,
+    bus stop and bench depending on where they are, and dogs are drawn by
+    their own spot instead of their owner's.
 
  -- piyh <10518137+piyh@users.noreply.github.com>  Tue, 03 Nov 2026 03:00:00 +0000
 
