@@ -9,7 +9,7 @@
 
 /* ---------- settings ---------- */
 
-#define DEFAULTS { 1, "toasters", "HELLO", 5, 30, 0, 0, 30, "", 10, 9, 60, 2, 5, 6, 4, 1 }
+#define DEFAULTS { 1, "toasters", "HELLO", 5, 30, 0, 0, 30, "", 10, 75, 60, 2, 5, 6, 4, 1 }
 Config g_config = DEFAULTS;
 const Config CONFIG_DEFAULTS = DEFAULTS;
 
@@ -56,6 +56,8 @@ static int clampi(int n, int lo, int hi, int fallback, const char *v) {
     return n < lo ? lo : n > hi ? hi : n;
 }
 
+#define OLD_BOOK_KEY "BOOK_PAGE_SECONDS="   /* read once and turned into BOOK_WORDS_PER_MINUTE; config_save drops it */
+
 /* Applies one KEY=value line. Returns 0 if the key isn't one of ours. */
 int config_apply(const char *line) {
     char v[256];
@@ -71,7 +73,9 @@ int config_apply(const char *line) {
     else if (!strncmp(line, "FPS=", 4)) g_config.fps = atoi(v) > 0 ? atoi(v) : 0;
     else if (!strncmp(line, "RANDOM_SAVERS=", 14)) snprintf(g_config.randomSavers, sizeof g_config.randomSavers, "%s", v);
     else if (!strncmp(line, "CYCLE_MINUTES=", 14)) g_config.cycleMinutes = minutes(v, 0, 10);
-    else if (!strncmp(line, "BOOK_PAGE_SECONDS=", 18)) g_config.bookPageSecs = minutes(v, 1, 9);
+    else if (!strncmp(line, "BOOK_WORDS_PER_MINUTE=", 22)) g_config.bookWpm = clampi(atoi(v), BOOK_MIN_WPM, CONFIG_MAX_MINUTES, CONFIG_DEFAULTS.bookWpm, v);
+    else if (!strncmp(line, OLD_BOOK_KEY, strlen(OLD_BOOK_KEY)) && atoi(v) > 0)   /* before 1.10: seconds a page, about 12 words */
+        g_config.bookWpm = clampi(700 / atoi(v), BOOK_MIN_WPM, CONFIG_MAX_MINUTES, CONFIG_DEFAULTS.bookWpm, v);
     else if (!strncmp(line, "GERM_CELLS=", 11)) g_config.germCells = clampi(atoi(v), 0, 300, CONFIG_DEFAULTS.germCells, v);
     else if (!strncmp(line, "GERM_HELPERS=", 13)) g_config.germHelpers = clampi(atoi(v), 0, 100, CONFIG_DEFAULTS.germHelpers, v);
     else if (!strncmp(line, "GERM_SEEDS=", 11)) g_config.germSeeds = clampi(atoi(v), 0, 50, CONFIG_DEFAULTS.germSeeds, v);
@@ -94,7 +98,7 @@ void config_load(void) {
 #define NKEYS 17
 static const char *const KEYS[NKEYS] = {
     "ENABLED=", "SAVER=", "NAME=", "IDLE_MINUTES=", "SCREEN_OFF_MINUTES=", "CLOCK=", "CLOCK_24H=",
-    "FPS=", "RANDOM_SAVERS=", "CYCLE_MINUTES=", "BOOK_PAGE_SECONDS=",
+    "FPS=", "RANDOM_SAVERS=", "CYCLE_MINUTES=", "BOOK_WORDS_PER_MINUTE=",
     "GERM_CELLS=", "GERM_HELPERS=", "GERM_SEEDS=", "GERM_SPEED=", "GERM_RANGE=", "GERM_WRAP=" };
 static const char *const HELP[NKEYS] = {
     "# 0 = turn the screensaver off",
@@ -107,7 +111,7 @@ static const char *const HELP[NKEYS] = {
     "# frames per second; 30 saves power, 0 = as fast as the display",
     "# savers SAVER=random picks from, comma-separated (empty = all)",
     "# minutes before SAVER=random switches to another saver (0 = never)",
-    "# seconds each page of a poem stays up in the books saver",
+    "# reading speed in the books saver: a page with more words stays up longer",
     "# healthy cells the germs saver starts with",
     "# helper cells that blow soap bubbles in the germs saver",
     "# germs at the start, and how many come back when none are left",
@@ -127,7 +131,7 @@ static void format_key(int k, char *out, size_t n) {
     case 7: snprintf(out, n, "FPS=%d", g_config.fps); break;
     case 8: snprintf(out, n, "RANDOM_SAVERS=%s", g_config.randomSavers); break;
     case 9: snprintf(out, n, "CYCLE_MINUTES=%d", g_config.cycleMinutes); break;
-    case 10: snprintf(out, n, "BOOK_PAGE_SECONDS=%d", g_config.bookPageSecs); break;
+    case 10: snprintf(out, n, "BOOK_WORDS_PER_MINUTE=%d", g_config.bookWpm); break;
     case 11: snprintf(out, n, "GERM_CELLS=%d", g_config.germCells); break;
     case 12: snprintf(out, n, "GERM_HELPERS=%d", g_config.germHelpers); break;
     case 13: snprintf(out, n, "GERM_SEEDS=%d", g_config.germSeeds); break;
@@ -159,6 +163,7 @@ int config_save(void) {
     while (in && fgets(line, sizeof line, in)) {
         int k = 0;
         while (k < NKEYS && strncmp(line, KEYS[k], strlen(KEYS[k]))) k++;
+        if (!strncmp(line, OLD_BOOK_KEY, strlen(OLD_BOOK_KEY))) continue;   /* now BOOK_WORDS_PER_MINUTE */
         if (k == NKEYS) { fputs(line, out); continue; }
         write_key(out, k, strchr(line, '#'));       /* keep a trailing "# explanation" */
         wrote[k] = 1;

@@ -4,7 +4,7 @@
    Every change is saved at once; timing changes restart the idle watcher when the page
    closes so they apply without logging out. The rows that need the idle watcher are
    greyed out where it isn't installed (the Mac preview), instead of doing nothing.
-   The number rows (minutes, and the books' seconds per page) step through a list with
+   The number rows (minutes, and the books' reading speed) step through a list with
    - and +, keep going past its end, and take any number typed in after tapping the value. */
 #define _POSIX_C_SOURCE 200809L
 #include "engine.h"
@@ -18,7 +18,7 @@
 static const int IDLE_OPTS[] = { 1, 2, 3, 5, 10, 15, 20, 30, 45, 60 };
 static const int OFF_OPTS[] = { 0, 5, 10, 15, 20, 30, 45, 60, 90, 120 };
 static const int CYCLE_OPTS[] = { 0, 2, 5, 10, 15, 20, 30, 45, 60, 120 };
-static const int BOOK_OPTS[] = { 3, 5, 7, 9, 12, 15, 20, 30, 45, 60 };
+static const int BOOK_OPTS[] = { 30, 45, 60, 75, 90, 110, 130, 150, 180, 220 };   /* words a minute */
 #define NOPTS 10
 #define PAST_END 30   /* past the end of a list, - and + move this many minutes */
 
@@ -42,7 +42,7 @@ static int is_number(int row) { return (row >= R_IDLE && row <= R_CYCLE) || row 
 
 static int *minutes_of(int row) {
     return row == R_IDLE ? &g_config.idleMinutes : row == R_OFF ? &g_config.screenOffMinutes
-         : row == R_BOOKS ? &g_config.bookPageSecs : &g_config.cycleMinutes;
+         : row == R_BOOKS ? &g_config.bookWpm : &g_config.cycleMinutes;
 }
 
 static const int *opts_of(int row) {
@@ -149,7 +149,8 @@ static void end_edit(Settings *s, int keep) {
     SDL_StopTextInput();
     if (!keep || !s->typed[0]) return;
     int n = atoi(s->typed);
-    if ((row == R_IDLE || row == R_BOOKS) && n < 1) n = 1;
+    if (row == R_IDLE && n < 1) n = 1;
+    if (row == R_BOOKS && n < BOOK_MIN_WPM) n = BOOK_MIN_WPM;
     *minutes_of(row) = n;
     fix_order();
     if (row == R_IDLE || row == R_OFF) s->timingChanged = 1;
@@ -206,7 +207,7 @@ static void minutes_value(const Settings *s, SDL_Renderer *r, int row, int sc, i
     if (s->edit == row) {
         SDL_Rect box = { f.x, cy - FONT_H * sc, f.w, FONT_H * sc * 2 };
         fill_rrect(r, box, box.h / 4, hexcol(0xFFFFFF));
-        snprintf(val, sizeof val, "%s %s", s->typed, row == R_BOOKS ? "SEC" : "MIN");
+        snprintf(val, sizeof val, "%s %s", s->typed, row == R_BOOKS ? "WPM" : "MIN");
         int x = f.x + (f.w - text_width(val, sc)) / 2;
         draw_text(r, val, x, cy - FONT_H * sc / 2, sc, hexcol(0x10233A));
         if ((int)(s->t * 2) % 2 == 0) {                      /* a blinking caret after the digits */
@@ -217,7 +218,7 @@ static void minutes_value(const Settings *s, SDL_Renderer *r, int row, int sc, i
         return;
     }
     if (v == 0) snprintf(val, sizeof val, "NEVER");
-    else snprintf(val, sizeof val, "%d %s", v, row == R_BOOKS ? "SEC" : "MIN");
+    else snprintf(val, sizeof val, "%d %s", v, row == R_BOOKS ? "WPM" : "MIN");
     text_at(r, val, f.x + (f.w - text_width(val, sc)) / 2, cy, sc, dim ? hexcol(0x7F93A6) : hexcol(0xFFFFFF));
 }
 
@@ -231,7 +232,7 @@ void settings_draw(void *p, SDL_Renderer *r) {
             (int)(s->h * 0.07f), tsc, hexcol(0xFFE45C));
 
     static const char *const labels[ROWS] = { "SCREENSAVER", "START AFTER", "SCREEN OFF AFTER", "TAKE TURNS EVERY",
-                                              "SHOW CLOCK", "CLOCK STYLE", "BOOKS: EACH PAGE", "SAVE POWER" };
+                                              "SHOW CLOCK", "CLOCK STYLE", "BOOKS: READING SPEED", "SAVE POWER" };
     int sc = (int)(s->rowH * 0.3f / FONT_H);
     if (sc < 1) sc = 1;
     while (sc > 1 && text_width("SCREEN OFF AFTER", sc) > s->w * 0.46f) sc--;
@@ -247,7 +248,7 @@ void settings_draw(void *p, SDL_Renderer *r) {
         text_at(r, labels[i], rw.x + rw.h / 3, cy, sc, dim ? hexcol(0x7F93A6) : hexcol(0xFFFFFF));
         if (is_number(i)) {
             int v = *minutes_of(i);
-            int lo = i == R_IDLE || i == R_BOOKS ? v > 1 : v != 0;
+            int lo = i == R_BOOKS ? v > BOOK_OPTS[0] : i == R_IDLE ? v > 1 : v != 0;
             int hi = v + PAST_END <= CONFIG_MAX_MINUTES;
             round_button(r, s->minus[i], 0, lo && !dim);
             round_button(r, s->plus[i], 1, hi && !dim);
@@ -266,7 +267,8 @@ void settings_draw(void *p, SDL_Renderer *r) {
     else button(r, s->reset, "RESET", 0x78909C, 0x455A64);
     button(r, s->done, "BACK", 0x1E88E5, 0x0D4C8C);
     int nsc = sc * 2 / 3 > 1 ? sc * 2 / 3 : 1;
-    const char *note = s->edit >= 0 ? "TYPE THE MINUTES AND PRESS ENTER"
+    const char *note = s->edit == R_BOOKS ? "TYPE THE WORDS A MINUTE AND PRESS ENTER"
+                     : s->edit >= 0 ? "TYPE THE MINUTES AND PRESS ENTER"
                      : s->resetArm > 0 ? "TAP SURE? TO PUT EVERY SETTING HERE BACK"
                      : s->watcher ? "TAP A TIME TO TYPE ONE IN. CHANGES ARE SAVED RIGHT AWAY"
                      : "STARTING BY ITSELF WHEN IDLE WORKS ON LINUX ONLY";
@@ -288,7 +290,7 @@ static void reset_defaults(Settings *s) {
     g_config.clock = d->clock;
     g_config.clock24 = d->clock24;
     g_config.fps = d->fps;
-    g_config.bookPageSecs = d->bookPageSecs;
+    g_config.bookWpm = d->bookWpm;
     s->timingChanged = 1;
     config_save();
 }

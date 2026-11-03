@@ -136,7 +136,7 @@ Click the **gear** in the top-left corner of the app. Changes are saved right aw
 - Tap a time to type in any number of minutes (up to 9999); **-** and **+** also keep going past the usual choices.
 - **Show clock**: puts the time over any screensaver. It drifts to a new spot about once a minute, so it never sits in one place.
 - **Clock style**: 12-hour or 24-hour.
-- **Books: each page**: how many seconds each page of a poem stays up in BOOKS.
+- **Books: reading speed**: how fast the poems in BOOKS are read, in words a minute. A page with more words stays up longer; even a short one stays at least a few seconds so there's time to look at the picture. 75 is a gentle read-aloud pace; turn it down for a new reader.
 - **Save power**: draws savers at 30 frames a second instead of as fast as the display can, which roughly halves the work and looks the same for these savers. On by default.
 - **Test it** shows the current screensaver; **Reset** (tap it twice) puts every setting on this page back to how it started; **Back** returns to the tiles.
 
@@ -168,7 +168,7 @@ ENABLED=1               # 0 = turn the screensaver off
 SAVER=toasters          # toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava volcano city germs name random
 RANDOM_SAVERS=          # savers SAVER=random picks from, e.g. toasters,pipes,lava (empty = all)
 CYCLE_MINUTES=10        # minutes before SAVER=random switches to another saver (0 = never)
-BOOK_PAGE_SECONDS=9     # seconds each page of a poem stays up in the books saver
+BOOK_WORDS_PER_MINUTE=75 # reading speed in the books saver: a page with more words stays up longer
 GERM_CELLS=60           # healthy cells the germs saver starts with (0-300)
 GERM_HELPERS=2          # helper cells that blow soap bubbles (0-100)
 GERM_SEEDS=5            # germs at the start, and how many come back when none are left (0-50)

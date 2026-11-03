@@ -99,8 +99,8 @@ static const char *const STORIES[PICS] = {
 #define TK 2                             /* the poem is set at 1/TK the size: its page is drawn TK times finer */
 #define POEM_LH (FONT_H + 3)
 #define MAXLINES 64
-#define PAGE_SECS ((float)g_config.bookPageSecs)   /* how long each page of a poem stays up (BOOK_PAGE_SECONDS) */
 #define TURN_T 1.1f                      /* how long one page takes to turn over */
+#define MIN_PAGE_SECS 4.0f               /* even a short page stays up this long, after its turn */
 #define PIC_SPEED 0.7f                   /* the pictures move a bit slower than real time */
 
 typedef struct { int x, y, w, h, col; unsigned seed; } Book;   /* art pixels, y = top */
@@ -116,6 +116,7 @@ typedef struct {
     int state, cur, pic, lastPic, picFrame;
     int page, leftPage, nlines, npages;
     int lineS[MAXLINES], lineL[MAXLINES], lineGap[MAXLINES], pageStart[MAXLINES + 1];
+    float pageT[MAXLINES + 1];           /* when each page comes up in SHOW; pageT[npages] is the end */
     Book books[MAXBOOKS];
     int nbooks, home[PICS];               /* each story always lives in the same book */
     SDL_Texture *shelf, *spine, *cover, *left, *next, *right, *picTex, *cat[CAT_FRAMES];
@@ -591,6 +592,14 @@ static int wrap(const char *s, int cols, int *st, int *ln, int *brk, int max) {
         p = *e ? e + 1 : e;
     }
     return n;
+}
+
+/* Words in the n letters at s. */
+static int count_words(const char *s, int n) {
+    int words = 0;
+    for (int i = 0; i < n; i++)
+        if (s[i] != ' ' && (i == 0 || s[i - 1] == ' ')) words++;
+    return words;
 }
 
 /* Lines centred on cx, starting at y. */
@@ -1203,6 +1212,14 @@ static void choose_book(Books *b) {
     }
     b->pageStart[b->npages] = b->nlines;
     b->page = 0;
+    b->pageT[0] = 0;
+    for (int p = 0; p < b->npages; p++) {             /* each page stays up as long as its words take to read */
+        int words = 0;
+        for (int i = b->pageStart[p]; i < b->pageStart[p + 1]; i++)
+            words += count_words(STORIES[b->pic] + b->lineS[i], b->lineL[i]);
+        float read = words * 60.0f / (float)g_config.bookWpm;
+        b->pageT[p + 1] = b->pageT[p] + TURN_T + (read > MIN_PAGE_SECS ? read : MIN_PAGE_SECS);
+    }
 }
 
 /* Textures need the renderer, so they are made in draw() for the chosen book. */
@@ -1302,7 +1319,7 @@ static void step(void *p, float dt) {
         case LIFT: set_state(b, FLYOUT, 1.5f); break;
         case FLYOUT: set_state(b, OPEN, 1.0f); break;
         case OPEN:
-            set_state(b, SHOW, b->npages * PAGE_SECS + 2);
+            set_state(b, SHOW, b->pageT[b->npages] + 2);
             sparkle_burst(b, b->w * 0.5f, b->h * 0.5f - b->ch * S * 0.3f, 10);
             break;
         case SHOW: set_state(b, CLOSE, 0.9f); break;
@@ -1320,8 +1337,7 @@ static void step(void *p, float dt) {
         }
     }
     if (b->state == SHOW) {                            /* now and then a sparkle drifts up */
-        int pg = (int)(b->stateT / PAGE_SECS);
-        b->page = pg < b->npages ? pg : b->npages - 1;
+        while (b->page < b->npages - 1 && b->stateT >= b->pageT[b->page + 1]) b->page++;
         b->spawn += dt * 1.2f;
         while (b->spawn >= 1) {
             b->spawn -= 1;
@@ -1462,7 +1478,7 @@ static void draw(void *p, SDL_Renderer *r) {
         Canvas lp = make_left_page(b);
         b->next = canvas_texture(r, &lp);
     }
-    float turnK = b->state == SHOW && b->next ? fmodf(b->stateT, PAGE_SECS) / TURN_T : 1;
+    float turnK = b->state == SHOW && b->next ? (b->stateT - b->pageT[b->page]) / TURN_T : 1;
     if (b->next && turnK >= 1) {                        /* the leaf has landed: it is the left page now */
         SDL_DestroyTexture(b->left);
         b->left = b->next;

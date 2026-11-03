@@ -29,7 +29,7 @@ typedef struct {
     int fps;                 /* FPS: frame-rate cap for savers, 30 by default (0 = as fast as the display) */
     char randomSavers[256];  /* RANDOM_SAVERS: ids SURPRISE picks from ("" = every saver) */
     int cycleMinutes;        /* CYCLE_MINUTES: SURPRISE moves on to another saver this often (0 = never) */
-    int bookPageSecs;        /* BOOK_PAGE_SECONDS: how long each page of a poem stays up in BOOKS */
+    int bookWpm;             /* BOOK_WORDS_PER_MINUTE: reading speed in BOOKS; each page stays up as long as its words take */
     int germCells;           /* GERM_CELLS: healthy cells the GERMS saver starts with */
     int germHelpers;         /* GERM_HELPERS: helper cells that blow soap bubbles */
     int germSeeds;           /* GERM_SEEDS: germs it starts with, and how many come back when none are left */
@@ -39,6 +39,7 @@ typedef struct {
 } Config;
 
 #define CONFIG_MAX_MINUTES 9999   /* the most any minutes setting can be */
+#define BOOK_MIN_WPM 10           /* the slowest BOOK_WORDS_PER_MINUTE */
 extern Config g_config;
 extern const Config CONFIG_DEFAULTS;
 const char *config_path(void);
