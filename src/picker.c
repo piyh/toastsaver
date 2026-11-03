@@ -1,7 +1,9 @@
 /* The picker, the app's front page: big live tiles a six-year-old can use. Tap a tile to
-   choose it (saved immediately), tap it again or press TRY IT to watch it. SURPRISE ME
-   (below the tiles) switches to a random saver each time; while it is on, tapping a
-   tile puts it in or takes it out of the surprise mix. The gear in the top-left corner
+   choose it (saved immediately). SURPRISE ME (below the tiles) switches to a random saver
+   each time; while it is on, tapping a tile puts it in or takes it out of the surprise
+   mix. The bottom third of each picture is a smoky-glass TRY IT! band: tapping it runs just
+   that saver full screen, and changes neither the choice, the mix nor the saved config.
+   The gear in the top-left corner
    opens the settings page in the same window. */
 #include "engine.h"
 #include <math.h>
@@ -12,19 +14,19 @@
 #define TILES SAVER_COUNT
 
 typedef struct {
-    SDL_Rect box, preview;
+    SDL_Rect box, pic, preview, band;   /* pic: the framed picture under the title */   /* band: the TRY IT! zone over the bottom of the picture */
     const Saver *sv;
     void *st;
 } Tile;
 
 typedef struct {
     SDL_Renderer *r;
-    int w, h, sel, hover, quit;
+    int w, h, sel, hover, hoverBand, quit;
     int surprise;          /* SAVER=random; sel is then just the keyboard cursor */
     float t, bump, titleH, labelH;
     Tile tile[MAX_TILES];
     int cols;
-    SDL_Rect tryBtn, nameBox, surpriseBtn;
+    SDL_Rect nameBox, surpriseBtn;
     SDL_Point closeC, gearC;
     int closeR;
     int openSettings;
@@ -56,7 +58,7 @@ static void layout(Picker *p) {
     p->cols = bestCols;
     int rows = (TILES + p->cols - 1) / p->cols;
     int tw = bestPw + 2 * pad, th = bestPh + pad + label;
-    p->labelH = (float)label;
+    p->labelH = (float)label;   /* the saver's name goes above its picture, in this row */
     int top = (int)gridTop + ((int)(gridBottom - gridTop) - (rows * th + (rows - 1) * m)) / 2;
     for (int i = 0; i < TILES; i++) {
         Tile *t = &p->tile[i];
@@ -65,12 +67,14 @@ static void layout(Picker *p) {
         int inRow = row == rows - 1 ? TILES - row * p->cols : p->cols;
         int left = (W - (inRow * tw + (inRow - 1) * m)) / 2;
         t->box = (SDL_Rect){ left + col * (tw + m), top + row * (th + m), tw, th };
-        t->preview = (SDL_Rect){ t->box.x + pad, t->box.y + pad, bestPw, bestPh };
+        t->pic = (SDL_Rect){ t->box.x + pad / 2, t->box.y + label, tw - pad, bestPh + pad };
+        t->preview = (SDL_Rect){ t->pic.x + pad / 2, t->pic.y + pad / 2, bestPw, bestPh };
+        int bh = bestPh * 33 / 100;
+        t->band = (SDL_Rect){ t->preview.x, t->preview.y + bestPh - bh, bestPw, bh };
         t->st = t->sv->create(p->r, t->preview.w, t->preview.h);
     }
     int bh = (int)(bottomH * 0.62f), by = (int)gridBottom + (int)(bottomH - bh) / 2;
     p->surpriseBtn = (SDL_Rect){ 0, by, W * 29 / 100, bh };
-    p->tryBtn = (SDL_Rect){ 0, by, W * 3 / 10, bh };
     p->nameBox = (SDL_Rect){ W * 68 / 100, by, W * 28 / 100, bh };
     p->closeR = (int)(p->titleH * 0.3f);
     p->closeC = (SDL_Point){ W - m - p->closeR, (int)(p->titleH / 2) };
@@ -85,12 +89,11 @@ static void save_choice(Picker *p) {
 }
 
 /* Arrow keys and taps both land here. With SURPRISE on they only move the cursor. */
-/* Footer: SURPRISE ME and TRY IT side by side in the middle. When NAME is chosen
-   they move left and center to make room for the name box on the right. */
+/* Footer: SURPRISE ME in the middle. When NAME is chosen it moves left to make room for
+   the name box on the right. */
 static void place_footer(Picker *p) {
-    int W = p->w, gap = W * 3 / 100;
-    p->surpriseBtn.x = name_selected(p) ? W * 4 / 100 : (W - p->surpriseBtn.w - gap - p->tryBtn.w) / 2;
-    p->tryBtn.x = name_selected(p) ? (W - p->tryBtn.w) / 2 : p->surpriseBtn.x + p->surpriseBtn.w + gap;
+    int W = p->w;
+    p->surpriseBtn.x = name_selected(p) ? W * 4 / 100 : (W - p->surpriseBtn.w) / 2;
 }
 
 static void select_tile(Picker *p, int i) {
@@ -126,7 +129,7 @@ void *picker_create(SDL_Renderer *r, int w, int h) {
     p->r = r;
     p->w = w;
     p->h = h;
-    p->hover = -1;
+    p->hover = p->hoverBand = -1;
     layout(p);
     p->surprise = !strcmp(g_config.saver, "random");
     for (int i = 0; i < SAVER_COUNT; i++)
@@ -186,7 +189,7 @@ static void centered_text(SDL_Renderer *r, const char *s, SDL_Rect box, float he
     draw_text_shadow(r, s, box.x + (box.w - text_width(s, sc)) / 2, box.y + (box.h - FONT_H * sc) / 2, sc, c);
 }
 
-/* A chunky button with a darker shadow underneath, like TRY IT. */
+/* A chunky button with a darker shadow underneath, like SURPRISE ME. */
 static void push_button(SDL_Renderer *r, SDL_Rect b, uint32_t face, uint32_t shadow) {
     fill_rrect(r, (SDL_Rect){ b.x, b.y + b.h / 12, b.w, b.h }, b.h / 3, hexcol(shadow));
     fill_rrect(r, b, b.h / 3, hexcol(face));
@@ -196,24 +199,25 @@ static void draw_tile(Picker *p, SDL_Renderer *r, int i) {
     Tile *t = &p->tile[i];
     int cur = i == p->sel, inMix = saver_in_mix(t->sv);
     int lit = p->surprise ? inMix : cur;   /* lit tiles get the check mark */
-    SDL_Rect box = t->box;
+    SDL_Rect box = t->pic;                 /* the picture's frame: glow, rings and badges live here */
+    /* Growing keeps the top edge put, so the pop never runs into the title above. */
     if (cur && !p->surprise) {                         /* chosen tile pops out a little */
         int grow = (int)(box.h * (0.03f + 0.04f * p->bump));
-        box = (SDL_Rect){ box.x - grow, box.y - grow, box.w + 2 * grow, box.h + 2 * grow };
+        box = (SDL_Rect){ box.x - grow, box.y, box.w + 2 * grow, box.h + grow };
         int glow = (int)(box.h * 0.035f * (1.0f + 0.3f * sinf(p->t * 5)));
-        SDL_Rect outer = { box.x - glow, box.y - glow, box.w + 2 * glow, box.h + 2 * glow };
+        SDL_Rect outer = { box.x - glow, box.y - glow / 3, box.w + 2 * glow, box.h + glow + glow / 3 };   /* little above: the title sits there */
         fill_rrect(r, outer, box.h / 8, hexcol(0xFFE45C));
     } else if (p->surprise && (cur || inMix)) {
         if (cur) {                                     /* keyboard cursor / just tapped */
             int grow = (int)(box.h * 0.04f * p->bump);
-            box = (SDL_Rect){ box.x - grow, box.y - grow, box.w + 2 * grow, box.h + 2 * grow };
+            box = (SDL_Rect){ box.x - grow, box.y, box.w + 2 * grow, box.h + grow };
         }
         int ring = (int)(box.h * (cur ? 0.045f : 0.03f));
-        SDL_Rect outer = { box.x - ring, box.y - ring, box.w + 2 * ring, box.h + 2 * ring };
-        fill_rrect(r, outer, box.h / 8, cur ? hexcol(0xFFE45C) : hexcol(0xFF8A3D));
-    } else if (i == p->hover) {
-        SDL_Rect outer = { box.x - 3, box.y - 3, box.w + 6, box.h + 6 };
-        fill_rrect(r, outer, box.h / 8, hexcol(0xB8C4FF));
+        SDL_Rect outer = { box.x - ring, box.y - ring / 3, box.w + 2 * ring, box.h + ring + ring / 3 };
+        fill_rrect(r, outer, box.h / 8, cur ? hexcol(0xFFE45C) : i == p->hover ? hexcol(0xFFD2B0) : hexcol(0xFF8A3D));
+    } else if (i == p->hover) {                        /* pointer on the picture: tap to choose / toggle */
+        SDL_Rect outer = { box.x - 3, box.y - 1, box.w + 6, box.h + 4 };
+        fill_rrect(r, outer, box.h / 8, hexcol(0xFFD2B0));
     }
     fill_rrect(r, box, box.h / 9, hexcol(0x16133A));
 
@@ -225,10 +229,38 @@ static void draw_tile(Picker *p, SDL_Renderer *r, int i) {
         SDL_RenderFillRect(r, &t->preview);
     }
 
-    SDL_Rect label = { t->box.x, t->box.y + t->box.h - (int)p->labelH, t->box.w, (int)p->labelH };
+    /* The TRY IT! band: smoky glass over the picture, never dimmed by the mix. It lights up
+       on its own when the pointer is on it; the frame around the picture stays as it was. */
+    {
+        SDL_Rect b = t->band;
+        int hot = i == p->hoverBand;
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(r, 0x14, 0x10, 0x30, hot ? 150 : 95);
+        SDL_RenderFillRect(r, &b);
+        SDL_Rect wash = { b.x, b.y, b.w, b.h / 2 };
+        SDL_SetRenderDrawColor(r, 0xFF, 0xFF, 0xFF, hot ? 80 : 20);
+        SDL_RenderFillRect(r, &wash);
+        int et = b.h / 40 > 1 ? b.h / 40 : 1;
+        SDL_Rect edge = { b.x, b.y, b.w, hot ? 2 * et : et };
+        SDL_SetRenderDrawColor(r, 0xFF, 0xFF, 0xFF, hot ? 255 : 170);
+        SDL_RenderFillRect(r, &edge);
+        float ts = b.h * (hot ? 0.30f : 0.26f);
+        int sc = (int)(b.h * 0.46f / FONT_H);
+        if (sc < 1) sc = 1;
+        int icon = (int)(ts * 2.0f), gap = (int)(ts * 0.5f);
+        const char *word = "TRY IT!";
+        if (icon + gap + text_width(word, sc) > b.w * 0.92f) word = "TRY";   /* narrow tile */
+        if (hot && icon + gap + text_width(word, sc + 1) <= b.w * 0.92f && sc * FONT_H * 14 < b.h * 10) sc++;
+        int x0 = b.x + (b.w - (icon + gap + text_width(word, sc))) / 2, cy = b.y + b.h / 2 + 1;
+        fill_triangle(r, (float)x0, cy - ts, (float)x0, cy + ts, x0 + ts * 1.6f, (float)cy, hexcol(0xFFFFFF));
+        draw_text_shadow(r, word, x0 + icon + gap, cy - FONT_H * sc / 2, sc, hexcol(0xFFFFFF));
+    }
+
+    /* The saver's name: a title above the picture. */
+    SDL_Rect title = { t->box.x, t->box.y, t->box.w, (int)p->labelH };
     SDL_Color lc = p->surprise ? (inMix ? hexcol(0xFFFFFF) : hexcol(0x8088AA))
                                : (cur ? hexcol(0xFFE45C) : hexcol(0xFFFFFF));
-    centered_text(r, t->sv->label, label, p->labelH * 0.62f, lc);
+    centered_text(r, t->sv->label, title, p->labelH * 0.62f, lc);
     float bx = (float)(box.x + box.w - box.h * 0.06f), by = (float)(box.y + box.h * 0.06f), br = box.h * 0.11f;
     if (lit) check_badge(r, bx, by, br);
     else if (p->surprise) empty_badge(r, bx, by, br);
@@ -252,7 +284,8 @@ void picker_draw(void *v, SDL_Renderer *r) {
     SDL_RenderSetViewport(r, NULL);
     vgradient(r, p->w, p->h, hexcol(0x3A1C71), hexcol(0x0F4C81));
 
-    SDL_Rect title = { 0, 0, p->w, (int)p->titleH };
+    int tpad = p->closeR * 3;   /* keep the title between the gear and the X */
+    SDL_Rect title = { tpad, 0, p->w - 2 * tpad, (int)p->titleH };
     centered_text(r, p->surprise ? "PICK YOUR SURPRISE MIX!" : "PICK A SCREENSAVER!", title,
                   p->titleH * 0.5f, hexcol(0xFFE45C));
 
@@ -281,16 +314,6 @@ void picker_draw(void *v, SDL_Renderer *r) {
     centered_text(r, "SURPRISE ME!", st, sb.h * 0.36f, hexcol(0xFFFFFF));
     if (p->surprise) check_badge(r, (float)(sb.x + sb.w - sb.h * 0.08f), (float)(sb.y + sb.h * 0.08f), sb.h * 0.2f);
 
-    SDL_Rect btn = p->tryBtn;
-    float pulse = 1.0f + 0.03f * sinf(p->t * 4);
-    SDL_Rect pb = { btn.x + (int)(btn.w * (1 - pulse) / 2), btn.y + (int)(btn.h * (1 - pulse) / 2),
-                    (int)(btn.w * pulse), (int)(btn.h * pulse) };
-    push_button(r, pb, 0x43A047, 0x1B5E20);
-    float ts = pb.h * 0.32f, tx = pb.x + pb.h * 0.45f, ty = pb.y + pb.h / 2.0f;
-    fill_triangle(r, tx, ty - ts, tx, ty + ts, tx + ts * 1.6f, ty, hexcol(0xFFFFFF));
-    SDL_Rect txt = { pb.x + (int)(pb.h * 0.6f), pb.y, pb.w - (int)(pb.h * 0.6f), pb.h };
-    centered_text(r, "TRY IT!", txt, pb.h * 0.42f, hexcol(0xFFFFFF));
-
     if (name_selected(p)) {
         SDL_Rect nb = p->nameBox;
         fill_rrect(r, nb, nb.h / 4, hexcol(0xFFFFFF));
@@ -310,10 +333,25 @@ void picker_draw(void *v, SDL_Renderer *r) {
 
 static int hit(SDL_Rect rc, int x, int y) { return x >= rc.x && y >= rc.y && x < rc.x + rc.w && y < rc.y + rc.h; }
 
-static void try_it(Picker *p, SDL_Window *win) {
-    const Saver *sv = p->surprise ? saver_resolve("random") : p->tile[p->sel].sv;
-    if (run_saver(win, p->r, sv, 0, 0) == 1) p->quit = 1;
+/* Runs one saver full screen. Touches nothing: not the choice, not the mix, not the config. */
+static void try_tile(Picker *p, SDL_Window *win, int i) {
+    if (run_saver(win, p->r, p->tile[i].sv, 0, 0) == 1) p->quit = 1;
     SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
+}
+
+/* Which tile's TRY IT! band is at (x, y); -1 if none. */
+int picker_hit_strip(void *v, int x, int y) {
+    Picker *p = v;
+    for (int i = 0; i < TILES; i++) if (hit(p->tile[i].band, x, y)) return i;
+    return -1;
+}
+
+/* Which tile's choose/mix area (the tile except its band) is at (x, y); -1 if none. */
+int picker_hit_picture(void *v, int x, int y) {
+    Picker *p = v;
+    if (picker_hit_strip(p, x, y) >= 0) return -1;
+    for (int i = 0; i < TILES; i++) if (hit(p->tile[i].box, x, y)) return i;
+    return -1;
 }
 
 static void click(Picker *p, SDL_Window *win, int x, int y) {
@@ -322,15 +360,14 @@ static void click(Picker *p, SDL_Window *win, int x, int y) {
     dx = x - p->gearC.x; dy = y - p->gearC.y;
     if (dx * dx + dy * dy <= p->closeR * p->closeR * 1.6f) { p->openSettings = 1; return; }
     place_footer(p);
-    if (hit(p->tryBtn, x, y)) { try_it(p, win); return; }
     if (hit(p->surpriseBtn, x, y)) { toggle_surprise(p); return; }
-    for (int i = 0; i < TILES; i++)
-        if (hit(p->tile[i].box, x, y)) {
-            if (p->surprise) toggle_mix(p, i);
-            else if (i == p->sel) try_it(p, win);   /* tap the chosen one again to watch it */
-            else select_tile(p, i);
-            return;
-        }
+    int i = picker_hit_strip(p, x, y);
+    if (i >= 0) { try_tile(p, win, i); return; }
+    i = picker_hit_picture(p, x, y);
+    if (i >= 0) {
+        if (p->surprise) toggle_mix(p, i);
+        else select_tile(p, i);
+    }
 }
 
 int run_picker(SDL_Window *win, SDL_Renderer *r) {
@@ -349,8 +386,8 @@ int run_picker(SDL_Window *win, SDL_Renderer *r) {
             case SDL_QUIT: p->quit = 1; break;
             case SDL_MOUSEMOTION: {
                 int x = (int)(e.motion.x * sx), y = (int)(e.motion.y * sy);
-                p->hover = -1;
-                for (int i = 0; i < TILES; i++) if (hit(p->tile[i].box, x, y)) p->hover = i;
+                p->hover = picker_hit_picture(p, x, y);
+                p->hoverBand = picker_hit_strip(p, x, y);
                 break;
             }
             case SDL_MOUSEBUTTONDOWN:
@@ -368,10 +405,10 @@ int run_picker(SDL_Window *win, SDL_Renderer *r) {
             case SDL_KEYDOWN: {
                 SDL_Keycode k = e.key.keysym.sym;
                 if (k == SDLK_ESCAPE) p->quit = 1;
-                else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) try_it(p, win);
+                else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) try_tile(p, win, p->sel);
                 else if (k == SDLK_TAB) toggle_surprise(p);
                 else if (k == SDLK_SPACE && p->surprise) toggle_mix(p, p->sel);
-                else if (k == SDLK_SPACE && !name_selected(p)) try_it(p, win);
+                else if (k == SDLK_SPACE && !name_selected(p)) try_tile(p, win, p->sel);
                 else if (k == SDLK_LEFT) select_tile(p, p->sel > 0 ? p->sel - 1 : p->sel);
                 else if (k == SDLK_RIGHT) select_tile(p, p->sel < TILES - 1 ? p->sel + 1 : p->sel);
                 else if (k == SDLK_UP) select_tile(p, p->sel >= p->cols ? p->sel - p->cols : p->sel);

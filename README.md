@@ -54,6 +54,7 @@ Thirteen screensavers, plus a SURPRISE ME button that picks a random one each ti
 - **MATRIX**: falling green code. Sometimes a column spells your name.
 - **LAVA**: a glowing lava lamp with wax that warms, rises, merges and sinks, in a new color each time.
 - **VOLCANO**: a night-time island volcano. Lava oozes and erupts, flows down the slopes and cools into rock so the mountain slowly grows, and hisses into steam where it reaches the sea. Smoke, ash, flying fire-bombs and rock chunks fill the sky. When it gets tall it blows up and a new island begins.
+- **CITY**: a sunny city street in pixel art. People stroll, chat on their phones, wear very cool sunglasses and ride bikes; dogs go for walks (one corgi has a very big butt); cats sit on fences, awnings and rooftops; pigeons scatter when someone walks by; cars and a bus stop at the traffic light; chimneys smoke and flocks of birds cross the sky.
 - **NAME**: your name bounces around like the old DVD logo, with confetti when it hits a corner.
 
 ### Easter eggs
@@ -108,14 +109,15 @@ Open **Screensavers** from the app menu. To put an icon on the desktop too, run 
 ![The picker](docs/picker.png)
 
 - **Tap a tile** to choose it. Your choice is saved right away. There is no Save button.
-- **Tap the chosen tile again**, or the big green **TRY IT!** button, to watch it.
+- **Each tile** has the saver's name as a title above its picture. Tap the picture to choose it; its border lightens when the pointer is over it.
+- **Tap the smoky glass TRY IT! band** on the bottom of a picture to watch that saver full screen (the band brightens on its own when the pointer is over it). It works on any tile, with SURPRISE ME! on or off, and never changes your choice, your surprise mix or the saved setting, so a quick look at VOLCANO needs no deselecting.
 - **Move the mouse, touch the screen, or press any key** to go back to the picker.
-- **SURPRISE ME!** (under the tiles) shows a different saver each time, and keeps switching about every 10 minutes while the screen stays idle (fading from one to the next, and waiting for a natural break where a saver has one: a new volcano island, a fresh pipes tangle, a book back on the shelf, an empty dice tray). While it is on, the tiles show which savers are **in the mix**: tap a tile to put it in (green check) or take it out (dimmed). At least one always stays in. Tap **SURPRISE ME!** again to turn it off and choose a single tile.
+- **SURPRISE ME!** (under the tiles) shows a different saver each time, and keeps switching about every 10 minutes while the screen stays idle (fading from one to the next, and waiting for a natural break where a saver has one: a new volcano island, a fresh pipes tangle, a book back on the shelf, an empty dice tray). While it is on, the tiles show which savers are **in the mix**: tap a tile (above its TRY IT! band) to put it in (green check) or take it out (dimmed); the band is never dimmed. At least one always stays in. Tap **SURPRISE ME!** again to turn it off and choose a single tile.
 - **VOLCANO**: a night-time island volcano. Lava oozes and erupts, flows down the slopes and cools into rock so the mountain slowly grows, and hisses into steam where it reaches the sea. Smoke, ash, flying fire-bombs and rock chunks fill the sky. When it gets tall it blows up and a new island begins.
 - **NAME**: when it is chosen, type your name on the keyboard.
 - The **big red X** closes the app.
 
-On a keyboard, use the arrow keys to move, **Enter** to try, **Tab** to turn SURPRISE ME on or off, **Space** to put the highlighted saver in or out of the mix, and **Esc** to close.
+On a keyboard, use the arrow keys to move, **Enter** to watch the highlighted saver, **Tab** to turn SURPRISE ME on or off, **Space** to put the highlighted saver in or out of the mix, and **Esc** to close.
 
 ### Settings (for grown-ups)
 
