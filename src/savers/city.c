@@ -2,7 +2,8 @@
    where people stroll, stand about on their phones, wear very cool sunglasses, walk dogs (one of
    them a corgi with a very big butt) and ride bikes, while cars and a bus stop at the lights.
    Cats sit on fences, awnings and roofs or stroll along, pigeons peck at the pavement, chimneys
-   smoke and flocks of birds cross the sky. */
+   smoke and flocks of birds cross the sky. Now and then a pizza thief sprints past with a pair
+   of cops in hot pursuit. */
 #include "../engine.h"
 #include <math.h>
 #include <stdlib.h>
@@ -17,7 +18,7 @@
 #define MAXPROP 6
 
 enum { R_WALKER, R_SHADES, R_STANDER, R_DOGWALK, R_BIGBUTT, R_BIKE, R_CAR, R_BUS, R_CATWALK,
-       R_CATSIT, R_PIGEON };
+       R_CATSIT, R_PIGEON, R_THIEF, R_COP };
 enum { S_WALK, S_STAND, S_SNIFF, S_FLEE, S_AWAY };
 
 static const uint32_t SKIN[6] = { 0xF8D8BC, 0xF0C29C, 0xD9A070, 0xB57A4C, 0x8D5A3A, 0x5E3A24 };
@@ -32,14 +33,15 @@ static const uint32_t CATC[5][3] = {           /* body, dark, belly */
     { 0xF4F0E8, 0xC8A27A, 0xFFFFFF }, { 0xC8924E, 0x6E4A22, 0xF0D8A8 },
 };
 
-typedef struct { uint32_t c[3]; int L, legH, bh, pointy, spots, curl; } Breed;
-static const Breed BREEDS[6] = {
-    { { 0xD9A05B, 0x9C6A2E, 0xF5DDB0 }, 22, 7, 8, 0, 0, 0 },   /* golden */
-    { { 0x34343A, 0x18181C, 0x5A5A62 }, 22, 7, 8, 0, 0, 0 },   /* black lab */
-    { { 0xF4F2EC, 0x2A2A2E, 0xFFFFFF }, 22, 7, 7, 0, 1, 0 },   /* spotty */
-    { { 0x8A4E28, 0x52301A, 0xC08A5E }, 26, 3, 6, 0, 0, 0 },   /* sausage dog */
-    { { 0x9AA0AA, 0x4A505A, 0xF0F2F6 }, 22, 7, 8, 1, 0, 1 },   /* husky */
-    { { 0xE8D4A8, 0xA88A5A, 0xFFF6E0 }, 14, 4, 6, 1, 0, 0 },   /* little terrier */
+typedef struct { uint32_t c[3]; int L, legH, bh, pointy, spots, curl, pug; } Breed;
+static const Breed BREEDS[7] = {
+    { { 0xD9A05B, 0x9C6A2E, 0xF5DDB0 }, 22, 7, 8, 0, 0, 0, 0 },   /* golden */
+    { { 0x34343A, 0x18181C, 0x5A5A62 }, 22, 7, 8, 0, 0, 0, 0 },   /* black lab */
+    { { 0xF4F2EC, 0x2A2A2E, 0xFFFFFF }, 22, 7, 7, 0, 1, 0, 0 },   /* spotty */
+    { { 0x8A4E28, 0x52301A, 0xC08A5E }, 26, 3, 6, 0, 0, 0, 0 },   /* sausage dog */
+    { { 0x9AA0AA, 0x4A505A, 0xF0F2F6 }, 22, 7, 8, 1, 0, 1, 0 },   /* husky */
+    { { 0xE8D4A8, 0xA88A5A, 0xFFF6E0 }, 14, 4, 6, 1, 0, 0, 0 },   /* little terrier */
+    { { 0xE0C08A, 0x2A2420, 0xF2E2C0 }, 14, 3, 7, 0, 0, 1, 1 },   /* pug */
 };
 static const uint32_t CORGI[3] = { 0xE0913E, 0xA35F1E, 0xFFF6EA };
 
@@ -74,6 +76,7 @@ typedef struct {
     int nperch, nchim, nant;
     Prop prop[MAXPROP];
     int nprop;
+    float egg;                                     /* seconds until the pizza thief next runs past */
 } City;
 
 /* ---------- colours ---------- */
@@ -643,7 +646,7 @@ static void look(Actor *a) {
     a->outfit = irand(4);
     a->stripes = rand() % 4 == 0;
     a->helmet = rand() % 2;
-    a->breed = irand(6);
+    a->breed = irand(7);
     a->basket = rand() % 3 == 0 ? 1 + irand(2) : 0;
     a->kind = irand(4);
     a->car = CARC[irand(8)];
@@ -813,6 +816,10 @@ static void *create(SDL_Renderer *ren, int w, int h) {
     add(s, R_BUS, 1);
     add(s, R_CATWALK, 2);
     add(s, R_PIGEON, 5 * k);
+    add(s, R_THIEF, 1);
+    add(s, R_COP, 2);
+    for (int i = s->na - 3; i < s->na; i++) s->a[i].state = S_AWAY;
+    s->egg = frand(25, 70);
     return s;
 }
 
@@ -841,7 +848,8 @@ static int off_screen(const City *s, const Actor *a) {
 static int person_near(const City *s, float x, float y, float d) {
     for (int i = 0; i < s->na; i++) {
         const Actor *o = &s->a[i];
-        if (o->role > R_BIKE) continue;
+        if (o->role > R_BIKE && o->role < R_THIEF) continue;
+        if (o->state == S_AWAY && o->role >= R_THIEF) continue;
         if (fabsf(o->x - x) < d && fabsf(o->y - y) < d) return 1;
     }
     return 0;
@@ -924,6 +932,12 @@ static void step_actor(City *s, Actor *a, float dt) {
         a->timer -= dt;
         if (a->timer <= 0) { a->pose = irand(4); a->timer = frand(2, 7); }
         break;
+    case R_THIEF: case R_COP:
+        if (a->state == S_AWAY) break;
+        a->x += a->dir * a->vx * dt;
+        a->ph += a->vx * dt * 0.24f;
+        if (off_screen(s, a)) a->state = S_AWAY;
+        break;
     case R_PIGEON:
         if (a->state == S_WALK || a->state == S_STAND) {
             a->timer -= dt;
@@ -947,10 +961,39 @@ static void step_actor(City *s, Actor *a, float dt) {
     }
 }
 
+/* Easter egg: a thief runs off with a pizza, two cops a few steps behind. */
+static void chase(City *s) {
+    int dir = rand() % 2 ? 1 : -1;
+    float y = ground_y(s, irand(5)), x = dir > 0 ? -40.0f : s->W + 40.0f, gap[3] = { 0, 38, 56 }, dy[3] = { 0, 1, -1 };
+    int c = 0;
+    for (int i = 0; i < s->na; i++) {
+        Actor *a = &s->a[i];
+        if (a->role != R_THIEF && a->role != R_COP) continue;
+        int thief = a->role == R_THIEF;
+        look(a);
+        a->kid = a->prop = a->outfit = a->basket = 0;
+        a->state = S_WALK;
+        a->dir = dir;
+        a->x = x - dir * gap[c];
+        a->y = y + dy[c++];
+        a->vx = thief ? 62 : 66 - c * 2;
+        a->t = frand(0, 3);
+        if (thief) { a->glasses = 1; a->stripes = 1; a->shirt = 0x2A2A30; a->pants = 0x3A3A3A; a->hairStyle = 4; }
+        else { a->glasses = 0; a->stripes = 0; a->shirt = 0x3F6FB6; a->pants = 0x1E2A5A; a->hairStyle = 3; a->cap = 0x1E2A5A; a->skin = SKIN[irand(6)]; }
+    }
+}
+
 static void step(void *p, float dt) {
     City *s = p;
     if (dt > 0.1f) dt = 0.1f;
     s->t += dt;
+    s->egg -= dt;
+    if (s->egg <= 0) {
+        int busy = 0;
+        for (int i = 0; i < s->na; i++) busy |= s->a[i].role >= R_THIEF && s->a[i].state != S_AWAY;
+        if (!busy) { chase(s); s->egg = frand(90, 240); }
+        else s->egg = 5;
+    }
     for (int i = 0; i < s->na; i++) step_actor(s, &s->a[i], dt);
     for (int i = 0; i < MAXCLOUD; i++) {
         Cloud *c = &s->cloud[i];
@@ -1134,6 +1177,12 @@ static void draw_dog(const City *s, SDL_Renderer *r, float fx, float fy, int D, 
     F(hx + 1, (int)hy - 2, 2, 2, 0x111111);
     F(hx + 1, (int)hy - 2, 1, 1, 0xFFFFFF);
     F(hx + 4, (int)hy + 2, 3, 1, dark);
+    if (!big && b->pug) {                                            /* squashed black face, folded ears */
+        FE(hx + 4, hy + 1, 4, 3, dark);
+        F(hx + 7, (int)hy - 1, 2, 2, 0x050505);
+        F(hx + 2, (int)hy - 2, 2, 2, 0xFFFFFF); F(hx + 3, (int)hy - 2, 1, 2, 0x050505);
+        F(hx - 2, (int)hy - 3, 3, 3, dark);
+    }
     if (moving && fmodf(t, 2.4f) < 1.4f) F(hx + 5, (int)hy + 3, 2, 2, 0xF07890);   /* panting */
     if (pointy) {
         F(hx - 3, (int)hy - 6, 3, 3, dark); F(hx - 2, (int)hy - 8, 2, 2, dark); F(hx - 2, (int)hy - 5, 1, 2, 0xF0A0A8);
@@ -1372,7 +1421,18 @@ static void draw_car(const City *s, SDL_Renderer *r, const Actor *a) {
 
 /* dog: for a dog walker, draw just the dog (it is sorted on its own, a step nearer). */
 static void draw_actor(const City *s, SDL_Renderer *r, const Actor *a, int dog) {
+    int X = (int)floorf(a->x), Y = (int)floorf(a->y), D = a->dir;
     switch (a->role) {
+    case R_THIEF: case R_COP:
+        if (a->state == S_AWAY) break;
+        draw_person(s, r, a, 1, 0);
+        if (a->role == R_COP) F(1, Y - 21, 2, 2, 0xFFD24A);          /* badge */
+        else {                                                       /* the stolen pizza, held out in front */
+            F(2, Y - 21, 12, 2, 0xC8A070); F(2, Y - 23, 12, 2, 0xE8D8B0);
+            F(2, Y - 23, 12, 1, 0xF4EAD0);
+            F(5, Y - 25, 3, 1, 0xE8B83A); F(9, Y - 26, 2, 2, 0xD23A3A);
+        }
+        break;
     case R_WALKER: case R_SHADES: case R_STANDER:
         draw_person(s, r, a, a->state == S_WALK, 0);
         break;
