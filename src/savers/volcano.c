@@ -142,9 +142,18 @@ static void build_world(Volcano *s) {
     int cxm = s->ventX + (int)(gw * frand(-0.10f, 0.10f));
     s->chX0 = gw;
     s->chX1 = 0;
-    for (int e = 4 + irand(3); e > 0; e--) {
-        float ex = cxm + gw * frand(-0.09f, 0.09f), ey = gh * (0.91f + frand(-0.02f, 0.02f));
-        float rx = gw * frand(0.04f, 0.09f), ry = gh * frand(0.015f, 0.03f);
+    float px[8], py[8], prx[8], pry[8];
+    int ne = 4 + irand(3);
+    for (int e = 0; e < ne; e++) {
+        /* each lobe grows out of one already there, so the chamber is one body */
+        float rx = gw * frand(0.04f, 0.09f), ry = gh * frand(0.015f, 0.03f), ex = (float)cxm, ey = gh * 0.91f;
+        if (e) {
+            int o = irand(e);
+            ex = px[o] + prx[o] * frand(-0.7f, 0.7f);
+            ey = py[o] + pry[o] * frand(-0.4f, 0.4f);
+            ey = clampf(ey, gh * 0.89f, gh * 0.93f);
+        }
+        px[e] = ex; py[e] = ey; prx[e] = rx; pry[e] = ry;
         for (int y = (int)(ey - ry); y <= (int)(ey + ry); y++)
             for (int x = (int)(ex - rx); x <= (int)(ex + rx); x++) {
                 float u = (x - ex) / rx, v = (y - ey) / ry;
@@ -168,7 +177,17 @@ static void build_world(Volcano *s) {
             }
     {   /* a feeder from deeper down keeps the chamber topped up: the lava is not coming from nowhere */
         float fx = cxm + gw * frand(-0.03f, 0.03f), ph = frand(0, 6);
-        for (int y = s->chBot - (int)(3 * K); y < gh; y++) {
+        int fy = gh;                                   /* it rises into the chamber's floor, wherever it wiggles to */
+        for (int t = 0; t < 2 * gw; t++) {
+            for (fy = s->chBot; fy >= s->chTop; fy--) {
+                int x0 = (int)(fx + 2.5f * K * sinf(fy * 0.05f / K + ph));
+                if (inside(s, x0, fy) && AT(s, x0, fy) == MAGMA) break;
+            }
+            if (fy >= s->chTop) break;
+            fx += fx < cxm ? 1 : -1;                     /* missed it: slide toward the middle */
+            fy = gh;
+        }
+        for (int y = (fy < gh ? fy : s->chBot) - (int)(2 * K); y < gh; y++) {
             int cx = (int)(fx + 2.5f * K * sinf(y * 0.05f / K + ph)), r = (int)(1.5f * K) + 1;
             for (int dx = -r; dx <= r; dx++) {
                 int x = cx + dx;
