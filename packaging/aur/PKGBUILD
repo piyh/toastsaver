@@ -1,6 +1,6 @@
 # Maintainer: piyh <10518137+piyh@users.noreply.github.com>
 pkgname=toastsaver
-pkgver=1.8.1
+pkgver=1.9.0
 pkgrel=1
 pkgdesc="Retro screensavers for Wayland: flying toasters, 3D pipes, aquarium and more, with a kid-friendly picker"
 arch=('x86_64' 'aarch64' 'armv7h')
@@ -12,7 +12,7 @@ makedepends=('pkgconf')
 optdepends=('wlopm: turn the display off after a while')
 options=('!debug')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/piyh/toastsaver/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('2101f52abbf09fbb6f568b28b57cc4156675907e143696d64d1b5ee6e1497559')
+sha256sums=('833c7f07e12d656a05b003c4cb0d60b288f97b7a61f62037beb32dca5eb5100e')
 
 build() {
     cd "$pkgname-$pkgver"
