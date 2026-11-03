@@ -45,6 +45,10 @@ Fifteen screensavers. Give the ones you like a heart: one heart plays that saver
     <td align="center"><img src="docs/germs.png" width="400"><br><b>GERMS</b></td>
     <td></td>
   </tr>
+  <tr>
+    <td align="center"><img src="docs/word.png" width="400"><br><b>WORD</b></td>
+    <td></td>
+  </tr>
 </table>
 
 - **TOASTERS**: winged chrome toasters and slices of toast flying down and to the left.
@@ -62,6 +66,7 @@ Fifteen screensavers. Give the ones you like a heart: one heart plays that saver
 - **CITY**: a sunny city street in pixel art. People stroll, chat on their phones, wear very cool sunglasses and ride bikes; dogs go for walks (one corgi has a very big butt); cats sit on fences, awnings and rooftops; pigeons scatter when someone walks by; cars and a bus stop at the traffic light; chimneys smoke and flocks of birds cross the sky.
 - **GERMS**: a drop of water under a microscope. Soft blue cells drift about while spiky green germs chase them, and a cell a germ touches turns into a germ. Big white helper cells blow soap bubbles that wash germs back into healthy cells. A bar in the corner shows the mix, with a dot for each round the cells or the germs win; if every cell turns green, a wave of bubbles washes across the slide. Cells can go off one edge and come back on the other, like Pac-Man (`GERM_WRAP`). Inspired by the Android live wallpaper Pixel Zombies. Tune it with the `GERM_*` settings below.
 - **NAME**: your name bounces around like the old DVD logo, with confetti when it hits a corner.
+- **WORD**: a word of the day on a classroom chalkboard, for a kid learning to read. A picture card shows the word as a little moving picture (a cat blinks and flicks its tail, the sun's rays turn, a chick hatches). The word is spelled out in chalk one letter at a time while that letter lights up on the alphabet strip, dots and dashes mark its sounds (a dash where two letters make one sound, like the SH in FISH), a star slides under them to sound it out, and the word bounces. Then a short sentence writes itself, and the eraser wipes the board for the next round, sometimes with the vowels in pink. Now and then it shows yesterday's and tomorrow's words too. The word changes at midnight, so it can be talked about at dinner. 41 words, each with its own picture.
 
 ### Easter eggs
 
@@ -165,7 +170,7 @@ Settings live in `~/.config/toastsaver.conf`. The app edits it for you and keeps
 
 ```sh
 ENABLED=1               # 0 = turn the screensaver off
-SAVER=toasters          # toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava volcano city germs name random
+SAVER=toasters          # toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava volcano city germs word name random
 RANDOM_SAVERS=          # savers SAVER=random picks from, e.g. toasters,pipes,lava (empty = all)
 CYCLE_MINUTES=10        # minutes before SAVER=random switches to another saver (0 = never)
 BOOK_WORDS_PER_MINUTE=75 # reading speed in the books saver: a page with more words stays up longer
