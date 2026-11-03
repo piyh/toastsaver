@@ -1,3 +1,23 @@
+toastsaver (1.11.0) stable; urgency=medium
+
+  * WATER: a new saver. The water cycle in a cutaway landscape over a full
+    day: vapor rises off the sea and lake, clouds grow and drift inland,
+    rain falls on the hills and snow on the mountains, and a stream, lake
+    and river carry it back to the sea. EVAPORATION, CONDENSATION,
+    PRECIPITATION and COLLECTION labels appear beside each stage.
+  * BUTTERFLY: a new saver. Egg, caterpillar, chrysalis and butterfly up
+    close in a garden, with a ring showing the stage. Each round is a
+    different kind on its own plant: monarch, black swallowtail, painted
+    lady or cabbage white.
+  * WORD: a new saver. A word of the day on a chalkboard, with a moving
+    picture, the word chalked letter by letter, marks to sound it out and
+    a short sentence. 41 early-reader words; the word changes at midnight.
+  * Picker: room for more than 16 savers (18 now make a 6 by 3 grid).
+  * Volcano: the magma chamber is always one body, and the feeder from
+    below always reaches it.
+
+ -- piyh <10518137+piyh@users.noreply.github.com>  Tue, 03 Nov 2026 22:35:31 +0000
+
 toastsaver (1.10.0) stable; urgency=medium
 
   * Books: each page of a poem now stays up as long as its words take to
