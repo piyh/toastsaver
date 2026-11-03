@@ -1,3 +1,14 @@
+toastsaver (1.9.1) stable; urgency=medium
+
+  * City: pugs join the dog walkers. Now and then a masked pizza thief runs
+    along the sidewalk with a whole pizza, two cops running close behind.
+  * City: cars are longer, cats are half the size, and the lamps and street
+    trees are drawn in front of cats on the roofs. The clock stays in the sky.
+  * Windowed mode: E, B, F and I only work (and are only listed) for the
+    savers that have them. E starts the city's chase.
+
+ -- piyh <10518137+piyh@users.noreply.github.com>  Tue, 03 Nov 2026 17:30:00 +0000
+
 toastsaver (1.9.0) stable; urgency=medium
 
   * GERMS: a new saver. Blue cells drift about with a little Brownian
