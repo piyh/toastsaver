@@ -36,6 +36,7 @@ typedef struct {
     int germSpeed;           /* GERM_SPEED: 1 (slow) to 10 (twice as fast as a dashing cell) */
     int germRange;           /* GERM_RANGE: 1 to 10, how far a bubble flies */
     int germWrap;            /* GERM_WRAP: 1 = off one edge and back on the other, like Pac-Man */
+    int previewSavers;       /* PREVIEW_SAVERS: 1 shows savers still being finished (not written to new files) */
 } Config;
 
 #define CONFIG_MAX_MINUTES 9999   /* the most any minutes setting can be */
@@ -127,8 +128,9 @@ extern const Saver saver_toasters, saver_pipes, saver_starfield, saver_mystify,
                    saver_rainbow, saver_books, saver_birds,
                    saver_dice, saver_volcano, saver_city, saver_germs;
 extern const Saver saver_water, saver_butterfly, saver_word;
-extern const Saver *const SAVERS[];
-extern const int SAVER_COUNT;
+extern const Saver *SAVERS[];      /* the savers on show: see saver_list_init */
+extern int SAVER_COUNT;
+void saver_list_init(void);        /* fills SAVERS from the settings (PREVIEW_SAVERS) */
 const Saver *saver_find(const char *id);   /* NULL if unknown */
 const Saver *saver_resolve(const char *id); /* handles "random"; falls back to toasters */
 int saver_in_mix(const Saver *sv);          /* can SURPRISE ("random") pick it? */

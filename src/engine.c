@@ -9,7 +9,7 @@
 
 /* ---------- settings ---------- */
 
-#define DEFAULTS { 1, "toasters", "HELLO", 5, 30, 0, 0, 30, "", 10, 75, 60, 2, 5, 6, 4, 1 }
+#define DEFAULTS { 1, "toasters", "HELLO", 5, 30, 0, 0, 30, "", 10, 75, 60, 2, 5, 6, 4, 1, 0 }
 Config g_config = DEFAULTS;
 const Config CONFIG_DEFAULTS = DEFAULTS;
 
@@ -82,6 +82,7 @@ int config_apply(const char *line) {
     else if (!strncmp(line, "GERM_SPEED=", 11)) g_config.germSpeed = clampi(atoi(v), 1, 10, CONFIG_DEFAULTS.germSpeed, v);
     else if (!strncmp(line, "GERM_RANGE=", 11)) g_config.germRange = clampi(atoi(v), 1, 10, CONFIG_DEFAULTS.germRange, v);
     else if (!strncmp(line, "GERM_WRAP=", 10)) g_config.germWrap = atoi(v) != 0;
+    else if (!strncmp(line, "PREVIEW_SAVERS=", 15)) g_config.previewSavers = atoi(v) != 0;   /* not in KEYS: kept as written */
     else return 0;
     return 1;
 }
@@ -102,7 +103,7 @@ static const char *const KEYS[NKEYS] = {
     "GERM_CELLS=", "GERM_HELPERS=", "GERM_SEEDS=", "GERM_SPEED=", "GERM_RANGE=", "GERM_WRAP=" };
 static const char *const HELP[NKEYS] = {
     "# 0 = turn the screensaver off",
-    "# toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava volcano city germs water butterfly word name random",
+    "# toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava volcano city germs name random",
     "# shown by the name saver",
     "# minutes of no input before the screensaver appears",
     "# minutes before the display turns off (0 = never)",
@@ -153,6 +154,7 @@ int config_save(void) {
     const char *path = config_path();
     char tmp[1100], dir[1100], line[512];
     int wrote[NKEYS] = { 0 };
+    int preview = 0;
     snprintf(tmp, sizeof tmp, "%s.tmp", path);
     snprintf(dir, sizeof dir, "%s", path);
     char *slash = strrchr(dir, '/');
@@ -164,12 +166,17 @@ int config_save(void) {
         int k = 0;
         while (k < NKEYS && strncmp(line, KEYS[k], strlen(KEYS[k]))) k++;
         if (!strncmp(line, OLD_BOOK_KEY, strlen(OLD_BOOK_KEY))) continue;   /* now BOOK_WORDS_PER_MINUTE */
+        if (!strncmp(line, "PREVIEW_SAVERS=", 15)) {    /* hidden: only in files that ask for it */
+            if (!preview++) fprintf(out, "PREVIEW_SAVERS=%d\n", g_config.previewSavers);
+            continue;
+        }
         if (k == NKEYS) { fputs(line, out); continue; }
         write_key(out, k, strchr(line, '#'));       /* keep a trailing "# explanation" */
         wrote[k] = 1;
     }
     for (int k = 0; k < NKEYS; k++)
         if (!wrote[k]) write_key(out, k, HELP[k]);
+    if (!preview && g_config.previewSavers) fputs("PREVIEW_SAVERS=1\n", out);
     if (in) fclose(in);
     if (fclose(out) != 0) return -1;
     return rename(tmp, path);

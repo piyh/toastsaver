@@ -6,8 +6,8 @@
 #include <stdio.h>
 
 /* engine.c refers to the saver registry, which lives in main.c. */
-const Saver *const SAVERS[1] = { 0 };
-const int SAVER_COUNT = 0;
+const Saver *SAVERS[1] = { 0 };
+int SAVER_COUNT = 0;
 
 static int bad;
 

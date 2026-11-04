@@ -14,15 +14,44 @@
 #include <time.h>
 #include <sys/stat.h>
 
-const Saver *const SAVERS[] = {
+/* Every saver, in picker order. */
+static const Saver *const ALL_SAVERS[] = {
     &saver_toasters, &saver_rainbow, &saver_pipes, &saver_books, &saver_dice, &saver_aquarium,
     &saver_birds, &saver_starfield, &saver_mystify, &saver_matrix, &saver_lava, &saver_name,
     &saver_volcano, &saver_city, &saver_germs,
     &saver_water, &saver_butterfly, &saver_word,
 };
-const int SAVER_COUNT = sizeof SAVERS / sizeof SAVERS[0];
+#define ALL_COUNT ((int)(sizeof ALL_SAVERS / sizeof ALL_SAVERS[0]))
+
+/* Savers still being finished: kept out of the picker, SURPRISE and --list unless
+   PREVIEW_SAVERS=1, though they always run when named (--windowed water) to try them. */
+static int is_preview(const Saver *sv) {
+    return sv == &saver_water || sv == &saver_butterfly || sv == &saver_word;
+}
+
+/* The savers people see: filled by saver_list_init once the settings are loaded. */
+const Saver *SAVERS[sizeof ALL_SAVERS / sizeof ALL_SAVERS[0]];
+int SAVER_COUNT;
+
+void saver_list_init(void) {
+    SAVER_COUNT = 0;
+    for (int i = 0; i < ALL_COUNT; i++)
+        if (g_config.previewSavers || !is_preview(ALL_SAVERS[i])) SAVERS[SAVER_COUNT++] = ALL_SAVERS[i];
+    /* A hidden preview kept before it was hidden: toasters for now (the file is left alone,
+       so it comes back if previews are turned on again before a heart is changed). */
+    const Saver *kept = saver_find(g_config.saver);
+    if (kept && !g_config.previewSavers && is_preview(kept))
+        snprintf(g_config.saver, sizeof g_config.saver, "%s", saver_toasters.id);
+}
 
 const Saver *saver_find(const char *id) {
+    for (int i = 0; i < ALL_COUNT; i++)
+        if (!strcmp(ALL_SAVERS[i]->id, id)) return ALL_SAVERS[i];
+    return NULL;
+}
+
+/* A saver on show (not a hidden preview) with this id, or NULL. */
+static const Saver *saver_shown(const char *id) {
     for (int i = 0; i < SAVER_COUNT; i++)
         if (!strcmp(SAVERS[i]->id, id)) return SAVERS[i];
     return NULL;
@@ -43,7 +72,7 @@ static const Saver *pick_random(void) {
 
 const Saver *saver_resolve(const char *id) {
     if (!strcmp(id, "random")) return pick_random();
-    const Saver *s = saver_find(id);
+    const Saver *s = saver_shown(id);
     return s ? s : &saver_toasters;
 }
 
@@ -584,6 +613,7 @@ int main(int argc, char **argv) {
 
     srand((unsigned)time(NULL));
     config_load();
+    saver_list_init();
 
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
