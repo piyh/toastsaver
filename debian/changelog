@@ -1,3 +1,12 @@
+toastsaver (1.11.1) stable; urgency=medium
+
+  * WATER, BUTTERFLY and WORD are hidden for now while they are finished.
+    Try one by name (toastsaver --windowed water), or show them in the
+    app with toastsaver --set PREVIEW_SAVERS=1. If one of them had your
+    heart, TOASTERS plays instead.
+
+ -- piyh <10518137+piyh@users.noreply.github.com>  Wed, 04 Nov 2026 03:33:48 +0000
+
 toastsaver (1.11.0) stable; urgency=medium
 
   * WATER: a new saver. The water cycle in a cutaway landscape over a full
