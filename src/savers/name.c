@@ -131,4 +131,4 @@ static void destroy(void *p) {
     free(n);
 }
 
-const Saver saver_name = { "name", "NAME", create, step, draw, destroy, NULL, NULL, NULL, NULL };
+const Saver saver_name = { "name", "NAME", create, step, draw, destroy, NULL, NULL, NULL, NULL, NULL, NULL };

@@ -60,7 +60,7 @@ Fifteen screensavers. Give the ones you like a heart: one heart plays that saver
 - **LAVA**: a glowing lava lamp with wax that warms, rises, merges and sinks, in a new color each time.
 - **VOLCANO**: a night-time island volcano. Lava oozes and erupts, flows down the slopes and cools into rock so the mountain slowly grows, and hisses into steam where it reaches the sea. Smoke, ash, flying fire-bombs and rock chunks fill the sky. When it gets tall it blows up and a new island begins.
 - **CITY**: a sunny city street in pixel art. People stroll, chat on their phones, wear very cool sunglasses and ride bikes; dogs go for walks (one corgi has a very big butt); cats sit on fences, awnings and rooftops; pigeons scatter when someone walks by; cars and a bus stop at the traffic light; chimneys smoke and flocks of birds cross the sky.
-- **GERMS**: a drop of water under a microscope. Soft blue cells drift about while spiky green germs chase them, and a cell a germ touches turns into a germ. Big white helper cells (the white blood cells) blow soap bubbles: a bubble bursts with a little splash and pops every germ inside it, and healthy cells divide to fill the slide back up. Germs leave faint green trails, and a helper with no germ in sight hurries along the freshest one. A bar in the corner shows the mix, with a dot for each round the cells or the germs win; if every cell turns green, a wave of bubbles washes across the slide. Cells can go off one edge and come back on the other, like Pac-Man (`GERM_WRAP`). Inspired by the Android live wallpaper Pixel Zombies. Tune it with the sliders button on its tile, the `GERM_*` settings below, or live in a window (`toastsaver --windowed germs`, then **O**).
+- **GERMS**: a drop of water under a microscope. Soft blue cells drift about while spiky green germs chase them, and a cell a germ touches turns into a germ. Big white helper cells (the white blood cells) blow soap bubbles: a bubble bursts with a little splash and pops every germ inside it, and healthy cells divide to fill the slide back up (or, with **Pop with a splash** off, a bubble washes the one germ it hits back into a healthy cell, the way it first was). Germs leave faint green trails, and a helper with no germ in sight hurries along the freshest one. A bar in the corner shows the mix, with a dot for each round the cells or the germs win; if every cell turns green, a wave of bubbles washes across the slide. Cells can go off one edge and come back on the other, like Pac-Man (`GERM_WRAP`). Inspired by the Android live wallpaper Pixel Zombies. Tune it with the sliders button on its tile, the `GERM_*` settings below, or live in a window (`toastsaver --windowed germs`, then **O**).
 - **NAME**: your name bounces around like the old DVD logo, with confetti when it hits a corner.
 
 ### Easter eggs
@@ -141,10 +141,12 @@ Click the **gear** in the top-left corner of the app. Changes are saved right aw
 
 ### A saver's own settings
 
-Some savers have settings of their own. Their tiles have a small **sliders** button on the corner opposite the heart (or press **O** on a highlighted tile). It opens that saver's page, with **Test it**, **Reset** (tap it twice; it resets only that saver) and **Back**. Pages scroll with the mouse wheel, a drag or the arrow keys when they don't fit.
+Some savers have settings of their own. Their tiles have a small **sliders** button on the corner opposite the heart (or press **O** on a highlighted tile). It opens that saver's page, with **Test it**, **Reset** (tap it twice; it resets only that saver) and **Back**. Each number has a bar of dots that fills up as it grows, so "more" looks like more. Pages scroll with the mouse wheel, a drag or the arrow keys when they don't fit.
+
+GERMS shows itself live beside its settings, like a game's graphics settings: a close-up with a few cells, a helper and two germs. Touch a setting (or point at it) and the preview draws what it does, with a few words underneath: circles for how far everyone sees and lines to what they've spotted, a ring for how far a bubble flies, a ring that fills up before each bubble, the splash of each burst, speed arrows, the germ trails and where helpers are heading on them, a flash when a cell divides, and open or solid edges for wrap around. The settings for how many there are show the whole slide at your numbers instead. Every change shows up in the preview at once.
 
 - **BOOKS: reading speed**: how fast the poems are read, in words a minute. A page with more words stays up longer; even a short one stays at least a few seconds so there's time to look at the picture. 75 is a gentle read-aloud pace; turn it down for a new reader.
-- **GERMS**: how many cells, helpers and germs it starts with and the most at once; how fast germs and helpers move and how far everyone sees; how often and how far bubbles fly and how big their splash is; how long germ trails last; how fast cells grow back; and whether the edges wrap around.
+- **GERMS**: how many cells, helpers and germs it starts with and the most at once; how fast germs and helpers move and how far everyone sees; how often and how far bubbles fly, whether they pop germs with a splash or wash them back, and how big the splash is; how long germ trails last; how fast cells grow back; and whether the edges wrap around.
 
 ![The clock over the aquarium](docs/clock.png)
 
@@ -184,6 +186,7 @@ GERM_HELPER_SPEED=5     # how fast helpers move, 1-10
 GERM_SIGHT=5            # how far cells, helpers and germs notice each other, 1-10
 GERM_RELOAD=5           # how often a helper blows a bubble, 1 (slow) to 10 (fast)
 GERM_RANGE=4            # how far a soap bubble flies, 1-10
+GERM_POP=1              # 1 = bubbles pop germs with a splash; 0 = they wash one germ back into a cell, as before
 GERM_SPLASH=3           # how far a bursting bubble reaches, 0 (only the germ it hits) to 10
 GERM_TRAIL=5            # how long germs' faint trails last for helpers to follow, 0 (none) to 10
 GERM_GROWTH=4           # how fast healthy cells divide to fill the slide back up, 0 (never) to 10
@@ -235,7 +238,7 @@ For a source install, run `sudo make uninstall` in the source folder.
 
 You need SDL2 (2.0.18 or newer) and `pkg-config`. Then run `make`. On macOS, `brew install sdl2` and run savers with `--windowed`.
 
-A saver's own settings are declared in a `SaverOption` table in its file (see `GERM_OPTIONS` in `src/savers/germs.c`) and listed in the `Saver` struct. The settings file, `--set`, the saver's page (the sliders button on its tile) and the windowed **O** panel all work from that table, so a new setting needs no code anywhere else. Render a saver's page with `--snapshot out.png options:germs`, and the panel with `TOASTSAVER_PANEL=1`.
+A saver's own settings are declared in a `SaverOption` table in its file (see `GERM_OPTIONS` in `src/savers/germs.c`) and listed in the `Saver` struct. A saver can also give a `demo` (a small close-up scene for the live preview on its page) and an `explain` (draws over a frame what one setting does), as GERMS does; rows marked `OPT_WHOLE` show the whole saver in the preview instead, and a row's `tip` is the line under it. The settings file, `--set`, the saver's page (the sliders button on its tile) and the windowed **O** panel all work from that table, so a new setting needs no code anywhere else. Render a saver's page with `--snapshot out.png --seconds 8 options:germs` (`TOASTSAVER_FOCUS=GERM_SIGHT` picks the row the preview explains), and the panel with `TOASTSAVER_PANEL=1`.
 
 Savers still being finished (WATER, BUTTERFLY and WORD for now) are hidden from the picker, SURPRISE and `--list`. Run one by name to try it (`toastsaver --windowed water`), or show them all with `toastsaver --set PREVIEW_SAVERS=1` (and `=0` to hide them again).
 

@@ -1,14 +1,20 @@
 /* Settings pages and the windowed-mode panel, both drawn from tables of SaverOption rows.
      - A page (run_page) shows a table under its headings: - and + (or a switch) on each row,
-       a number you can tap to type in, rows that open another page, and TEST IT, RESET (tap
-       twice) and BACK. It scrolls (wheel, drag, arrows) when the rows don't fit. Every change
-       is saved at once. The main settings page is one (settings.c); so are the list of savers
-       with settings of their own and each saver's page (run_saver_options).
+       with a bar of dots that fills up as the number grows and the number you can tap to type
+       in, rows that open another page, and TEST IT, RESET (tap twice) and BACK. It scrolls
+       (wheel, drag, arrows) when the rows don't fit. Every change is saved at once. The main
+       settings page is one (settings.c); so are the list of savers with settings and each
+       saver's own page (run_saver_options).
+     - A saver's page shows it live beside the rows, like a game's graphics settings: its
+       close-up demo scene (Saver.demo), or the whole saver while a row marked OPT_WHOLE is
+       picked, with the saver drawing over it what the picked row does (Saver.explain) and the
+       row's tip underneath. The row under the pointer is picked, else the last one touched.
      - The panel in windowed mode (O opens it) is for trying values while the saver runs: up
        and down pick a row, left and right change it, Enter (or SAVE) writes the settings file,
        and DEFAULTS puts them back. A change to a setting the saver only reads when it starts
        (OPT_RESTART) starts the saver over. */
 #include "engine.h"
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,6 +41,11 @@ typedef struct {
     /* rows in content coordinates: on screen they are `scroll` higher */
     SDL_Rect head[ROW_MAX], row[ROW_MAX], minus[ROW_MAX], plus[ROW_MAX], field[ROW_MAX], toggle[ROW_MAX];
     SDL_Rect test, reset, done;
+    /* the live preview (a saver's page, when the saver has a demo or explain) */
+    const Saver *pv;
+    void *pvState;
+    int pvWhole, pick;                  /* showing the whole saver; the row last touched, or -1 */
+    SDL_Rect pvBox, pvTip;
 } Page;
 
 static const SaverOption *row_of(const Page *p, int i) { return &p->spec->rows[i]; }
@@ -58,6 +69,8 @@ static void clamp_scroll(Page *p) {
 /* Rows go in one column, or in two side by side when the page is wide and has many rows: whole
    groups go to each column, split where the two come out most even. A row has its label on the
    left and a compact cluster on the right: - value +, or a switch and its word. */
+static void preview_start(Page *p);
+
 static void page_layout(Page *p) {
     const float headH = 0.6f;
     p->top = (int)(p->h * 0.13f);
@@ -66,7 +79,7 @@ static void page_layout(Page *p) {
     for (int i = 0; i < p->n; i++) total += units[i] = 1 + (row_of(p, i)->group ? headH : 0);
     int split = p->n;                                     /* the first row of the second column */
     float colUnits = total;
-    if (p->n > 8 && p->w >= p->h * 1.2f) {
+    if (!p->pv && p->n > 8 && p->w >= p->h * 1.2f) {
         float a = 0;
         for (int i = 0; i < p->n; i++) {
             if (i > 0 && row_of(p, i)->group && (a > total - a ? a : total - a) < colUnits) {
@@ -77,9 +90,11 @@ static void page_layout(Page *p) {
         }
     }
     p->rowH = area / (colUnits + 0.001f);
-    if (p->rowH < p->h * 0.058f) p->rowH = p->h * 0.058f;    /* any smaller is hard to tap: scroll instead */
+    float least = p->pv ? 0.04f : 0.058f;                    /* any smaller is hard to tap: scroll instead */
+    if (p->rowH < p->h * least) p->rowH = p->h * least;
     if (p->rowH > p->h * 0.09f) p->rowH = p->h * 0.09f;
     int cols = split < p->n ? 2 : 1, gap = p->w / 30, x0 = p->w / 20, fullW = p->w - p->w / 10;
+    if (p->pv) fullW = p->w * 48 / 100 - x0;               /* the rows on the left, the preview on the right */
     int cw = cols == 2 ? (fullW - gap) / 2 : fullW;
     int pad = (int)(p->rowH * 0.1f), btn = (int)(p->rowH * 0.62f);
 
@@ -88,7 +103,8 @@ static void page_layout(Page *p) {
     if (sc < 1) sc = 1;
     for (;; sc--) {
         int fw = text_width("9999 WPM", sc) + 2 * pad, word = text_width("24 HOUR", sc);
-        if (fw < btn * 2) fw = btn * 2;
+        int dots = btn * 4 + text_width("300", sc) + sc * 2;   /* room for the bar of dots and the number */
+        if (fw < dots) fw = dots;
         ctrlW = 2 * btn + fw + 2 * pad;
         if (btn * 2 + pad * 2 + word > ctrlW) ctrlW = btn * 2 + pad * 2 + word;
         int fits = 1;
@@ -118,6 +134,17 @@ static void page_layout(Page *p) {
     float end = y[0] > y[1] ? y[0] : y[1];
     p->scrollMax = end - p->bottom > 0 ? end - p->bottom : 0;
     clamp_scroll(p);
+    if (p->pv) {                                          /* the preview: the screen's shape, as big as fits */
+        int px = x0 + fullW + gap, pw = p->w - p->w / 20 - px, tipH = (int)(p->h * 0.06f);
+        int ph = pw * p->h / p->w, room = p->bottom - p->top - tipH;
+        if (ph > room) { ph = room; pw = ph * p->w / p->h; }
+        int py = p->top + (room - ph) / 2;
+        SDL_Rect box = { px + (p->w - p->w / 20 - px - pw) / 2, py, pw, ph };
+        int resized = box.w != p->pvBox.w || box.h != p->pvBox.h;
+        p->pvBox = box;
+        p->pvTip = (SDL_Rect){ px, py + ph, p->w - p->w / 20 - px, tipH };
+        if (resized) preview_start(p);
+    }
     int bh = (int)(p->h * 0.11f), bw = p->w * 26 / 100, bgap = p->w / 40, by = (int)(p->h * 0.855f);
     int bx = (p->w - 3 * bw - 2 * bgap) / 2;
     p->test = (SDL_Rect){ bx, by, bw, bh };
@@ -130,8 +157,48 @@ static Page *page_new(SDL_Renderer *r, int w, int h) {
     p->r = r;
     p->w = w;
     p->h = h;
-    p->hover = p->edit = -1;
+    p->hover = p->edit = p->pick = -1;
     return p;
+}
+
+/* ---------- the live preview ---------- */
+
+/* The row the preview explains: the one under the pointer, else the last one touched. */
+static int focus_row(const Page *p) { return p->hover >= 0 ? p->hover : p->pick; }
+
+static int wants_whole(const Page *p) {
+    int f = focus_row(p);
+    return !p->pv->demo || (f >= 0 && (row_of(p, f)->flags & OPT_WHOLE));
+}
+
+/* (Re)starts the preview: the demo scene, or the whole saver at the real settings. */
+static void preview_start(Page *p) {
+    if (!p->pv || p->pvBox.w < 8 || p->pvBox.h < 8) return;
+    if (p->pvState) p->pv->destroy(p->pvState);
+    p->pvWhole = wants_whole(p);
+    p->pvState = (p->pvWhole ? p->pv->create : p->pv->demo)(p->r, p->pvBox.w, p->pvBox.h);
+}
+
+static void preview_draw(Page *p, SDL_Renderer *r) {
+    SDL_Rect b = p->pvBox, frame = { b.x - 4, b.y - 4, b.w + 8, b.h + 8 };
+    int f = focus_row(p);
+    fill_rrect(r, frame, 8, hexcol(0x9FB6CC));
+    if (p->pvState) {
+        SDL_Rect inside = { 0, 0, b.w, b.h };                 /* the clip is inside the viewport: nothing spills */
+        SDL_RenderSetViewport(r, &b);
+        SDL_RenderSetClipRect(r, &inside);
+        p->pv->draw(p->pvState, r);
+        if (p->pv->explain && f >= 0) p->pv->explain(p->pvState, r, row_of(p, f));
+        SDL_RenderSetClipRect(r, NULL);
+        SDL_RenderSetViewport(r, NULL);
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    }
+    const char *tip = f >= 0 && row_of(p, f)->tip ? row_of(p, f)->tip : "TOUCH A SETTING TO SEE WHAT IT DOES";
+    int sc = (int)(p->pvTip.h * 0.45f / FONT_H);
+    if (sc < 1) sc = 1;
+    while (sc > 1 && text_width(tip, sc) > p->pvTip.w) sc--;
+    ui_text_at(r, tip, p->pvTip.x + (p->pvTip.w - text_width(tip, sc)) / 2, p->pvTip.y + p->pvTip.h / 2, sc,
+               f >= 0 ? hexcol(0xFFE45C) : hexcol(0x9FB6CC));
 }
 
 static void page_start(Page *p, const PageSpec *spec) {
@@ -154,6 +221,7 @@ void *options_page_create(SDL_Renderer *r, int w, int h, const Saver *sv) {
     p->own.title = p->title;
     if (sv) {
         p->owner = sv;
+        if (sv->demo || sv->explain) p->pv = sv;
         p->own.rows = sv->options;
         p->own.test = sv;
         p->own.resetNote = "TAP SURE? TO PUT THIS SAVER'S SETTINGS BACK";
@@ -166,15 +234,27 @@ void *options_page_create(SDL_Renderer *r, int w, int h, const Saver *sv) {
         p->own.buttons = 1;
     }
     page_start(p, &p->own);
+    const char *focus = getenv("TOASTSAVER_FOCUS");          /* for snapshots: the row to explain, by key */
+    for (int i = 0; focus && i < p->n; i++)
+        if (row_of(p, i)->key && !strcmp(row_of(p, i)->key, focus)) p->pick = i;
+    if (p->pick >= 0) preview_start(p);
     return p;
 }
 
-void page_destroy(void *p) { free(p); }
+void page_destroy(void *pp) {
+    Page *p = pp;
+    if (p->pvState) p->pv->destroy(p->pvState);
+    free(p);
+}
 
 void page_step(void *pp, float dt) {
     Page *p = pp;
     p->t += dt;
     if (p->resetArm > 0) p->resetArm -= dt;
+    if (p->pv) {
+        if (wants_whole(p) != p->pvWhole) preview_start(p);
+        if (p->pvState) p->pv->step(p->pvState, dt);
+    }
 }
 
 /* ---------- drawing ---------- */
@@ -234,7 +314,19 @@ static void draw_row(const Page *p, SDL_Renderer *r, int i, int sc) {
         return;
     }
     option_format(o, v, val, sizeof val);
-    ui_text_at(r, val, f.x + (f.w - text_width(val, sc)) / 2, cy, sc, text);
+    if (o->unit || o->zero) {                                    /* minutes and words a minute: just the number */
+        ui_text_at(r, val, f.x + (f.w - text_width(val, sc)) / 2, cy, sc, text);
+        return;
+    }
+    /* a bar of dots that fills up as the number grows (one a step up to ten), and the number after it */
+    int numW = text_width("300", sc) + sc * 2, range = o->hi - o->lo;
+    int n = range <= 10 ? range + (o->lo > 0) : 10;
+    int lit = range <= 10 ? v - o->lo + (o->lo > 0) : (int)ceilf(10.0f * (v - o->lo) / range);
+    float step = (float)(f.w - numW) / n, rad = fminf(step * 0.36f, f.h * 0.14f);
+    for (int k = 0; k < n; k++)
+        fill_circle(r, f.x + step * (k + 0.5f), (float)cy, rad,
+                    k < lit ? (off ? hexcol(0x7F93A6) : hexcol(0xFFE45C)) : hexcol(0x0E2A40));
+    ui_text_at(r, val, f.x + f.w - numW + sc * 2, cy, sc, text);
 }
 
 void page_draw(void *pp, SDL_Renderer *r) {
@@ -256,6 +348,7 @@ void page_draw(void *pp, SDL_Renderer *r) {
         if (rw.y + rw.h > p->top && rw.y < p->bottom) draw_row(p, r, i, sc);
     }
     SDL_RenderSetClipRect(r, NULL);
+    if (p->pv) preview_draw(p, r);
     if (p->scrollMax > 0) {                                      /* a scroll bar, and a fade where rows go on */
         float span = (float)(p->bottom - p->top), all = span + p->scrollMax;
         SDL_Rect track = { p->w - p->w / 40, p->top, p->w / 160 > 3 ? p->w / 160 : 3, (int)span };
@@ -284,7 +377,7 @@ void page_draw(void *pp, SDL_Renderer *r) {
 
 static void changed(Page *p, const SaverOption *o, int old, int dir) {
     if (o->changed) o->changed(o, old, dir);
-    (void)p;
+    if (p->pv && (o->flags & OPT_RESTART)) preview_start(p);   /* read when the saver starts: start it over */
     config_save();
 }
 
@@ -328,6 +421,8 @@ static void click(Page *p, int x, int y) {
         SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
         return;
     }
+    for (int i = 0; i < p->n; i++)                              /* the row touched is the one the preview explains */
+        if (hit_row(p, p->row[i], x, y)) p->pick = i;
     for (int i = 0; i < p->n; i++) {
         const SaverOption *o = row_of(p, i);
         if (dim(o)) continue;
@@ -547,7 +642,7 @@ void option_panel_draw(OptionPanel *p, const Saver *sv, SDL_Renderer *r, int w, 
     int bw = pad * 7 + labelW + rh * 2 + valW + pad * 2, hintW = text_width(hint, 1) + pad * 2;
     if (bw < hintW) bw = hintW;
     if (bw > w - 2 * pad) bw = w - 2 * pad;
-    int bh = rh * (n + 3) + pad * 3;
+    int bh = rh * (n + 3) + pad * 3 + 12;
     p->box = (SDL_Rect){ w - bw - 12, 12, bw, bh };
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(r, 0, 0, 0, 170);
@@ -594,5 +689,7 @@ void option_panel_draw(OptionPanel *p, const Saver *sv, SDL_Renderer *r, int w, 
     draw_text_shadow(r, hint, x0, y, 1, (SDL_Color){ 220, 220, 220, 255 });
     if (restartRows)
         draw_text_shadow(r, "YELLOW ONES START IT OVER", x0, y + 10, 1, (SDL_Color){ 255, 220, 120, 255 });
+    if (sv->options[p->sel].tip)                           /* what the picked row's overlay shows */
+        draw_text_shadow(r, sv->options[p->sel].tip, x0, y + 21, 1, (SDL_Color){ 255, 228, 92, 255 });
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }

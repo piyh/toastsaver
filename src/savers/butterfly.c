@@ -2588,4 +2588,4 @@ static int keep_clear(void *p, SDL_Rect *out, int max) {
 }
 
 const Saver saver_butterfly = { "butterfly", "BUTTERFLY", create, step_outer, draw, destroy, at_rest, keep_clear,
-                                "B EMERGE   F TO EMERGE   I INFO", NULL };
+                                "B EMERGE   F TO EMERGE   I INFO", NULL, NULL, NULL };

@@ -374,6 +374,8 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, i
         }
         SDL_RenderSetViewport(r, NULL);
         sv->draw(st, r);
+        if (windowed && panel.open && sv->explain && option_count(sv))   /* what the picked setting does */
+            sv->explain(st, r, &sv->options[panel.sel]);
         if (old) {
             draw_crossfade(r, old, xfade);
             xfade -= dt;
@@ -491,6 +493,7 @@ static int snapshot(const char *path, const char *what, int w, int h, float seco
         page_destroy(p);
     } else if (!strncmp(what, "options", 7)) {           /* options: the list; options:germs: one saver's page */
         void *p = options_page_create(r, w, h, what[7] == ':' ? saver_find(what + 8) : NULL);
+        for (float t = 0; t < seconds; t += dt) page_step(p, dt);   /* the live preview runs meanwhile */
         page_draw(p, r);
         page_destroy(p);
     } else if (!strcmp(what, "picker")) {
@@ -515,6 +518,10 @@ static int snapshot(const char *path, const char *what, int w, int h, float seco
             OptionPanel panel;
             option_panel_init(&panel, sv);
             panel.open = 1;
+            const char *focus = getenv("TOASTSAVER_FOCUS");
+            for (int i = 0; focus && i < option_count(sv); i++)
+                if (!strcmp(sv->options[i].key, focus)) panel.sel = i;
+            if (sv->explain) sv->explain(st, r, &sv->options[panel.sel]);
             option_panel_draw(&panel, sv, r, w, h, 0);
         }
         sv->destroy(st);

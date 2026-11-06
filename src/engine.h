@@ -50,6 +50,7 @@ enum {
     OPT_TOGGLE = 1,    /* on/off instead of a number */
     OPT_RESTART = 2,   /* only read when the saver starts: changing it in a window starts the saver over */
     OPT_LINK = 4,      /* a page row that opens another page (`link`; NULL: the list of savers) */
+    OPT_WHOLE = 8,     /* the page's live preview shows the whole saver (not its demo) while this row is picked */
 };
 
 /* One row of settings. A saver lists its own in a table ending with { 0 } (written with
@@ -73,6 +74,7 @@ typedef struct SaverOption {
     const char *off, *on;   /* optional: a toggle's words (OFF and ON by default) */
     int onValue;         /* a toggle's value when on (1 by default; FPS is 30) */
     const struct Saver *link;   /* OPT_LINK: the saver whose page it opens (NULL: the list of savers) */
+    const char *tip;            /* optional: a few words under the live preview while this row is picked */
     int (*live)(void);          /* optional: 0 dims the row and it can't be changed */
     void (*changed)(const struct SaverOption *o, int old, int dir);   /* optional: after a change on a page;
                                                                          dir: the - or + that did it, 0 if typed */
@@ -162,6 +164,10 @@ typedef struct Saver {
     const char *keys;    /* optional: the windowed-mode keys it answers to beyond the usual ones, as "E EGG   B BOOM":
                             a letter, a space, a label, three spaces between keys. Other letters do nothing. */
     const SaverOption *options;   /* optional: its own settings, ending with { 0 } (see SaverOption) */
+    /* optional, for the live preview on its settings page and the windowed panel: */
+    void *(*demo)(SDL_Renderer *r, int w, int h);   /* a small, close-up scene that shows the settings at work */
+    void (*explain)(void *s, SDL_Renderer *r, const SaverOption *focus);   /* draws over a frame what `focus`
+                                                     does: how far things see, how far bubbles fly... (NULL: nothing) */
 } Saver;
 
 extern const Saver saver_toasters, saver_pipes, saver_starfield, saver_mystify,

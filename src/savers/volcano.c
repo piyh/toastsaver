@@ -1397,4 +1397,4 @@ static int keep_clear(void *p, SDL_Rect *out, int max) {
     return 1;
 }
 
-const Saver saver_volcano = { "volcano", "VOLCANO", create, step, draw, destroy, at_rest, keep_clear, "E EGG   B BOOM   F TO FINALE   I INFO", NULL };
+const Saver saver_volcano = { "volcano", "VOLCANO", create, step, draw, destroy, at_rest, keep_clear, "E EGG   B BOOM   F TO FINALE   I INFO", NULL, NULL, NULL };

@@ -58,7 +58,9 @@ For a saver with settings of its own,
 .B O
 opens a panel of them while it runs: Up and Down pick one, Left and Right change it,
 Enter saves them to the settings file, and Backspace puts the defaults back. Settings
-shown in yellow are read when the saver starts, so changing one starts it over.
+shown in yellow are read when the saver starts, so changing one starts it over. While the panel is
+open, a saver that can (germs) draws over itself what the picked setting does: how far everyone
+sees, how far bubbles fly, and so on.
 .TP
 .B \-\-list
 List saver names.
@@ -101,7 +103,8 @@ Each saver's own settings start with its name. Books: BOOK_WORDS_PER_MINUTE (rea
 Germs: GERM_CELLS, GERM_HELPERS and GERM_SEEDS (how many of each at the start), GERM_MAX (the
 most at once; cells divide up to it), GERM_SPEED and GERM_HELPER_SPEED (how fast germs and
 helpers move), GERM_SIGHT (how far everyone notices each other), GERM_RELOAD (how often a helper
-blows a bubble), GERM_RANGE, GERM_SPLASH (how far a bursting bubble reaches; 0 is only the germ
+blows a bubble), GERM_RANGE, GERM_POP (1 pops germs with a splash; 0 washes the one germ a bubble
+hits back into a cell, as the saver first did), GERM_SPLASH (how far a bursting bubble reaches; 0 is only the germ
 it hits), GERM_TRAIL (how long the germs' trails last for helpers to follow; 0 is none),
 GERM_GROWTH (how fast cells divide to refill the slide) and GERM_WRAP. A value out of range is pulled into range.
 Created on first change.

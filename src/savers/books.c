@@ -1594,4 +1594,4 @@ static const SaverOption BOOK_OPTIONS[] = {
     { 0 },
 };
 
-const Saver saver_books = { "books", "BOOKS", create, step, draw, destroy, at_rest, keep_clear, NULL, BOOK_OPTIONS };
+const Saver saver_books = { "books", "BOOKS", create, step, draw, destroy, at_rest, keep_clear, NULL, BOOK_OPTIONS, NULL, NULL };
