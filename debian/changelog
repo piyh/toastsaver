@@ -1,3 +1,25 @@
+toastsaver (1.12.0) stable; urgency=medium
+
+  * GERMS: the white blood cells' soap bubbles burst with a little splash
+    that pops every germ inside it, and healthy cells divide to fill the
+    slide back up. Germs leave faint trails that helpers follow. Pop with
+    a splash (GERM_POP) off brings back the original bubbles that wash
+    one germ clean.
+  * GERMS: new settings for the most on the slide at once, germ and helper
+    speed, how far everyone sees, how often and how far bubbles fly, the
+    splash, trails, how fast cells grow back and wrap around.
+  * Each saver's own settings now open from a sliders button on its tile
+    in the picker (BOOKS and GERMS for now). The GERMS page shows the
+    saver live beside its settings and draws what the setting you touch
+    does: how far everyone sees, how far bubbles fly, each splash and more.
+  * Number settings show a bar of dots that fills up as the number grows.
+  * The settings page has only settings for the whole screensaver, and
+    pages scroll when they don't fit.
+  * In a window (toastsaver --windowed germs), O opens the saver's own
+    settings over it, shows what each one does, and Enter saves them.
+
+ -- piyh <10518137+piyh@users.noreply.github.com>  Fri, 06 Nov 2026 20:54:34 +0000
+
 toastsaver (1.11.1) stable; urgency=medium
 
   * WATER, BUTTERFLY and WORD are hidden for now while they are finished.
