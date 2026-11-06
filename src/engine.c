@@ -9,7 +9,7 @@
 
 /* ---------- settings ---------- */
 
-#define DEFAULTS { 1, "toasters", "HELLO", 5, 30, 0, 0, 30, "", 10, 75, 60, 2, 5, 6, 4, 1, 0 }
+#define DEFAULTS { 1, "toasters", "HELLO", 5, 30, 0, 0, 30, "", 10, 0 }
 Config g_config = DEFAULTS;
 const Config CONFIG_DEFAULTS = DEFAULTS;
 
@@ -50,19 +50,92 @@ static int minutes(const char *v, int lo, int fallback) {
     return n < CONFIG_MAX_MINUTES ? n : CONFIG_MAX_MINUTES;
 }
 
-/* A whole-number value from the file, kept within lo..hi; `fallback` when it is empty. */
-static int clampi(int n, int lo, int hi, int fallback, const char *v) {
-    if (!*v) return fallback;
-    return n < lo ? lo : n > hi ? hi : n;
+/* ---------- per-saver settings ---------- */
+
+int option_count(const Saver *sv) {
+    int n = 0;
+    if (sv && sv->options)
+        while (n < OPTION_MAX && sv->options[n].label) n++;
+    return n;
 }
+
+void option_set(const SaverOption *o, int v) {
+    *o->value = v < o->lo ? o->lo : v > o->hi ? o->hi : v;
+}
+
+/* Up or down: through `stops` (if any), then on past its end in `step`s; a toggle goes on or off. */
+int option_step(const SaverOption *o, int v, int dir) {
+    int nv = v;
+    if (o->flags & OPT_TOGGLE) nv = dir > 0 ? option_on(o) : 0;
+    else if (o->nstops > 0) {
+        int last = o->stops[o->nstops - 1];
+        if (dir > 0) {
+            if (v >= last) nv = v + o->step;
+            else for (int i = 0; i < o->nstops; i++) if (o->stops[i] > v) { nv = o->stops[i]; break; }
+        } else {
+            if (v > last) nv = v - o->step > last ? v - o->step : last;
+            else for (int i = o->nstops - 1; i >= 0; i--) if (o->stops[i] < v) { nv = o->stops[i]; break; }
+        }
+    } else nv = v + (dir > 0 ? o->step : -o->step);
+    return nv < o->lo ? o->lo : nv > o->hi ? o->hi : nv;
+}
+
+int option_on(const SaverOption *o) { return o->onValue ? o->onValue : 1; }
+
+void option_reset(const Saver *sv) {
+    for (int i = 0, n = option_count(sv); i < n; i++) *sv->options[i].value = sv->options[i].def;
+}
+
+int option_is_default(const Saver *sv) {
+    for (int i = 0, n = option_count(sv); i < n; i++)
+        if (*sv->options[i].value != sv->options[i].def) return 0;
+    return 1;
+}
+
+const SaverOption *option_find(const char *key, const Saver **owner) {
+    int count;
+    const Saver *const *all = saver_all(&count);
+    for (int s = 0; s < count; s++)
+        for (int i = 0, n = option_count(all[s]); i < n; i++)
+            if (all[s]->options[i].key && !strcmp(all[s]->options[i].key, key)) {
+                if (owner) *owner = all[s];
+                return &all[s]->options[i];
+            }
+    return NULL;
+}
+
+void option_format(const SaverOption *o, int v, char *out, size_t n) {
+    if (o->flags & OPT_TOGGLE) snprintf(out, n, "%s", v ? (o->on ? o->on : "ON") : (o->off ? o->off : "OFF"));
+    else if (v == 0 && o->zero) snprintf(out, n, "%s", o->zero);
+    else if (o->unit) snprintf(out, n, "%d %s", v, o->unit);
+    else snprintf(out, n, "%d", v);
+}
+
+/* The key of a KEY=value line, or "" (at most n - 1 characters). */
+static void line_key(const char *line, char *out, size_t n) {
+    size_t k = 0;
+    while (line[k] && line[k] != '=' && k < n - 1) { out[k] = line[k]; k++; }
+    out[line[k] == '=' ? k : 0] = 0;
+}
+
+/* One saver setting from the file: empty means its default; out of range is pulled into range. */
+static void apply_option(const SaverOption *o, const char *v) {
+    if (!*v) *o->value = o->def;
+    else if (o->flags & OPT_TOGGLE) *o->value = atoi(v) != 0 ? option_on(o) : 0;
+    else option_set(o, atoi(v));
+}
+
+/* ---------- the settings file ---------- */
 
 #define OLD_BOOK_KEY "BOOK_PAGE_SECONDS="   /* read once and turned into BOOK_WORDS_PER_MINUTE; config_save drops it */
 
 /* Applies one KEY=value line. Returns 0 if the key isn't one of ours. */
 int config_apply(const char *line) {
-    char v[256];
+    char v[256], key[64];
     if (!strchr(line, '=') || line[0] == '#') return 0;
     read_value(line, v, sizeof v);
+    line_key(line, key, sizeof key);
+    const SaverOption *o;
     if (!strncmp(line, "ENABLED=", 8)) g_config.enabled = atoi(v) != 0;
     else if (!strncmp(line, "SAVER=", 6)) snprintf(g_config.saver, sizeof g_config.saver, "%.31s", v);
     else if (!strncmp(line, "NAME=", 5)) config_set_name(v);
@@ -73,21 +146,19 @@ int config_apply(const char *line) {
     else if (!strncmp(line, "FPS=", 4)) g_config.fps = atoi(v) > 0 ? atoi(v) : 0;
     else if (!strncmp(line, "RANDOM_SAVERS=", 14)) snprintf(g_config.randomSavers, sizeof g_config.randomSavers, "%s", v);
     else if (!strncmp(line, "CYCLE_MINUTES=", 14)) g_config.cycleMinutes = minutes(v, 0, 10);
-    else if (!strncmp(line, "BOOK_WORDS_PER_MINUTE=", 22)) g_config.bookWpm = clampi(atoi(v), BOOK_MIN_WPM, CONFIG_MAX_MINUTES, CONFIG_DEFAULTS.bookWpm, v);
-    else if (!strncmp(line, OLD_BOOK_KEY, strlen(OLD_BOOK_KEY)) && atoi(v) > 0)   /* before 1.10: seconds a page, about 12 words */
-        g_config.bookWpm = clampi(700 / atoi(v), BOOK_MIN_WPM, CONFIG_MAX_MINUTES, CONFIG_DEFAULTS.bookWpm, v);
-    else if (!strncmp(line, "GERM_CELLS=", 11)) g_config.germCells = clampi(atoi(v), 0, 300, CONFIG_DEFAULTS.germCells, v);
-    else if (!strncmp(line, "GERM_HELPERS=", 13)) g_config.germHelpers = clampi(atoi(v), 0, 100, CONFIG_DEFAULTS.germHelpers, v);
-    else if (!strncmp(line, "GERM_SEEDS=", 11)) g_config.germSeeds = clampi(atoi(v), 0, 50, CONFIG_DEFAULTS.germSeeds, v);
-    else if (!strncmp(line, "GERM_SPEED=", 11)) g_config.germSpeed = clampi(atoi(v), 1, 10, CONFIG_DEFAULTS.germSpeed, v);
-    else if (!strncmp(line, "GERM_RANGE=", 11)) g_config.germRange = clampi(atoi(v), 1, 10, CONFIG_DEFAULTS.germRange, v);
-    else if (!strncmp(line, "GERM_WRAP=", 10)) g_config.germWrap = atoi(v) != 0;
     else if (!strncmp(line, "PREVIEW_SAVERS=", 15)) g_config.previewSavers = atoi(v) != 0;   /* not in KEYS: kept as written */
+    else if ((o = option_find(key, NULL))) apply_option(o, v);
+    else if (!strncmp(line, OLD_BOOK_KEY, strlen(OLD_BOOK_KEY))) {   /* before 1.10: seconds a page, about 12 words */
+        if (atoi(v) > 0 && (o = option_find("BOOK_WORDS_PER_MINUTE", NULL))) option_set(o, 700 / atoi(v));
+    }
     else return 0;
     return 1;
 }
 
 void config_load(void) {
+    int count;
+    const Saver *const *all = saver_all(&count);
+    for (int s = 0; s < count; s++) option_reset(all[s]);
     FILE *f = fopen(config_path(), "r");
     char line[512];
     if (!f) return;
@@ -95,12 +166,12 @@ void config_load(void) {
     fclose(f);
 }
 
-/* Every setting we own, with the comment written next to it in a new file. */
-#define NKEYS 17
+/* The settings that aren't any one saver's, with the comment written next to each in a new file.
+   After them come the savers' own, in saver order (see SaverOption). */
+#define NKEYS 10
 static const char *const KEYS[NKEYS] = {
     "ENABLED=", "SAVER=", "NAME=", "IDLE_MINUTES=", "SCREEN_OFF_MINUTES=", "CLOCK=", "CLOCK_24H=",
-    "FPS=", "RANDOM_SAVERS=", "CYCLE_MINUTES=", "BOOK_WORDS_PER_MINUTE=",
-    "GERM_CELLS=", "GERM_HELPERS=", "GERM_SEEDS=", "GERM_SPEED=", "GERM_RANGE=", "GERM_WRAP=" };
+    "FPS=", "RANDOM_SAVERS=", "CYCLE_MINUTES=" };
 static const char *const HELP[NKEYS] = {
     "# 0 = turn the screensaver off",
     "# toasters rainbow pipes books dice aquarium birds starfield mystify matrix lava volcano city germs name random",
@@ -111,14 +182,7 @@ static const char *const HELP[NKEYS] = {
     "# 1 = 24-hour clock",
     "# frames per second; 30 saves power, 0 = as fast as the display",
     "# savers SAVER=random picks from, comma-separated (empty = all)",
-    "# minutes before SAVER=random switches to another saver (0 = never)",
-    "# reading speed in the books saver: a page with more words stays up longer",
-    "# healthy cells the germs saver starts with",
-    "# helper cells that blow soap bubbles in the germs saver",
-    "# germs at the start, and how many come back when none are left",
-    "# how fast germs chase, 1 to 10 (a dashing cell is about 5)",
-    "# how far a soap bubble flies, 1 to 10",
-    "# 1 = germs and cells go off one edge and come back on the other, like Pac-Man" };
+    "# minutes before SAVER=random switches to another saver (0 = never)" };
 
 static void format_key(int k, char *out, size_t n) {
     switch (k) {
@@ -131,29 +195,32 @@ static void format_key(int k, char *out, size_t n) {
     case 6: snprintf(out, n, "CLOCK_24H=%d", g_config.clock24); break;
     case 7: snprintf(out, n, "FPS=%d", g_config.fps); break;
     case 8: snprintf(out, n, "RANDOM_SAVERS=%s", g_config.randomSavers); break;
-    case 9: snprintf(out, n, "CYCLE_MINUTES=%d", g_config.cycleMinutes); break;
-    case 10: snprintf(out, n, "BOOK_WORDS_PER_MINUTE=%d", g_config.bookWpm); break;
-    case 11: snprintf(out, n, "GERM_CELLS=%d", g_config.germCells); break;
-    case 12: snprintf(out, n, "GERM_HELPERS=%d", g_config.germHelpers); break;
-    case 13: snprintf(out, n, "GERM_SEEDS=%d", g_config.germSeeds); break;
-    case 14: snprintf(out, n, "GERM_SPEED=%d", g_config.germSpeed); break;
-    case 15: snprintf(out, n, "GERM_RANGE=%d", g_config.germRange); break;
-    default: snprintf(out, n, "GERM_WRAP=%d", g_config.germWrap); break;
+    default: snprintf(out, n, "CYCLE_MINUTES=%d", g_config.cycleMinutes); break;
     }
 }
 
-static void write_key(FILE *out, int k, const char *comment) {
-    char kv[300];
-    format_key(k, kv, sizeof kv);
+/* KEY=value, then the comment lined up after it (a kept comment still ends in its newline). */
+static void write_line(FILE *out, const char *kv, const char *comment) {
     int pad = 24 - (int)strlen(kv);
     if (comment) fprintf(out, "%s%*s%s%s", kv, pad > 1 ? pad : 1, "", comment, strchr(comment, '\n') ? "" : "\n");
     else fprintf(out, "%s\n", kv);
 }
 
+static void write_option(FILE *out, const SaverOption *o, const char *comment) {
+    char kv[100];
+    snprintf(kv, sizeof kv, "%s=%d", o->key, *o->value);
+    write_line(out, kv, comment);
+}
+
+#define SAVERS_MAX 64
 int config_save(void) {
     const char *path = config_path();
-    char tmp[1100], dir[1100], line[512];
-    int wrote[NKEYS] = { 0 };
+    char tmp[1100], dir[1100], line[512], key[64], kv[300];
+    int wrote[NKEYS] = { 0 }, count;
+    static char wroteOpt[SAVERS_MAX][OPTION_MAX];
+    const Saver *const *all = saver_all(&count);
+    if (count > SAVERS_MAX) count = SAVERS_MAX;
+    memset(wroteOpt, 0, sizeof wroteOpt);
     int preview = 0;
     snprintf(tmp, sizeof tmp, "%s.tmp", path);
     snprintf(dir, sizeof dir, "%s", path);
@@ -170,12 +237,32 @@ int config_save(void) {
             if (!preview++) fprintf(out, "PREVIEW_SAVERS=%d\n", g_config.previewSavers);
             continue;
         }
-        if (k == NKEYS) { fputs(line, out); continue; }
-        write_key(out, k, strchr(line, '#'));       /* keep a trailing "# explanation" */
-        wrote[k] = 1;
+        if (k < NKEYS) {
+            format_key(k, kv, sizeof kv);
+            write_line(out, kv, strchr(line, '#'));   /* keep a trailing "# explanation" */
+            wrote[k] = 1;
+            continue;
+        }
+        const Saver *owner = NULL;
+        const SaverOption *o = line[0] == '#' ? NULL : (line_key(line, key, sizeof key), option_find(key, &owner));
+        int s = 0;
+        while (o && s < count && all[s] != owner) s++;
+        if (!o || s == count) { fputs(line, out); continue; }
+        if (wroteOpt[s][o - owner->options]++) continue;      /* a key written twice: keep the first */
+        write_option(out, o, strchr(line, '#'));
     }
     for (int k = 0; k < NKEYS; k++)
-        if (!wrote[k]) write_key(out, k, HELP[k]);
+        if (!wrote[k]) {
+            format_key(k, kv, sizeof kv);
+            write_line(out, kv, HELP[k]);
+        }
+    for (int s = 0; s < count; s++)
+        for (int i = 0, n = option_count(all[s]); i < n; i++)
+            if (!wroteOpt[s][i]) {
+                char help[200];
+                snprintf(help, sizeof help, "# %s", all[s]->options[i].help);
+                write_option(out, &all[s]->options[i], help);
+            }
     if (!preview && g_config.previewSavers) fputs("PREVIEW_SAVERS=1\n", out);
     if (in) fclose(in);
     if (fclose(out) != 0) return -1;

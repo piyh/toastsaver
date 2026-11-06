@@ -447,4 +447,4 @@ static void destroy(void *p) {
     free(l);
 }
 
-const Saver saver_lava = { "lava", "LAVA", create, step, draw, destroy, NULL, NULL, NULL };
+const Saver saver_lava = { "lava", "LAVA", create, step, draw, destroy, NULL, NULL, NULL, NULL };

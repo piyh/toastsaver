@@ -1576,4 +1576,4 @@ static int at_rest(void *p) {
     return s->state == GAP;
 }
 
-const Saver saver_dice = { "dice", "DICE", create, step, draw, destroy, at_rest, keep_clear, NULL };
+const Saver saver_dice = { "dice", "DICE", create, step, draw, destroy, at_rest, keep_clear, NULL, NULL };

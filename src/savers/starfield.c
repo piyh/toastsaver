@@ -75,4 +75,4 @@ static void destroy(void *p) {
     free(f);
 }
 
-const Saver saver_starfield = { "starfield", "STARS", create, step, draw, destroy, NULL, NULL, NULL };
+const Saver saver_starfield = { "starfield", "STARS", create, step, draw, destroy, NULL, NULL, NULL, NULL };

@@ -60,7 +60,7 @@ Fifteen screensavers. Give the ones you like a heart: one heart plays that saver
 - **LAVA**: a glowing lava lamp with wax that warms, rises, merges and sinks, in a new color each time.
 - **VOLCANO**: a night-time island volcano. Lava oozes and erupts, flows down the slopes and cools into rock so the mountain slowly grows, and hisses into steam where it reaches the sea. Smoke, ash, flying fire-bombs and rock chunks fill the sky. When it gets tall it blows up and a new island begins.
 - **CITY**: a sunny city street in pixel art. People stroll, chat on their phones, wear very cool sunglasses and ride bikes; dogs go for walks (one corgi has a very big butt); cats sit on fences, awnings and rooftops; pigeons scatter when someone walks by; cars and a bus stop at the traffic light; chimneys smoke and flocks of birds cross the sky.
-- **GERMS**: a drop of water under a microscope. Soft blue cells drift about while spiky green germs chase them, and a cell a germ touches turns into a germ. Big white helper cells blow soap bubbles that wash germs back into healthy cells. A bar in the corner shows the mix, with a dot for each round the cells or the germs win; if every cell turns green, a wave of bubbles washes across the slide. Cells can go off one edge and come back on the other, like Pac-Man (`GERM_WRAP`). Inspired by the Android live wallpaper Pixel Zombies. Tune it with the `GERM_*` settings below.
+- **GERMS**: a drop of water under a microscope. Soft blue cells drift about while spiky green germs chase them, and a cell a germ touches turns into a germ. Big white helper cells (the white blood cells) blow soap bubbles: a bubble bursts with a little splash and pops every germ inside it, and healthy cells divide to fill the slide back up. Germs leave faint green trails, and a helper with no germ in sight hurries along the freshest one. A bar in the corner shows the mix, with a dot for each round the cells or the germs win; if every cell turns green, a wave of bubbles washes across the slide. Cells can go off one edge and come back on the other, like Pac-Man (`GERM_WRAP`). Inspired by the Android live wallpaper Pixel Zombies. Tune it under **Saver options** in the settings, with the `GERM_*` settings below, or live in a window (`toastsaver --windowed germs`, then **O**).
 - **NAME**: your name bounces around like the old DVD logo, with confetti when it hits a corner.
 
 ### Easter eggs
@@ -136,9 +136,11 @@ Click the **gear** in the top-left corner of the app. Changes are saved right aw
 - Tap a time to type in any number of minutes (up to 9999); **-** and **+** also keep going past the usual choices.
 - **Show clock**: puts the time over any screensaver. It drifts to a new spot about once a minute, so it never sits in one place.
 - **Clock style**: 12-hour or 24-hour.
-- **Books: reading speed**: how fast the poems in BOOKS are read, in words a minute. A page with more words stays up longer; even a short one stays at least a few seconds so there's time to look at the picture. 75 is a gentle read-aloud pace; turn it down for a new reader.
+- **Saver options**: settings that belong to one saver (the settings pages scroll, with the mouse wheel, a drag or the arrow keys, when they don't fit). Tap the row for a list of savers that have some, then a saver for its own page, with **Test it**, **Reset** (tap it twice; it resets only that saver) and **Back**.
+  - **BOOKS: reading speed**: how fast the poems are read, in words a minute. A page with more words stays up longer; even a short one stays at least a few seconds so there's time to look at the picture. 75 is a gentle read-aloud pace; turn it down for a new reader.
+  - **GERMS**: how many cells, helpers and germs it starts with and the most at once; how fast each kind moves and how far it sees; how fast, far and often bubbles fly, how big their splash is, and whether they pop germs or wash them back; whether helpers can be caught; how long germ trails last; how fast cells grow back; and whether the edges wrap around. The page scrolls.
 - **Save power**: draws savers at 30 frames a second instead of as fast as the display can, which roughly halves the work and looks the same for these savers. On by default.
-- **Test it** shows the current screensaver; **Reset** (tap it twice) puts every setting on this page back to how it started; **Back** returns to the tiles.
+- **Test it** shows the current screensaver; **Reset** (tap it twice) puts every setting on this page back to how it started (each saver's own settings have their own Reset); **Back** returns to the tiles.
 
 ![The clock over the aquarium](docs/clock.png)
 
@@ -155,7 +157,7 @@ Click the **gear** in the top-left corner of the app. Changes are saved right aw
 | `toastsaver --set CLOCK=1` | Change any setting from a terminal |
 | `toastsaver --list` | List the saver names |
 | `toastsaver --desktop-icon` | Put a Screensavers icon on the desktop |
-| `toastsaver --windowed toasters` | Run a saver in a window |
+| `toastsaver --windowed toasters` | Run a saver in a window (**O** opens its own settings, if it has any) |
 
 See `man toastsaver` for everything.
 
@@ -173,7 +175,20 @@ GERM_CELLS=60           # healthy cells the germs saver starts with (0-300)
 GERM_HELPERS=2          # helper cells that blow soap bubbles (0-100)
 GERM_SEEDS=5            # germs at the start, and how many come back when none are left (0-50)
 GERM_SPEED=6            # how fast germs chase, 1-10 (a dashing cell is about 5)
+GERM_MAX=70             # the most cells, helpers and germs on the slide at once; cells divide up to it
+GERM_CELL_SPEED=5       # how fast healthy cells drift and dash away, 1-10
+GERM_HELPER_SPEED=5     # how fast helpers move, 1-10
+GERM_CELL_SIGHT=6       # how far a cell notices a germ, 1-20 (each step is about a cell across)
+GERM_HELPER_SIGHT=7     # how far a helper notices a germ or its trail, 1-20
+GERM_SIGHT=10           # how far a germ notices a cell to chase, 1-20
+GERM_BUBBLE_SPEED=5     # how fast a soap bubble flies, 1-10
 GERM_RANGE=4            # how far a soap bubble flies, 1-10
+GERM_RELOAD=5           # how often a helper blows a bubble, 1 (slow) to 10 (fast)
+GERM_SPLASH=3           # how far a bursting bubble reaches, 0 (only the germ it hits) to 10
+GERM_POP=1              # 1 = bubbles pop germs; 0 = they wash them back into cells
+GERM_HELPER_CATCH=1     # 1 = a germ can catch a helper too; 0 = helpers never turn green
+GERM_TRAIL=5            # how long germs' faint trails last for helpers to follow, 0 (none) to 10
+GERM_GROWTH=4           # how fast healthy cells divide to fill the slide back up, 0 (never) to 10
 GERM_WRAP=1             # 1 = off one edge and back on the other, like Pac-Man
 NAME='HELLO'            # letters, digits, space and ! ? - . *  (* draws a heart)
 IDLE_MINUTES=5          # minutes of no input before the screensaver appears
@@ -222,6 +237,8 @@ For a source install, run `sudo make uninstall` in the source folder.
 
 You need SDL2 (2.0.18 or newer) and `pkg-config`. Then run `make`. On macOS, `brew install sdl2` and run savers with `--windowed`.
 
+A saver's own settings are declared in a `SaverOption` table in its file (see `GERM_OPTIONS` in `src/savers/germs.c`) and listed in the `Saver` struct. The settings file, `--set`, the Saver options pages and the windowed **O** panel all work from that table, so a new setting needs no code anywhere else. Render those pages with `--snapshot out.png options` or `options:germs`, and the panel with `TOASTSAVER_PANEL=1`.
+
 Savers still being finished (WATER, BUTTERFLY and WORD for now) are hidden from the picker, SURPRISE and `--list`. Run one by name to try it (`toastsaver --windowed water`), or show them all with `toastsaver --set PREVIEW_SAVERS=1` (and `=0` to hide them again).
 
 Render a frame without a display:
@@ -241,7 +258,7 @@ toastsaver --snapshot out.png --size 1280x720 --seconds 5 pipes
 5. settings: `--set` keeps the file's comments, `--restart` switches to the new timings, `ENABLED=0` stops the watcher, the app opens and a saver runs with the clock on,
 6. for the `.deb`: `apt remove` and `apt purge` clean up.
 
-`make check` adds a quick check of the dice geometry that needs no display.
+`make check` adds quick checks that need no display: the dice geometry, and that the settings file keeps comments, moves old keys over and keeps each saver's settings in range.
 
 [`tests/run.sh`](tests/run.sh) runs it all in parallel, in prepared Docker images ([`tests/Dockerfile`](tests/Dockerfile)) so nothing is downloaded during a run:
 

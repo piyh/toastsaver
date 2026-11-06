@@ -267,4 +267,4 @@ static int at_rest(void *p) {
     return s->fade > 0.9f;
 }
 
-const Saver saver_pipes = { "pipes", "PIPES", create, step, draw, destroy, at_rest, NULL, NULL };
+const Saver saver_pipes = { "pipes", "PIPES", create, step, draw, destroy, at_rest, NULL, NULL, NULL };

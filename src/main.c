@@ -23,6 +23,11 @@ static const Saver *const ALL_SAVERS[] = {
 };
 #define ALL_COUNT ((int)(sizeof ALL_SAVERS / sizeof ALL_SAVERS[0]))
 
+const Saver *const *saver_all(int *count) {
+    *count = ALL_COUNT;
+    return ALL_SAVERS;
+}
+
 /* Savers still being finished: kept out of the picker, SURPRISE and --list unless
    PREVIEW_SAVERS=1, though they always run when named (--windowed water) to try them. */
 static int is_preview(const Saver *sv) {
@@ -136,7 +141,8 @@ static void draw_speed_ui(SDL_Renderer *r, int w, int h, float lg, int paused, c
     SDL_RenderDrawRect(r, &rb);
     draw_text_shadow(r, "RESET", rb.x + 4 * sc, rb.y + 2 * sc, sc, (SDL_Color){ 255, 255, 255, 255 });
     char keys[200];
-    snprintf(keys, sizeof keys, "[ ] SPEED   1 NORMAL SPEED   R RESTART   SPACE PAUSE   S SHOT%s%s", sv->keys ? "   " : "", sv->keys ? sv->keys : "");
+    snprintf(keys, sizeof keys, "[ ] SPEED   1 NORMAL SPEED   R RESTART   SPACE PAUSE   S SHOT%s%s%s",
+             option_count(sv) ? "   O SETTINGS" : "", sv->keys ? "   " : "", sv->keys ? sv->keys : "");
     draw_text_shadow(r, keys, t.x + t.w / 2 - text_width(keys, 1) / 2, t.y + t.h + 8, 1, (SDL_Color){ 220, 220, 220, 255 });
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
@@ -191,7 +197,7 @@ static void draw_crossfade(SDL_Renderer *r, SDL_Texture *old, float left) {
 
 /* Screensaver: any key, click or mouse movement ends it. With --windowed it behaves like an
    app instead, so you can look around: only Esc/Q or closing the window quits, S (or P or F12)
-   takes a screenshot, and Space pauses. With `cycle` (SURPRISE) it moves on to another saver every
+   takes a screenshot, Space pauses and O opens the saver's own settings (options.c). With `cycle` (SURPRISE) it moves on to another saver every
    CYCLE_MINUTES, waiting up to 10 more for the current one to reach a natural break (at_rest),
    and crossfades from the old one's last picture to the new one. */
 int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, int cycle) {
@@ -217,6 +223,8 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, i
     float moved = 0, flash = 0, lg = 0, uiT = 0;   /* lg: log2 of the speed */
     int rushing = 0;
     int result = -1, paused = 0, shot = 0, drag = 0, reset = 0;
+    OptionPanel panel;
+    option_panel_init(&panel, sv);
     (void)win;
 
     while (result < 0) {
@@ -228,7 +236,10 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, i
             case SDL_QUIT: result = 1; break;
             case SDL_KEYDOWN: {
                 SDL_Keycode k = e.key.keysym.sym;
-                if (!windowed) {
+                int pk = windowed ? option_panel_key(&panel, sv, k) : -1;
+                if (pk >= 0) {
+                    if (pk) reset = 1;                    /* a setting the saver reads when it starts */
+                } else if (!windowed) {
                     if (armed || k == SDLK_ESCAPE) result = 0;
                 } else if (k == SDLK_ESCAPE || k == SDLK_q) {
                     result = 0;
@@ -267,6 +278,8 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, i
                     SDL_GetWindowSize(win, &ww, &wh);
                     float mx = e.button.x * (float)w / ww, my = e.button.y * (float)h / wh;
                     SDL_Rect rb = reset_button(w, h), t = speed_track(w, h);
+                    int pc = option_panel_click(&panel, sv, (int)mx, (int)my);
+                    if (pc >= 0) { if (pc) reset = 1; uiT = 3; break; }
                     if (mx >= rb.x && mx < rb.x + rb.w && my >= rb.y && my < rb.y + rb.h) reset = 1;
                     if (my > t.y - 40 && my < t.y + t.h + 40 && mx > t.x - 20 && mx < t.x + t.w + 20) drag = 1;
                 }
@@ -378,6 +391,7 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, i
         if (windowed) {
             if (uiT > 0) uiT -= dt;
             if (uiT > 0 || paused || drag || g_rush) draw_speed_ui(r, w, h, g_rush ? SPEED_MAX_LOG : lg, paused, sv);
+            option_panel_draw(&panel, sv, r, w, h, dt);
             if (g_rush) draw_text_shadow(r, "FAST FORWARD TO THE FINALE   F TO STOP", 12, h - 24, 2, (SDL_Color){ 255, 220, 120, 255 });
         }
         if (flash > 0) {                          /* a quick white flash so you know it worked */
@@ -471,10 +485,14 @@ static int snapshot(const char *path, const char *what, int w, int h, float seco
     if (!strcmp(what, "fonttest")) {
         font_test(r, w, h);
     } else if (!strcmp(what, "settings")) {
-        void *p = settings_create(r, w, h);
-        for (float t = 0; t < seconds; t += dt) settings_step(p, dt);
-        settings_draw(p, r);
-        settings_destroy(p);
+        void *p = page_create(r, w, h, settings_spec());
+        for (float t = 0; t < seconds; t += dt) page_step(p, dt);
+        page_draw(p, r);
+        page_destroy(p);
+    } else if (!strncmp(what, "options", 7)) {           /* options: the list; options:germs: one saver's page */
+        void *p = options_page_create(r, w, h, what[7] == ':' ? saver_find(what + 8) : NULL);
+        page_draw(p, r);
+        page_destroy(p);
     } else if (!strcmp(what, "picker")) {
         void *p = picker_create(r, w, h);
         for (float t = 0; t < seconds; t += dt) picker_step(p, dt);
@@ -493,6 +511,12 @@ static int snapshot(const char *path, const char *what, int w, int h, float seco
         }
         sv->draw(st, r);
         if (g_config.clock) clock_draw(r, w, h);
+        if (getenv("TOASTSAVER_PANEL")) {               /* for snapshots: the windowed-mode settings panel, open */
+            OptionPanel panel;
+            option_panel_init(&panel, sv);
+            panel.open = 1;
+            option_panel_draw(&panel, sv, r, w, h, 0);
+        }
         sv->destroy(st);
     }
     SDL_RenderPresent(r);
@@ -594,7 +618,8 @@ static void usage(void) {
            "                              (saved to ~/Pictures), Space = pause, [ ] = slower/faster (or drag the\n"
            "                              slider), R = restart, Esc or Q = quit. Some savers add keys of their\n"
            "                              own (E = easter egg, B and F = the volcano's finale); the bar at the\n"
-           "                              bottom of the window lists the ones the saver has\n\n"
+           "                              bottom of the window lists the ones the saver has. O opens the saver's\n"
+           "                              own settings: arrows pick and change, Enter saves them to the file\n\n"
            "Savers: random", VERSION, config_path());
     for (int i = 0; i < SAVER_COUNT; i++) printf(", %s", SAVERS[i]->id);
     printf("\n\nrandom picks a different saver each time from RANDOM_SAVERS, e.g.\n"

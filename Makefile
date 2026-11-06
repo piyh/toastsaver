@@ -23,8 +23,9 @@ bin/toastsaver.png: bin/toastsaver
 	bin/toastsaver --write-icon $@
 
 # Quick checks that need no display: make check
-check: bin/dice-geometry
+check: bin/dice-geometry bin/toastsaver
 	bin/dice-geometry
+	sh tests/config-check.sh bin/toastsaver
 
 bin/dice-geometry: tests/dice-geometry.c src/savers/dice.c src/engine.c src/font.c src/engine.h
 	mkdir -p bin

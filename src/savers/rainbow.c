@@ -593,4 +593,4 @@ static void destroy(void *p) {
     free(r);
 }
 
-const Saver saver_rainbow = { "rainbow", "RAINBOW", create, step, draw, destroy, NULL, NULL, "E EGG" };
+const Saver saver_rainbow = { "rainbow", "RAINBOW", create, step, draw, destroy, NULL, NULL, "E EGG", NULL };

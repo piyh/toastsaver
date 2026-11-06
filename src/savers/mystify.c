@@ -88,4 +88,4 @@ static void draw(void *p, SDL_Renderer *r) {
 
 static void destroy(void *p) { free(p); }
 
-const Saver saver_mystify = { "mystify", "MYSTIFY", create, step, draw, destroy, NULL, NULL, NULL };
+const Saver saver_mystify = { "mystify", "MYSTIFY", create, step, draw, destroy, NULL, NULL, NULL, NULL };

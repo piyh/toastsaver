@@ -11,6 +11,8 @@
 #include <math.h>
 #include <stdlib.h>
 
+static int book_wpm = 75;   /* BOOK_WORDS_PER_MINUTE: see BOOK_OPTIONS at the end */
+
 #define MAXBOOKS 600
 #define PARTS 160
 #define MOTES 60
@@ -1217,7 +1219,7 @@ static void choose_book(Books *b) {
         int words = 0;
         for (int i = b->pageStart[p]; i < b->pageStart[p + 1]; i++)
             words += count_words(STORIES[b->pic] + b->lineS[i], b->lineL[i]);
-        float read = words * 60.0f / (float)g_config.bookWpm;
+        float read = words * 60.0f / (float)book_wpm;
         b->pageT[p + 1] = b->pageT[p] + TURN_T + (read > MIN_PAGE_SECS ? read : MIN_PAGE_SECS);
     }
 }
@@ -1582,4 +1584,14 @@ static int keep_clear(void *p, SDL_Rect *out, int max) {
     return 1;
 }
 
-const Saver saver_books = { "books", "BOOKS", create, step, draw, destroy, at_rest, keep_clear, NULL };
+/* Its own settings (see SaverOption): the reading speed, also on the settings page. */
+static const int WPM_STOPS[] = { 30, 45, 60, 75, 90, 110, 130, 150, 180, 220 };
+static const SaverOption BOOK_OPTIONS[] = {
+    { .key = "BOOK_WORDS_PER_MINUTE", .label = "READING SPEED",
+      .help = "reading speed in the books saver: a page with more words stays up longer",
+      .value = &book_wpm, .def = 75, .lo = 10, .hi = CONFIG_MAX_MINUTES, .step = 30, .stops = WPM_STOPS, .nstops = 10,
+      .unit = "WPM" },
+    { 0 },
+};
+
+const Saver saver_books = { "books", "BOOKS", create, step, draw, destroy, at_rest, keep_clear, NULL, BOOK_OPTIONS };

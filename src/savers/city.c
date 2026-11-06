@@ -1613,4 +1613,4 @@ static int keep_clear(void *p, SDL_Rect *out, int max) {
     return 1;
 }
 
-const Saver saver_city = { "city", "CITY", create, step, draw, destroy, NULL, keep_clear, "E CHASE" };
+const Saver saver_city = { "city", "CITY", create, step, draw, destroy, NULL, keep_clear, "E CHASE", NULL };

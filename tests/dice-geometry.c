@@ -8,6 +8,7 @@
 /* engine.c refers to the saver registry, which lives in main.c. */
 const Saver *SAVERS[1] = { 0 };
 int SAVER_COUNT = 0;
+const Saver *const *saver_all(int *count) { *count = 0; return NULL; }
 
 static int bad;
 

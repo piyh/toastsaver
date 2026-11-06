@@ -2511,4 +2511,4 @@ static int keep_clear(void *p, SDL_Rect *out, int max) {
     return n;
 }
 
-const Saver saver_word = { "word", "WORD", create, step, draw, destroy, at_rest, keep_clear, "N NEXT WORD   E YESTERDAY AND TOMORROW   I INFO" };
+const Saver saver_word = { "word", "WORD", create, step, draw, destroy, at_rest, keep_clear, "N NEXT WORD   E YESTERDAY AND TOMORROW   I INFO", NULL };

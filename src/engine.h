@@ -29,18 +29,13 @@ typedef struct {
     int fps;                 /* FPS: frame-rate cap for savers, 30 by default (0 = as fast as the display) */
     char randomSavers[256];  /* RANDOM_SAVERS: ids SURPRISE picks from ("" = every saver) */
     int cycleMinutes;        /* CYCLE_MINUTES: SURPRISE moves on to another saver this often (0 = never) */
-    int bookWpm;             /* BOOK_WORDS_PER_MINUTE: reading speed in BOOKS; each page stays up as long as its words take */
-    int germCells;           /* GERM_CELLS: healthy cells the GERMS saver starts with */
-    int germHelpers;         /* GERM_HELPERS: helper cells that blow soap bubbles */
-    int germSeeds;           /* GERM_SEEDS: germs it starts with, and how many come back when none are left */
-    int germSpeed;           /* GERM_SPEED: 1 (slow) to 10 (twice as fast as a dashing cell) */
-    int germRange;           /* GERM_RANGE: 1 to 10, how far a bubble flies */
-    int germWrap;            /* GERM_WRAP: 1 = off one edge and back on the other, like Pac-Man */
     int previewSavers;       /* PREVIEW_SAVERS: 1 shows savers still being finished (not written to new files) */
 } Config;
+/* Settings that belong to one saver (BOOK_*, GERM_*) are not here: each saver declares its own
+   in a SaverOption table (below), and the settings file, --set, the settings page and the
+   windowed-mode panel all work from those tables. */
 
 #define CONFIG_MAX_MINUTES 9999   /* the most any minutes setting can be */
-#define BOOK_MIN_WPM 10           /* the slowest BOOK_WORDS_PER_MINUTE */
 extern Config g_config;
 extern const Config CONFIG_DEFAULTS;
 const char *config_path(void);
@@ -48,6 +43,51 @@ void config_load(void);
 int config_apply(const char *line);  /* one KEY=value line; 0 if unknown */
 int config_save(void);              /* rewrites known keys, keeps comments and other lines */
 void config_set_name(const char *s); /* uppercases and keeps only safe characters */
+
+/* ---------- settings rows (per-saver settings, and the settings pages) ---------- */
+
+enum {
+    OPT_TOGGLE = 1,    /* on/off instead of a number */
+    OPT_RESTART = 2,   /* only read when the saver starts: changing it in a window starts the saver over */
+    OPT_LINK = 4,      /* a page row that opens another page (`link`; NULL: the list of savers) */
+};
+
+/* One row of settings. A saver lists its own in a table ending with { 0 } (written with
+   designated initializers); the value lives in the saver's file, and the saver reads *value
+   whenever it likes (every frame is fine). The settings file, --set, the settings pages and
+   the windowed panel all work from these tables. The main settings page is a table of these
+   rows too (settings.c), with no `key`: those settings are written by config_save itself. */
+typedef struct SaverOption {
+    const char *key;     /* the settings-file key, without '=': "GERM_CELLS" (NULL on a page-only row) */
+    const char *label;   /* a few capital words for the pages and the windowed panel; NULL ends a table */
+    const char *help;    /* the "# ..." comment written next to it in a new settings file */
+    int *value;
+    int def, lo, hi;     /* default and range */
+    int step;            /* - and + move by this much (past the end of `stops`, if it has them) */
+    const int *stops;    /* optional: values - and + step through first (ascending), e.g. reading speeds */
+    int nstops;
+    const char *unit;    /* optional: shown after the number, e.g. "WPM" */
+    int flags;           /* OPT_* */
+    const char *group;   /* optional: a heading the pages put above this row (and the rows after it) */
+    const char *zero;    /* optional: shown instead of 0, e.g. "NEVER" */
+    const char *off, *on;   /* optional: a toggle's words (OFF and ON by default) */
+    int onValue;         /* a toggle's value when on (1 by default; FPS is 30) */
+    const struct Saver *link;   /* OPT_LINK: the saver whose page it opens (NULL: the list of savers) */
+    int (*live)(void);          /* optional: 0 dims the row and it can't be changed */
+    void (*changed)(const struct SaverOption *o, int old, int dir);   /* optional: after a change on a page;
+                                                                         dir: the - or + that did it, 0 if typed */
+} SaverOption;
+
+#define OPTION_MAX 32    /* the most settings one saver (or page) can have */
+struct Saver;
+int option_count(const struct Saver *sv);                 /* how many settings the saver has */
+void option_set(const SaverOption *o, int v);             /* clamps to lo..hi */
+int option_step(const SaverOption *o, int v, int dir);    /* the next value up (dir > 0) or down */
+int option_on(const SaverOption *o);                      /* a toggle's value when on */
+void option_reset(const struct Saver *sv);                /* every setting of the saver back to its default */
+int option_is_default(const struct Saver *sv);            /* 1 if nothing has been changed */
+const SaverOption *option_find(const char *key, const struct Saver **owner);   /* by key, NULL if none */
+void option_format(const SaverOption *o, int v, char *out, size_t n);         /* "75 WPM", "ON", "6" */
 
 /* ---------- random ---------- */
 
@@ -121,6 +161,7 @@ typedef struct Saver {
                                                             the clock keeps off; returns how many */
     const char *keys;    /* optional: the windowed-mode keys it answers to beyond the usual ones, as "E EGG   B BOOM":
                             a letter, a space, a label, three spaces between keys. Other letters do nothing. */
+    const SaverOption *options;   /* optional: its own settings, ending with { 0 } (see SaverOption) */
 } Saver;
 
 extern const Saver saver_toasters, saver_pipes, saver_starfield, saver_mystify,
@@ -130,6 +171,7 @@ extern const Saver saver_toasters, saver_pipes, saver_starfield, saver_mystify,
 extern const Saver saver_water, saver_butterfly, saver_word;
 extern const Saver *SAVERS[];      /* the savers on show: see saver_list_init */
 extern int SAVER_COUNT;
+const Saver *const *saver_all(int *count);   /* every saver, previews too (their settings are kept even while hidden) */
 void saver_list_init(void);        /* fills SAVERS from the settings (PREVIEW_SAVERS) */
 const Saver *saver_find(const char *id);   /* NULL if unknown */
 const Saver *saver_resolve(const char *id); /* handles "random"; falls back to toasters */
@@ -143,10 +185,51 @@ int saver_set_in_mix(const Saver *sv, int on); /* 0 (and no change) if that woul
 int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, int cycle);
 int run_picker(SDL_Window *win, SDL_Renderer *r);   /* the app window */
 int run_settings(SDL_Window *win, SDL_Renderer *r);
-void *settings_create(SDL_Renderer *r, int w, int h);
-void settings_step(void *p, float dt);
-void settings_draw(void *p, SDL_Renderer *r);
-void settings_destroy(void *p);
+struct PageSpec;
+const struct PageSpec *settings_spec(void);   /* the main settings page's rows (settings.c) */
+
+/* A settings page drawn from a table of rows (options.c): headings, - and + or a switch on
+   each row, a number you can tap to type in, rows that open other pages, scrolling when
+   they don't fit, and TEST IT, RESET (tap twice) and BACK along the bottom. */
+typedef struct PageSpec {
+    const char *title;
+    const SaverOption *rows;               /* ending with { 0 } */
+    int buttons;                           /* 1: BACK only; else TEST IT, RESET and BACK */
+    const Saver *test;                     /* what TEST IT runs (NULL: the screensaver as chosen) */
+    void (*reset)(void);                   /* what RESET does (then it saves) */
+    const char *resetNote;                 /* the line at the bottom while RESET waits for SURE? */
+    const char *(*note)(void);             /* the line at the bottom otherwise (NULL: the usual one) */
+} PageSpec;
+int run_page(SDL_Window *win, SDL_Renderer *r, const PageSpec *spec);   /* returns 1 to quit the app */
+void *page_create(SDL_Renderer *r, int w, int h, const PageSpec *spec);  /* for snapshots */
+void page_draw(void *p, SDL_Renderer *r);
+void page_step(void *p, float dt);
+void page_destroy(void *p);
+/* A saver's own settings page (sv = NULL: the list of savers that have settings). Returns 1 to quit the app. */
+int run_saver_options(SDL_Window *win, SDL_Renderer *r, const Saver *sv);
+void *options_page_create(SDL_Renderer *r, int w, int h, const Saver *sv);   /* for snapshots */
+
+/* Windowed mode: a panel of the saver's own settings, opened with O. Changes apply at once;
+   SAVE writes them to the settings file, DEFAULTS puts them back. */
+typedef struct {
+    int open, sel;
+    int saved[OPTION_MAX];      /* the values as they are in the settings file, to mark what changed */
+    float savedFlash;           /* "SAVED" shows for a moment */
+    SDL_Rect row[OPTION_MAX], minus[OPTION_MAX], plus[OPTION_MAX], box, save, defaults;
+} OptionPanel;
+void option_panel_init(OptionPanel *p, const Saver *sv);
+/* Both return -1 if the key or click wasn't the panel's, 1 if the saver must start over
+   (an OPT_RESTART setting changed), else 0. */
+int option_panel_key(OptionPanel *p, const Saver *sv, SDL_Keycode k);
+int option_panel_click(OptionPanel *p, const Saver *sv, int x, int y);
+void option_panel_draw(OptionPanel *p, const Saver *sv, SDL_Renderer *r, int w, int h, float dt);
+
+/* Shared look of the settings pages. */
+void ui_text_at(SDL_Renderer *r, const char *t, int x, int cy, int sc, SDL_Color c);   /* cy: vertical middle */
+void ui_round_button(SDL_Renderer *r, SDL_Rect b, int plus, int enabled);
+void ui_toggle(SDL_Renderer *r, SDL_Rect t, int on, int enabled);
+void ui_button(SDL_Renderer *r, SDL_Rect b, const char *label, uint32_t col, uint32_t dark);
+int ui_hit(SDL_Rect rc, int x, int y);
 
 /* For tests: render the picker or a saver offscreen. */
 void *picker_create(SDL_Renderer *r, int w, int h);

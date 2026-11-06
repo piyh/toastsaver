@@ -985,4 +985,4 @@ static void destroy(void *p) {
     free(s);
 }
 
-const Saver saver_birds = { "birds", "BIRDS", create, step, draw, destroy, NULL, NULL, NULL };
+const Saver saver_birds = { "birds", "BIRDS", create, step, draw, destroy, NULL, NULL, NULL, NULL };

@@ -1,10 +1,13 @@
 /* Germs: cells, germs and soap bubbles on a plain blue background. Soft blue cells drift about; spiky green germs chase
-   them, and a cell a germ touches turns into a germ. Big white helper cells blow soap bubbles that
-   wash germs back into healthy cells. Inspired by the Android live wallpaper Pixel Zombies. Tune it
-   in toastsaver.conf: GERM_CELLS, GERM_HELPERS, GERM_SEEDS, GERM_SPEED and GERM_RANGE. When the
-   germs run out a few cells catch them again; if every cell turns green, a wave of bubbles washes
-   across the slide. A bar in the corner shows the mix, with a dot under it for each side's wins.
-   With GERM_WRAP on, the slide has no edges: off one side and back on the other, like Pac-Man. */
+   them, and a cell a germ touches turns into a germ. Big white helper cells (the white blood cells)
+   blow soap bubbles; a bubble pops with a little splash, and every germ in the splash pops too
+   (or, with GERM_POP off, is washed back into a healthy cell). Healthy cells divide to fill the
+   slide back up. Inspired by the Android live wallpaper Pixel Zombies. Its settings are in
+   GERM_OPTIONS at the end: the settings page has them, and in a window O opens them live.
+   When the germs run out a few cells catch them again; if every cell turns green, a wave of
+   bubbles washes across the slide. A bar in the corner shows the mix, with a dot under it for
+   each side's wins. With GERM_WRAP on, the slide has no edges: off one side and back on the
+   other, like Pac-Man. */
 #include "../engine.h"
 #include <math.h>
 #include <stdio.h>
@@ -14,9 +17,18 @@
 #define MAXP 400
 #define MAXSHOT 48
 #define MAXPART 600
+#define MAXTRAIL 4096       /* trail dots: a germ drops one every TRAIL_EVERY seconds */
+#define TRAIL_EVERY 0.2f
 
 enum { K_CELL, K_HELPER, K_GERM };
-enum { P_RING, P_DOT };
+enum { P_RING, P_DOT, P_SPLASH };
+
+/* Settings (GERM_OPTIONS below): read live, except the ones marked OPT_RESTART. */
+static int o_cells = 60, o_helpers = 2, o_seeds = 5, o_max = 70,
+           o_cellSpeed = 5, o_helperSpeed = 5, o_speed = 6,
+           o_cellSight = 6, o_helperSight = 7, o_germSight = 10,
+           o_bubbleSpeed = 5, o_range = 4, o_reload = 5, o_splash = 3, o_pop = 1,
+           o_trail = 5, o_growth = 4, o_wrap = 1, o_helperCatch = 1;
 
 typedef struct {
     int kind, home;             /* what it is now, and what it goes back to when washed */
@@ -24,15 +36,22 @@ typedef struct {
     float jx, jy;               /* Brownian jiggle: a small drift that wanders smoothly */
     float tx, ty, think, rest; /* wander target, when to pick another, and a pause */
     float cool, immune, flash; /* bubble reload, can't be caught for a while, fade after a change */
+    float age;                  /* seconds since it appeared: a new cell from a division grows in */
+    float drop;                 /* a germ: when it drops its next trail dot */
+    float sniff, sx, sy;        /* a helper: when it next looks for a trail, and the dot it is heading for */
+    int onTrail;
+    int dead;                   /* popped: taken out at the end of the step */
 } Cell;
 
 typedef struct { float x, y, vx, vy, life; } Shot;
+typedef struct { float x, y, t; } Dot;      /* a faint dot of germ trail, dropped at time t */
 typedef struct { float x, y, vx, vy, life, max, size; int kind; uint32_t col; } Part;
 
 typedef struct {
     int w, h;
     float u;                    /* one unit of drawing: a cell is about 10 units across */
     int cellWins, germWins;     /* how often the cells cleared the slide, and how often the germs took it */
+    int popped, born;           /* germs popped and cells born from a division, for the read-out */
     float t, noGerms, noCells, wave;
     int startCells, startHelpers;
     Cell c[MAXP];
@@ -40,24 +59,38 @@ typedef struct {
     Shot shot[MAXSHOT];
     Part part[MAXPART];
     int np;
+    Dot trail[MAXTRAIL];        /* a ring: the newest dot replaces the oldest */
+    int trailNext;
     SDL_Rect hud;
 } Germs;
 
 /* ---------- tunables ---------- */
 
-static float cell_drift(const Germs *g) { return 12.0f * g->u; }
-static float cell_dash(const Germs *g) { return 26.0f * g->u; }
-static float germ_speed(const Germs *g) { return 5.1f * g_config.germSpeed * g->u; }
-static float bubble_range(const Germs *g) { return 13.0f * g_config.germRange * g->u; }
-#define BUBBLE_SPEED 150.0f
+/* Speeds: 5 is how the saver always moved. A dashing cell is about as fast as a germ at 5. */
+static float cell_drift(const Germs *g) { return 2.4f * o_cellSpeed * g->u; }
+static float cell_dash(const Germs *g) { return 5.2f * o_cellSpeed * g->u; }
+static float helper_drift(const Germs *g) { return 2.4f * o_helperSpeed * g->u; }
+static float helper_chase(const Germs *g) { return 3.36f * o_helperSpeed * g->u; }
+static float helper_dash(const Germs *g) { return 5.2f * o_helperSpeed * g->u; }
+/* How far each kind notices the other side, in units (a cell is 10 across): 10 per step. */
+static float sight(const Germs *g, int kind) {
+    return 10.0f * (kind == K_GERM ? o_germSight : kind == K_HELPER ? o_helperSight : o_cellSight) * g->u;
+}
+static float trail_life(void) { return 1.2f * o_trail; }   /* seconds a trail dot lasts: 6 at GERM_TRAIL 5 */
+static float germ_speed(const Germs *g) { return 5.1f * o_speed * g->u; }
+static float bubble_range(const Germs *g) { return 13.0f * o_range * g->u; }
+/* GERM_SPLASH 0 pops only the germ a bubble touches; 3 reaches about a germ's width past it; 10, four cells */
+static float splash_radius(const Germs *g) { return o_splash ? (5.0f + 2.5f * o_splash) * g->u : 0; }
+static float bubble_speed(const Germs *g) { return 30.0f * o_bubbleSpeed * g->u; }
+#define HIT_RADIUS 6.0f   /* units: how close a bubble must come to a germ to pop */
 
 /* With wrapping on, the shortest way from one point to another may go off an edge. */
 static float wrapd(float d, float size) {
-    return g_config.germWrap ? d - size * floorf(d / size + 0.5f) : d;
+    return o_wrap ? d - size * floorf(d / size + 0.5f) : d;
 }
 
 static float wrapp(float x, float size) {
-    return g_config.germWrap ? x - size * floorf(x / size) : x;
+    return o_wrap ? x - size * floorf(x / size) : x;
 }
 
 /* ---------- particles ---------- */
@@ -71,7 +104,8 @@ static void burst(Germs *g, float x, float y, int kind, int n, float spread, flo
         q->vx = kind == P_RING ? 0 : cosf(a) * s;
         q->vy = kind == P_RING ? 0 : sinf(a) * s;
         q->max = q->life = life * (kind == P_RING ? 1 : frand(0.7f, 1.2f));
-        q->size = (kind == P_RING ? 5.0f : frand(0.6f, 1.4f)) * g->u;
+        q->size = (kind == P_RING ? 5.0f : kind == P_SPLASH ? spread : frand(0.6f, 1.4f)) * g->u;
+        if (kind == P_SPLASH) q->vx = q->vy = 0;
         q->kind = kind;
         q->col = col;
     }
@@ -80,7 +114,7 @@ static void burst(Germs *g, float x, float y, int kind, int n, float spread, flo
 /* ---------- cells ---------- */
 
 static void spawn(Germs *g, int kind, float x, float y) {
-    if (g->n >= MAXP) return;
+    if (g->n >= MAXP || g->n >= o_max) return;      /* GERM_MAX: the most on the slide at once */
     Cell *q = &g->c[g->n++];
     memset(q, 0, sizeof *q);
     q->kind = q->home = kind;
@@ -92,6 +126,7 @@ static void spawn(Germs *g, int kind, float x, float y) {
     q->tx = x;
     q->ty = y;
     q->cool = frand(0, 1);
+    q->age = 10;
 }
 
 static void spawn_inside(Germs *g, int kind) {
@@ -112,11 +147,52 @@ static void cure(Germs *g, Cell *q) {
     burst(g, q->x, q->y, P_RING, 1, 0, 1.2f, 0xD8F6FF);
 }
 
+/* A bubble pops a germ: it bursts into sparkles and is gone. A helper that caught a germ is too
+   big to pop, so it is washed back instead, and so is everyone with GERM_POP off. */
+static void pop(Germs *g, Cell *q) {
+    if (!o_pop || q->home == K_HELPER) { cure(g, q); return; }
+    q->dead = 1;
+    g->popped++;
+    burst(g, q->x, q->y, P_DOT, 10, 30, 0.7f, 0xB8F070);
+    burst(g, q->x, q->y, P_DOT, 4, 18, 0.5f, 0xFFFFFF);
+}
+
+/* Where a bubble bursts: the germ it touched, and every germ within the splash. */
+static void splash(Germs *g, float x, float y, Cell *hit) {
+    float rad = splash_radius(g);
+    pop(g, hit);
+    if (rad > 0) {
+        burst(g, x, y, P_SPLASH, 1, rad / g->u, 0.35f, 0xD8F6FF);
+        for (int j = 0; j < g->n; j++) {
+            Cell *q = &g->c[j];
+            if (q == hit || q->kind != K_GERM || q->dead) continue;
+            float dx = wrapd(q->x - x, (float)g->w), dy = wrapd(q->y - y, (float)g->h);
+            if (dx * dx + dy * dy < rad * rad) pop(g, q);
+        }
+    }
+}
+
+/* A healthy cell splits in two: the new one buds off to the side and grows in. */
+static void divide(Germs *g, Cell *q) {
+    if (g->n >= MAXP || g->n >= o_max) return;
+    float a = frand(0, 2 * PI_F), u = g->u;
+    float x = wrapp(q->x + cosf(a) * 3 * u, (float)g->w), y = wrapp(q->y + sinf(a) * 3 * u, (float)g->h);
+    spawn(g, K_CELL, x, y);
+    Cell *b = &g->c[g->n - 1];
+    b->age = 0;
+    b->immune = 1.5f;
+    b->vx = cosf(a) * 14 * u;
+    b->vy = sinf(a) * 14 * u;
+    q->vx -= cosf(a) * 14 * u;
+    q->vy -= sinf(a) * 14 * u;
+    g->born++;
+}
+
 static void fire(Germs *g, Cell *from, const Cell *to) {
     for (int i = 0; i < MAXSHOT; i++) {
         Shot *s = &g->shot[i];
         if (s->life > 0) continue;
-        float sp = BUBBLE_SPEED * g->u;
+        float sp = bubble_speed(g);
         float dx = to->x - from->x, dy = to->y - from->y, d = sqrtf(dx * dx + dy * dy) + 0.001f;
         float lead = d / sp, a = atan2f(dy + to->vy * lead, dx + to->vx * lead);
         if (irand(100) < 45) a += frand(-0.35f, 0.35f);   /* sometimes it just misses */
@@ -125,9 +201,45 @@ static void fire(Germs *g, Cell *from, const Cell *to) {
         s->vx = cosf(a) * sp;
         s->vy = sinf(a) * sp;
         s->life = (bubble_range(g) + 6 * g->u) / sp;
-        from->cool = 2.0f + frand(0, 0.8f);
+        from->cool = (2.0f + frand(0, 0.8f)) * 5.0f / o_reload;   /* GERM_RELOAD 5: one every 2-3 seconds */
         return;
     }
+}
+
+/* ---------- trails ---------- */
+
+static void drop_dot(Germs *g, const Cell *q) {
+    Dot *d = &g->trail[g->trailNext];
+    g->trailNext = (g->trailNext + 1) % MAXTRAIL;
+    d->x = q->x;
+    d->y = q->y;
+    d->t = g->t;
+}
+
+/* A helper with no germ in sight sniffs for a trail now and then: the freshest dot it can see
+   that isn't right under it. Newer dots lie further along, toward the germ, so going from
+   freshest to freshest walks it up the trail. Returns 1 while it has a dot to head for. */
+static int follow_trail(Germs *g, Cell *q, float dt) {
+    if (!o_trail) return q->onTrail = 0;
+    float u = g->u, life = trail_life();
+    q->sniff -= dt;
+    if (q->onTrail) {                                    /* reached the dot, or it faded: look again */
+        float dx = wrapd(q->sx - q->x, (float)g->w), dy = wrapd(q->sy - q->y, (float)g->h);
+        if (dx * dx + dy * dy < 4 * u * 4 * u) q->sniff = 0;
+    }
+    if (q->sniff > 0) return q->onTrail;
+    q->sniff = 0.3f;
+    float see = sight(g, K_HELPER), best = -1;
+    for (int i = 0; i < MAXTRAIL; i++) {
+        const Dot *d = &g->trail[i];
+        if (d->t <= 0 || g->t - d->t > life || d->t <= best) continue;
+        float dx = wrapd(d->x - q->x, (float)g->w), dy = wrapd(d->y - q->y, (float)g->h), d2 = dx * dx + dy * dy;
+        if (d2 > see * see || d2 < 5 * u * 5 * u) continue;
+        best = d->t;
+        q->sx = d->x;
+        q->sy = d->y;
+    }
+    return q->onTrail = best > 0;
 }
 
 /* Where a cell would like to go: away from, toward or just around. Writes a unit vector and speed. */
@@ -136,7 +248,7 @@ static void steer(Germs *g, Cell *q, const Cell *near, float ndx, float ndy, flo
     float w = (float)g->w, h = (float)g->h, u = g->u;
     *dx = *dy = 0;
     *speed = 0;
-    int sees = near && nd < (q->kind == K_GERM ? 100 * u : q->kind == K_HELPER ? bubble_range(g) + 14 * u : 58 * u);
+    int sees = near && nd < sight(g, q->kind);
     if (sees && q->kind == K_GERM) {                       /* chase the nearest cell */
         *dx = ndx;
         *dy = ndy;
@@ -148,10 +260,15 @@ static void steer(Germs *g, Cell *q, const Cell *near, float ndx, float ndy, flo
     } else if (sees && q->kind == K_HELPER) {              /* get in range, back off if too close */
         *dx = ndx;
         *dy = ndy;
-        if (nd > bubble_range(g) * 0.85f) *speed = cell_drift(g) * 1.4f;
-        else if (nd < 22 * u) { *dx = -*dx; *dy = -*dy; *speed = cell_dash(g); }
+        if (nd > bubble_range(g) * 0.85f) *speed = helper_chase(g);
+        else if (nd < 22 * u) { *dx = -*dx; *dy = -*dy; *speed = helper_dash(g); }
         else *speed = 0;
         if (q->cool <= 0 && nd <= bubble_range(g)) fire(g, q, near);
+        q->onTrail = 0;
+    } else if (q->kind == K_HELPER && follow_trail(g, q, dt)) {   /* no germ in sight: follow its trail */
+        *dx = wrapd(q->sx - q->x, w);
+        *dy = wrapd(q->sy - q->y, h);
+        *speed = helper_dash(g) * 1.2f;                    /* hurrying: a fresh trail means a germ is near */
     } else {                                               /* drift */
         float tx = wrapd(q->tx - q->x, w), ty = wrapd(q->ty - q->y, h);
         if (q->rest > 0) q->rest -= dt;
@@ -166,14 +283,14 @@ static void steer(Germs *g, Cell *q, const Cell *near, float ndx, float ndy, flo
             }
             *dx = tx;
             *dy = ty;
-            *speed = q->kind == K_GERM ? germ_speed(g) * 0.45f : cell_drift(g);
+            *speed = q->kind == K_GERM ? germ_speed(g) * 0.45f : q->kind == K_HELPER ? helper_drift(g) : cell_drift(g);
         }
     }
     /* stay on the slide: lean away from the edges, unless they wrap around */
     float m = 10 * u;
     float len = sqrtf(*dx * *dx + *dy * *dy);
     if (len > 0.001f) { *dx /= len; *dy /= len; }
-    if (g_config.germWrap) return;
+    if (o_wrap) return;
     if (q->x < m) *dx += (m - q->x) / m * 1.5f;
     if (q->x > w - m) *dx -= (q->x - (w - m)) / m * 1.5f;
     if (q->y < m) *dy += (m - q->y) / m * 1.5f;
@@ -188,20 +305,24 @@ static void step(void *pp, float dt) {
     if (dt > 0.1f) dt = 0.1f;
     g->t += dt;
 
-    int ng = 0, nc = 0;
+    int ng = 0, nc = 0, healthy = 0;
     for (int i = 0; i < g->n; i++) {
         Cell *q = &g->c[i];
+        q->age += dt;
         Cell *near = NULL;
         float best = 1e9f, ndx = 0, ndy = 0;
         for (int j = 0; j < g->n; j++) {
             Cell *o = &g->c[j];
             if (i == j || (q->kind == K_GERM) == (o->kind == K_GERM)) continue;
+            if (q->kind == K_GERM && o->kind == K_HELPER && !o_helperCatch) continue;   /* GERM_HELPER_CATCH 0: germs leave helpers be */
             float dx = wrapd(o->x - q->x, (float)g->w), dy = wrapd(o->y - q->y, (float)g->h), d = sqrtf(dx * dx + dy * dy);
             if (d < best) { best = d; near = o; ndx = dx; ndy = dy; }
         }
         if (q->kind == K_GERM) ng++; else nc++;
+        if (q->kind == K_CELL) healthy++;
         q->cool -= dt;
         q->immune -= dt;
+        if (q->kind == K_GERM && o_trail && (q->drop -= dt) <= 0) { drop_dot(g, q); q->drop = TRAIL_EVERY; }
         q->flash -= dt * 0.7f;
         float dx, dy, sp;
         steer(g, q, near, ndx, ndy, best, &dx, &dy, &sp, dt);
@@ -241,10 +362,24 @@ static void step(void *pp, float dt) {
         for (int j = 0; j < g->n && !hit; j++) {
             Cell *q = &g->c[j];
             float dx = wrapd(q->x - s->x, (float)g->w), dy = wrapd(q->y - s->y, (float)g->h);
-            if (q->kind == K_GERM && dx * dx + dy * dy < 6 * u * 6 * u) { cure(g, q); hit = 1; }
+            if (q->kind == K_GERM && !q->dead && dx * dx + dy * dy < HIT_RADIUS * u * HIT_RADIUS * u) { splash(g, s->x, s->y, q); hit = 1; }
         }
         if (hit || s->life <= 0) {
             s->life = 0;
+        }
+    }
+    /* popped germs leave; healthy cells divide to refill the slide, faster the emptier it is */
+    for (int i = 0; i < g->n; i++)
+        if (g->c[i].dead) g->c[i--] = g->c[--g->n];
+    int room = o_max < MAXP ? o_max : MAXP;                 /* GERM_MAX: divisions fill the slide up to it */
+    if (o_growth > 0 && g->n < room && healthy > 0) {
+        float want = 0.012f * o_growth * healthy * (1 - (float)g->n / room) * dt;   /* divisions this step */
+        while (want > 0 && g->n < room) {
+            if (frand(0, 1) < want) {
+                Cell *q = &g->c[irand(g->n)];
+                if (q->kind == K_CELL && q->age > 3) divide(g, q);
+            }
+            want -= 1;
         }
     }
     /* particles */
@@ -255,18 +390,19 @@ static void step(void *pp, float dt) {
         q->y += q->vy * dt;
         q->vx *= 1 - 1.5f * dt;
         q->vy *= 1 - 1.5f * dt;
-        if (q->kind == P_RING) q->size += 9 * u * dt;
+        if (q->kind == P_RING) q->size += 9 * u * dt;   /* (a splash keeps its size: draw grows it) */
         if (q->life <= 0) g->part[i--] = g->part[--g->np];
     }
     /* keep the story going */
     g->noGerms = ng == 0 ? g->noGerms + dt : 0;
-    g->noCells = nc == 0 ? g->noCells + dt : 0;
-    if (g->noGerms > 4 && g_config.germSeeds > 0) {
-        for (int i = 0; i < g_config.germSeeds && nc > 0; i++) {   /* a few cells catch the germs again */
+    g->noCells = healthy == 0 && ng > 0 ? g->noCells + dt : 0;   /* the germs win when no healthy cell is left */
+    (void)nc;
+    if (g->noGerms > 4 && o_seeds > 0) {
+        for (int i = 0; i < o_seeds && healthy > 0; i++) {   /* a few healthy cells catch the germs again */
             Cell *q = &g->c[irand(g->n)];
-            if (q->kind == K_GERM) { i--; continue; }
+            if (q->kind != K_CELL || q->dead) { i--; continue; }
             infect(q);
-            nc--;
+            healthy--;
         }
         g->noGerms = 0;
         g->cellWins++;
@@ -299,7 +435,8 @@ static void ring(SDL_Renderer *r, float cx, float cy, float rad, float width, SD
 }
 
 static void draw_healthy(SDL_Renderer *r, const Germs *g, const Cell *q, float a) {
-    float u = g->u, rad = 4.4f * u;
+    float grow = q->age < 1 ? 0.55f + 0.45f * q->age : 1;     /* a new cell from a division grows in */
+    float u = g->u * grow, rad = 4.4f * u;
     fill_circle(r, q->x, q->y, rad * 1.25f, col(0x8FE3FF, 0.18f * a));           /* soft membrane glow */
     fill_circle(r, q->x, q->y, rad, col(0x5EC4EC, 0.85f * a));
     fill_circle(r, q->x + q->spin * 0.8f * u, q->y + 0.4f * u, 1.6f * u, col(0x2C76A8, 0.9f * a));   /* nucleus */
@@ -360,12 +497,23 @@ static void draw(void *pp, SDL_Renderer *r) {
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
     vgradient(r, g->w, g->h, hexcol(0x103848), hexcol(0x08202C));
 
+    if (o_trail) {                                                                 /* faint green germ trails */
+        float life = trail_life();
+        for (int i = 0; i < MAXTRAIL; i++) {
+            const Dot *d = &g->trail[i];
+            float age = g->t - d->t;
+            if (d->t <= 0 || age > life) continue;
+            float k = 1 - age / life;
+            fill_circle(r, d->x, d->y, (0.7f + 0.5f * k) * u, col(0x9BE04A, 0.14f * k));
+        }
+    }
+
     for (int pass = 0; pass < 3; pass++)                                          /* cells, then helpers, then germs */
         for (int i = 0; i < g->n; i++) {
             if (g->c[i].kind != (pass == 0 ? K_CELL : pass == 1 ? K_HELPER : K_GERM)) continue;
             /* near a wrapping edge, also draw the part that pokes out on the other side */
             float m = 10 * u;
-            int wrap = g_config.germWrap, ex = 0, ey = 0;
+            int wrap = o_wrap, ex = 0, ey = 0;
             if (wrap) {
                 ex = g->c[i].x < m ? 1 : g->c[i].x > w - m ? -1 : 0;
                 ey = g->c[i].y < m ? 1 : g->c[i].y > h - m ? -1 : 0;
@@ -388,6 +536,11 @@ static void draw(void *pp, SDL_Renderer *r) {
         const Part *q = &g->part[i];
         float k = q->life / q->max;
         if (q->kind == P_RING) ring(r, q->x, q->y, q->size, 0.7f * u, col(q->col, k * 0.5f));
+        else if (q->kind == P_SPLASH) {                                            /* a quick ring out to the splash's edge */
+            float rad = q->size * (0.35f + 0.65f * sqrtf(1 - k));
+            fill_circle(r, q->x, q->y, rad, col(q->col, 0.12f * k));
+            ring(r, q->x, q->y, rad, 0.8f * u, col(q->col, 0.8f * k));
+        }
         else fill_circle(r, q->x, q->y, q->size * 0.7f, col(q->col, k));
     }
     if (g->wave > 0) {                                                             /* a wall of bubbles sweeps across */
@@ -421,10 +574,10 @@ static void draw(void *pp, SDL_Renderer *r) {
     g->hud = (SDL_Rect){ (int)(bx - 4 * u), (int)(by - 4 * u), (int)(bw + 8 * u), (int)(dy - by + 8 * u) };
 
     if (g_show_info) {
-        char line[96];
+        char line[128];
         int sc = g->h / 360 > 2 ? g->h / 360 : 2;
-        snprintf(line, sizeof line, "CELLS %d  HELPERS %d  GERMS %d   CELL WINS %d  GERM WINS %d",
-                 counts[K_CELL], counts[K_HELPER], counts[K_GERM], g->cellWins, g->germWins);
+        snprintf(line, sizeof line, "CELLS %d  HELPERS %d  GERMS %d   POPPED %d  BORN %d   CELL WINS %d  GERM WINS %d",
+                 counts[K_CELL], counts[K_HELPER], counts[K_GERM], g->popped, g->born, g->cellWins, g->germWins);
         draw_text_shadow(r, line, g->hud.x, g->hud.y + g->hud.h + 2 * sc, sc, hexcol(0xFFFFFF));
     }
 }
@@ -444,15 +597,57 @@ static void *create(SDL_Renderer *r, int w, int h) {
     g->w = w;
     g->h = h;
     g->u = h / 300.0f > 0.3f ? h / 300.0f : 0.3f;
-    g->startCells = g_config.germCells;
-    g->startHelpers = g_config.germHelpers;
-    if (g->startCells + g->startHelpers + g_config.germSeeds < 1) g->startCells = 1;
-    for (int i = 0; i < g->startCells; i++) spawn_inside(g, K_CELL);
+    g->startCells = o_cells;
+    g->startHelpers = o_helpers;
+    if (g->startCells + g->startHelpers + o_seeds < 1) g->startCells = 1;
+    /* helpers and germs first, so that with a low GERM_MAX it is the healthy cells that are fewer */
     for (int i = 0; i < g->startHelpers; i++) spawn_inside(g, K_HELPER);
-    for (int i = 0; i < g_config.germSeeds; i++) spawn_inside(g, K_GERM);
+    for (int i = 0; i < o_seeds; i++) spawn_inside(g, K_GERM);
+    for (int i = 0; i < g->startCells; i++) spawn_inside(g, K_CELL);
     return g;
 }
 
 static void destroy(void *pp) { free(pp); }
 
-const Saver saver_germs = { "germs", "GERMS", create, step, draw, destroy, NULL, keep_clear, "I INFO" };
+/* ---------- settings ---------- */
+
+#define NUM(k, lbl, hlp, v, d, l, h, st) .key = k, .label = lbl, .help = hlp, .value = &v, .def = d, .lo = l, .hi = h, .step = st
+static const SaverOption GERM_OPTIONS[] = {
+    { NUM("GERM_CELLS", "CELLS", "healthy cells the germs saver starts with", o_cells, 60, 0, 300, 10),
+      .flags = OPT_RESTART, .group = "AT THE START" },
+    { NUM("GERM_HELPERS", "HELPERS", "helper cells (white blood cells) that blow soap bubbles in the germs saver",
+          o_helpers, 2, 0, 100, 1), .flags = OPT_RESTART },
+    { NUM("GERM_SEEDS", "GERMS", "germs at the start, and how many come back when none are left", o_seeds, 5, 0, 50, 1),
+      .flags = OPT_RESTART },
+    { NUM("GERM_MAX", "MOST AT ONCE", "the most cells, helpers and germs on the slide at once; cells divide up to it",
+          o_max, 70, 1, MAXP, 10) },
+    { NUM("GERM_CELL_SPEED", "CELL SPEED", "how fast healthy cells drift and dash away, 1 to 10", o_cellSpeed, 5, 1, 10, 1),
+      .group = "HOW FAST" },
+    { NUM("GERM_HELPER_SPEED", "HELPER SPEED", "how fast helpers move, 1 to 10", o_helperSpeed, 5, 1, 10, 1) },
+    { NUM("GERM_SPEED", "GERM SPEED", "how fast germs chase, 1 to 10 (a dashing cell is about 5)", o_speed, 6, 1, 10, 1) },
+    { NUM("GERM_CELL_SIGHT", "CELLS SEE GERMS", "how far away a cell notices a germ and runs, 1 to 20 (each step is about a cell across)",
+          o_cellSight, 6, 1, 20, 1), .group = "HOW FAR THEY SEE" },
+    { NUM("GERM_HELPER_SIGHT", "HELPERS SEE GERMS", "how far away a helper notices a germ (or its trail), 1 to 20",
+          o_helperSight, 7, 1, 20, 1) },
+    { NUM("GERM_SIGHT", "GERMS SEE CELLS", "how far away a germ notices a cell to chase, 1 to 20", o_germSight, 10, 1, 20, 1) },
+    { NUM("GERM_BUBBLE_SPEED", "BUBBLE SPEED", "how fast a soap bubble flies, 1 to 10", o_bubbleSpeed, 5, 1, 10, 1),
+      .group = "SOAP BUBBLES" },
+    { NUM("GERM_RANGE", "BUBBLE RANGE", "how far a soap bubble flies, 1 to 10", o_range, 4, 1, 10, 1) },
+    { NUM("GERM_RELOAD", "BUBBLES HOW OFTEN", "how often a helper blows a bubble, 1 (slow) to 10 (fast)", o_reload, 5, 1, 10, 1) },
+    { NUM("GERM_SPLASH", "BUBBLE SPLASH", "how far a bursting bubble reaches, 0 (only the germ it hits) to 10",
+          o_splash, 3, 0, 10, 1) },
+    { NUM("GERM_POP", "BUBBLES POP GERMS", "1 = a bubble pops the germs it hits; 0 = it washes them back into cells",
+          o_pop, 1, 0, 1, 1), .flags = OPT_TOGGLE },
+    { NUM("GERM_HELPER_CATCH", "HELPERS CAN BE CAUGHT", "1 = a germ can catch a helper too (bubbles wash it back); 0 = helpers never turn green",
+          o_helperCatch, 1, 0, 1, 1), .flags = OPT_TOGGLE },
+    { NUM("GERM_TRAIL", "GERM TRAILS", "how long germs' faint trails last for helpers to follow, 0 (none) to 10",
+          o_trail, 5, 0, 10, 1), .group = "THE SLIDE" },
+    { NUM("GERM_GROWTH", "CELLS GROW BACK", "how fast healthy cells divide to fill the slide back up, 0 (never) to 10",
+          o_growth, 4, 0, 10, 1) },
+    { NUM("GERM_WRAP", "WRAP AROUND", "1 = germs and cells go off one edge and come back on the other, like Pac-Man",
+          o_wrap, 1, 0, 1, 1), .flags = OPT_TOGGLE },
+    { 0 },
+};
+#undef NUM
+
+const Saver saver_germs = { "germs", "GERMS", create, step, draw, destroy, NULL, keep_clear, "I INFO", GERM_OPTIONS };

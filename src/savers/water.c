@@ -1396,4 +1396,4 @@ static int keep_clear(void *p, SDL_Rect *out, int max) {
     return n;
 }
 
-const Saver saver_water = { "water", "WATER", create, step, draw, destroy, at_rest, keep_clear, "B STORM   F TO RAIN   I INFO" };
+const Saver saver_water = { "water", "WATER", create, step, draw, destroy, at_rest, keep_clear, "B STORM   F TO RAIN   I INFO", NULL };
