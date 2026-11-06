@@ -18,11 +18,11 @@ grep -q '^GERM_SPEED=10\( \|$\)' "$conf"                || fail "GERM_SPEED not 
 grep -q '^GERM_SPLASH=5 ' "$conf"                         || fail "--set of a saver setting not saved"
 grep -q '^BOOK_WORDS_PER_MINUTE=100 ' "$conf"             || fail "BOOK_PAGE_SECONDS not moved over"
 grep -q 'BOOK_PAGE_SECONDS' "$conf"                       && fail "old key left behind"
-grep -q '^GERM_POP=1 .*# ' "$conf"                        || fail "a new saver setting missing its comment"
+grep -q '^GERM_WRAP=1 .*# ' "$conf"                       || fail "a new saver setting missing its comment"
 [ "$(grep -c '^GERM_CELLS=' "$conf")" = 1 ]               || fail "a saver setting written twice"
 "$BIN" --set GERM_NOPE=1 >/dev/null 2>&1                  && fail "accepted an unknown key"
-"$BIN" --set GERM_POP=7 >/dev/null
-grep -q '^GERM_POP=1 ' "$conf"                            || fail "a toggle isn't 0 or 1"
+"$BIN" --set GERM_WRAP=7 >/dev/null
+grep -q '^GERM_WRAP=1 ' "$conf"                           || fail "a toggle isn't 0 or 1"
 "$BIN" --set GERM_CELLS= >/dev/null
 grep -q '^GERM_CELLS=60 ' "$conf"                         || fail "an empty value isn't the default"
 echo "settings file OK"

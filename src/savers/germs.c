@@ -1,7 +1,6 @@
 /* Germs: cells, germs and soap bubbles on a plain blue background. Soft blue cells drift about; spiky green germs chase
    them, and a cell a germ touches turns into a germ. Big white helper cells (the white blood cells)
-   blow soap bubbles; a bubble pops with a little splash, and every germ in the splash pops too
-   (or, with GERM_POP off, is washed back into a healthy cell). Healthy cells divide to fill the
+   blow soap bubbles; a bubble pops with a little splash, and every germ in the splash pops too. Healthy cells divide to fill the
    slide back up. Inspired by the Android live wallpaper Pixel Zombies. Its settings are in
    GERM_OPTIONS at the end: the settings page has them, and in a window O opens them live.
    When the germs run out a few cells catch them again; if every cell turns green, a wave of
@@ -24,11 +23,8 @@ enum { K_CELL, K_HELPER, K_GERM };
 enum { P_RING, P_DOT, P_SPLASH };
 
 /* Settings (GERM_OPTIONS below): read live, except the ones marked OPT_RESTART. */
-static int o_cells = 60, o_helpers = 2, o_seeds = 5, o_max = 70,
-           o_cellSpeed = 5, o_helperSpeed = 5, o_speed = 6,
-           o_cellSight = 6, o_helperSight = 7, o_germSight = 10,
-           o_bubbleSpeed = 5, o_range = 4, o_reload = 5, o_splash = 3, o_pop = 1,
-           o_trail = 5, o_growth = 4, o_wrap = 1, o_helperCatch = 1;
+static int o_cells = 60, o_helpers = 2, o_seeds = 5, o_max = 70, o_helperSpeed = 5, o_speed = 6, o_sight = 5,
+           o_range = 4, o_reload = 5, o_splash = 3, o_trail = 5, o_growth = 4, o_wrap = 1;
 
 typedef struct {
     int kind, home;             /* what it is now, and what it goes back to when washed */
@@ -66,22 +62,23 @@ typedef struct {
 
 /* ---------- tunables ---------- */
 
-/* Speeds: 5 is how the saver always moved. A dashing cell is about as fast as a germ at 5. */
-static float cell_drift(const Germs *g) { return 2.4f * o_cellSpeed * g->u; }
-static float cell_dash(const Germs *g) { return 5.2f * o_cellSpeed * g->u; }
+/* Speeds: helper speed 5 is how the saver always moved. A dashing cell is about as fast as a germ at 5. */
+static float cell_drift(const Germs *g) { return 12.0f * g->u; }
+static float cell_dash(const Germs *g) { return 26.0f * g->u; }
 static float helper_drift(const Germs *g) { return 2.4f * o_helperSpeed * g->u; }
 static float helper_chase(const Germs *g) { return 3.36f * o_helperSpeed * g->u; }
 static float helper_dash(const Germs *g) { return 5.2f * o_helperSpeed * g->u; }
-/* How far each kind notices the other side, in units (a cell is 10 across): 10 per step. */
+/* How far each kind notices the other side, in units (a cell is about 10 across). GERM_SIGHT 5:
+   germs 100, helpers 70, cells 60; the setting scales all three together. */
 static float sight(const Germs *g, int kind) {
-    return 10.0f * (kind == K_GERM ? o_germSight : kind == K_HELPER ? o_helperSight : o_cellSight) * g->u;
+    return (kind == K_GERM ? 100.0f : kind == K_HELPER ? 70.0f : 60.0f) * o_sight / 5.0f * g->u;
 }
 static float trail_life(void) { return 1.2f * o_trail; }   /* seconds a trail dot lasts: 6 at GERM_TRAIL 5 */
 static float germ_speed(const Germs *g) { return 5.1f * o_speed * g->u; }
 static float bubble_range(const Germs *g) { return 13.0f * o_range * g->u; }
 /* GERM_SPLASH 0 pops only the germ a bubble touches; 3 reaches about a germ's width past it; 10, four cells */
 static float splash_radius(const Germs *g) { return o_splash ? (5.0f + 2.5f * o_splash) * g->u : 0; }
-static float bubble_speed(const Germs *g) { return 30.0f * o_bubbleSpeed * g->u; }
+static float bubble_speed(const Germs *g) { return 150.0f * g->u; }
 #define HIT_RADIUS 6.0f   /* units: how close a bubble must come to a germ to pop */
 
 /* With wrapping on, the shortest way from one point to another may go off an edge. */
@@ -148,9 +145,9 @@ static void cure(Germs *g, Cell *q) {
 }
 
 /* A bubble pops a germ: it bursts into sparkles and is gone. A helper that caught a germ is too
-   big to pop, so it is washed back instead, and so is everyone with GERM_POP off. */
+   big to pop, so it is washed back instead. */
 static void pop(Germs *g, Cell *q) {
-    if (!o_pop || q->home == K_HELPER) { cure(g, q); return; }
+    if (q->home == K_HELPER) { cure(g, q); return; }
     q->dead = 1;
     g->popped++;
     burst(g, q->x, q->y, P_DOT, 10, 30, 0.7f, 0xB8F070);
@@ -314,7 +311,6 @@ static void step(void *pp, float dt) {
         for (int j = 0; j < g->n; j++) {
             Cell *o = &g->c[j];
             if (i == j || (q->kind == K_GERM) == (o->kind == K_GERM)) continue;
-            if (q->kind == K_GERM && o->kind == K_HELPER && !o_helperCatch) continue;   /* GERM_HELPER_CATCH 0: germs leave helpers be */
             float dx = wrapd(o->x - q->x, (float)g->w), dy = wrapd(o->y - q->y, (float)g->h), d = sqrtf(dx * dx + dy * dy);
             if (d < best) { best = d; near = o; ndx = dx; ndy = dy; }
         }
@@ -621,25 +617,15 @@ static const SaverOption GERM_OPTIONS[] = {
       .flags = OPT_RESTART },
     { NUM("GERM_MAX", "MOST AT ONCE", "the most cells, helpers and germs on the slide at once; cells divide up to it",
           o_max, 70, 1, MAXP, 10) },
-    { NUM("GERM_CELL_SPEED", "CELL SPEED", "how fast healthy cells drift and dash away, 1 to 10", o_cellSpeed, 5, 1, 10, 1),
-      .group = "HOW FAST" },
+    { NUM("GERM_SPEED", "GERM SPEED", "how fast germs chase, 1 to 10 (a dashing cell is about 5)", o_speed, 6, 1, 10, 1),
+      .group = "HOW THEY MOVE" },
     { NUM("GERM_HELPER_SPEED", "HELPER SPEED", "how fast helpers move, 1 to 10", o_helperSpeed, 5, 1, 10, 1) },
-    { NUM("GERM_SPEED", "GERM SPEED", "how fast germs chase, 1 to 10 (a dashing cell is about 5)", o_speed, 6, 1, 10, 1) },
-    { NUM("GERM_CELL_SIGHT", "CELLS SEE GERMS", "how far away a cell notices a germ and runs, 1 to 20 (each step is about a cell across)",
-          o_cellSight, 6, 1, 20, 1), .group = "HOW FAR THEY SEE" },
-    { NUM("GERM_HELPER_SIGHT", "HELPERS SEE GERMS", "how far away a helper notices a germ (or its trail), 1 to 20",
-          o_helperSight, 7, 1, 20, 1) },
-    { NUM("GERM_SIGHT", "GERMS SEE CELLS", "how far away a germ notices a cell to chase, 1 to 20", o_germSight, 10, 1, 20, 1) },
-    { NUM("GERM_BUBBLE_SPEED", "BUBBLE SPEED", "how fast a soap bubble flies, 1 to 10", o_bubbleSpeed, 5, 1, 10, 1),
+    { NUM("GERM_SIGHT", "HOW FAR THEY SEE", "how far cells, helpers and germs notice each other, 1 to 10", o_sight, 5, 1, 10, 1) },
+    { NUM("GERM_RELOAD", "BUBBLES HOW OFTEN", "how often a helper blows a bubble, 1 (slow) to 10 (fast)", o_reload, 5, 1, 10, 1),
       .group = "SOAP BUBBLES" },
     { NUM("GERM_RANGE", "BUBBLE RANGE", "how far a soap bubble flies, 1 to 10", o_range, 4, 1, 10, 1) },
-    { NUM("GERM_RELOAD", "BUBBLES HOW OFTEN", "how often a helper blows a bubble, 1 (slow) to 10 (fast)", o_reload, 5, 1, 10, 1) },
     { NUM("GERM_SPLASH", "BUBBLE SPLASH", "how far a bursting bubble reaches, 0 (only the germ it hits) to 10",
           o_splash, 3, 0, 10, 1) },
-    { NUM("GERM_POP", "BUBBLES POP GERMS", "1 = a bubble pops the germs it hits; 0 = it washes them back into cells",
-          o_pop, 1, 0, 1, 1), .flags = OPT_TOGGLE },
-    { NUM("GERM_HELPER_CATCH", "HELPERS CAN BE CAUGHT", "1 = a germ can catch a helper too (bubbles wash it back); 0 = helpers never turn green",
-          o_helperCatch, 1, 0, 1, 1), .flags = OPT_TOGGLE },
     { NUM("GERM_TRAIL", "GERM TRAILS", "how long germs' faint trails last for helpers to follow, 0 (none) to 10",
           o_trail, 5, 0, 10, 1), .group = "THE SLIDE" },
     { NUM("GERM_GROWTH", "CELLS GROW BACK", "how fast healthy cells divide to fill the slide back up, 0 (never) to 10",

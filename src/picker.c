@@ -2,7 +2,9 @@
    watch that saver right now (any touch comes back; nothing is changed). Tap a tile's heart
    to keep it in your screensaver or take it out. One heart: that saver plays when the
    computer is idle. Several: they take turns. At least one always stays in. The bar under
-   the tiles says what will play. The gear in the top-left corner opens the settings page.
+   the tiles says what will play. The gear in the top-left corner opens the settings page, and
+   a saver with settings of its own has a little sliders button on its picture's other corner
+   (or press O on its tile) that opens its own settings page.
    On disk this is still SAVER (one id, or "random") and RANDOM_SAVERS (who takes turns). */
 #include "engine.h"
 #include <math.h>
@@ -15,6 +17,7 @@
 typedef struct {
     SDL_Rect box, pic, preview;   /* pic: the framed picture under the title */
     float hx, hy, hr;             /* the heart: centre and radius */
+    float ox, oy, or;             /* the sliders button for the saver's own settings (or = 0: it has none) */
     const Saver *sv;
     void *st;
 } Tile;
@@ -23,6 +26,7 @@ typedef struct {
     SDL_Renderer *r;
     int w, h, sel, hover, hoverHeart, quit, keys;   /* keys: the keyboard is in use, show its cursor */
     int deny;                     /* the tile whose heart just refused to go (the last one) */
+    int hoverOpts, openOptions;   /* sliders under the pointer; a tile whose settings to open, plus one */
     float t, bump, denyT, titleH, labelH;
     Tile tile[MAX_TILES];
     int cols;
@@ -110,6 +114,9 @@ static void layout(Picker *p) {
         t->hr = t->pic.h * 0.13f;                      /* the heart sits on the picture's corner */
         t->hx = t->pic.x + t->pic.w - t->hr * 0.75f;
         t->hy = t->pic.y + t->hr * 0.95f;
+        t->or = option_count(t->sv) ? t->hr * 0.8f : 0;   /* the sliders sit on the other top corner */
+        t->ox = t->pic.x + t->hr * 0.75f;
+        t->oy = t->pic.y + t->hr * 0.95f;
         t->st = t->sv->create(p->r, t->preview.w, t->preview.h);
     }
     int bh = (int)(bottomH * 0.62f), by = (int)gridBottom + (int)(bottomH - bh) / 2;
@@ -148,7 +155,7 @@ void *picker_create(SDL_Renderer *r, int w, int h) {
     p->r = r;
     p->w = w;
     p->h = h;
-    p->hover = p->hoverHeart = p->deny = -1;
+    p->hover = p->hoverHeart = p->hoverOpts = p->deny = -1;
     layout(p);
     for (int i = 0; i < SAVER_COUNT; i++)
         if (!strcmp(g_config.saver, SAVERS[i]->id)) p->sel = i;
@@ -226,6 +233,20 @@ static void draw_tile(Picker *p, SDL_Renderer *r, int i) {
     if (!on) heart_shape(r, hx, hy + hr * 0.08f + hr * 0.04f, hr * 0.32f, hexcol(0x1A1240));
 }
 
+/* A saver's own settings: three little sliders on a dark button, in the gear's quiet colours. */
+static void draw_sliders(SDL_Renderer *r, const Tile *t, int hover) {
+    float cx = t->ox, cy = t->oy, rad = t->or * (hover ? 1.18f : 1.0f);
+    SDL_Color c = hexcol(0xB8C4FF);
+    fill_circle(r, cx, cy, rad * 1.12f, c);
+    fill_circle(r, cx, cy, rad, hexcol(0x1A1240));
+    static const float KNOB[3] = { -0.3f, 0.35f, -0.05f };
+    for (int k = 0; k < 3; k++) {
+        float y = cy + (k - 1) * rad * 0.42f;
+        thick_line(r, cx - rad * 0.55f, y, cx + rad * 0.55f, y, rad * 0.1f, c);
+        fill_circle(r, cx + KNOB[k] * rad, y, rad * 0.15f, c);
+    }
+}
+
 /* The settings gear, in quiet colours. */
 static void draw_gear(Picker *p, SDL_Renderer *r) {
     float cx = (float)p->gearC.x, cy = (float)p->gearC.y, rad = p->closeR * 0.95f;
@@ -268,7 +289,10 @@ void picker_draw(void *v, SDL_Renderer *r) {
     thick_line(r, p->closeC.x - k, p->closeC.y - k, p->closeC.x + k, p->closeC.y + k, p->closeR * 0.28f, hexcol(0xFFFFFF));
     thick_line(r, p->closeC.x - k, p->closeC.y + k, p->closeC.x + k, p->closeC.y - k, p->closeR * 0.28f, hexcol(0xFFFFFF));
 
-    for (int i = 0; i < TILES; i++) draw_tile(p, r, i);
+    for (int i = 0; i < TILES; i++) {
+        draw_tile(p, r, i);
+        if (p->tile[i].or > 0) draw_sliders(r, &p->tile[i], i == p->hoverOpts);
+    }
     draw_gear(p, r);
 
     SDL_Rect b = bar_rect(p);                                       /* what will play */
@@ -320,10 +344,20 @@ int picker_hit_heart(void *v, int x, int y) {
     return -1;
 }
 
-/* Which tile's picture (or title) is at (x, y), not counting its heart; -1 if none. */
+/* Which tile's sliders button (its own settings) is at (x, y); -1 if none. */
+static int hit_sliders(const Picker *p, int x, int y) {
+    for (int i = 0; i < TILES; i++) {
+        const Tile *t = &p->tile[i];
+        float dx = x - t->ox, dy = y - t->oy, rr = t->or * 1.4f;
+        if (t->or > 0 && dx * dx + dy * dy <= rr * rr) return i;
+    }
+    return -1;
+}
+
+/* Which tile's picture (or title) is at (x, y), not counting its heart or sliders; -1 if none. */
 int picker_hit_picture(void *v, int x, int y) {
     Picker *p = v;
-    if (picker_hit_heart(p, x, y) >= 0) return -1;
+    if (picker_hit_heart(p, x, y) >= 0 || hit_sliders(p, x, y) >= 0) return -1;
     for (int i = 0; i < TILES; i++) if (hit(p->tile[i].box, x, y)) return i;
     return -1;
 }
@@ -336,6 +370,8 @@ static void click(Picker *p, SDL_Window *win, int x, int y) {
     p->keys = 0;
     int i = picker_hit_heart(p, x, y);
     if (i >= 0) { heart_tapped(p, i); return; }
+    i = hit_sliders(p, x, y);
+    if (i >= 0) { p->sel = i; p->openOptions = i + 1; return; }
     i = picker_hit_picture(p, x, y);
     if (i >= 0) { p->sel = i; watch(p, win, i); }
 }
@@ -363,6 +399,7 @@ int run_picker(SDL_Window *win, SDL_Renderer *r) {
                 int x = (int)(e.motion.x * sx), y = (int)(e.motion.y * sy);
                 p->hoverHeart = picker_hit_heart(p, x, y);
                 p->hover = picker_hit_picture(p, x, y);
+                p->hoverOpts = hit_sliders(p, x, y);
                 break;
             }
             case SDL_MOUSEBUTTONDOWN:
@@ -382,6 +419,7 @@ int run_picker(SDL_Window *win, SDL_Renderer *r) {
                 if (k == SDLK_ESCAPE) p->quit = 1;
                 else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) watch(p, win, p->sel);
                 else if (k == SDLK_SPACE && !name_kept()) { p->keys = 1; heart_tapped(p, p->sel); }
+                else if (k == SDLK_o && !name_kept() && p->tile[p->sel].or > 0) p->openOptions = p->sel + 1;
                 else if (k == SDLK_LEFT) move_cursor(p, p->sel - 1);
                 else if (k == SDLK_RIGHT) move_cursor(p, p->sel + 1);
                 else if (k == SDLK_UP) move_cursor(p, p->sel >= p->cols ? p->sel - p->cols : p->sel);
@@ -409,6 +447,19 @@ int run_picker(SDL_Window *win, SDL_Renderer *r) {
         last = now;
         if (dt > 0.1f) dt = 0.1f;
         picker_step(p, dt);
+        if (p->openOptions) {                         /* a saver's own settings, from its tile */
+            Tile *t = &p->tile[p->openOptions - 1];
+            p->openOptions = 0;
+            SDL_StopTextInput();
+            if (run_saver_options(win, r, t->sv) == 1) p->quit = 1;
+            SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
+            t->sv->destroy(t->st);                    /* start its preview over with the new settings */
+            t->st = t->sv->create(r, t->preview.w, t->preview.h);
+            p->hover = p->hoverHeart = p->hoverOpts = -1;
+            if (name_kept()) SDL_StartTextInput();
+            last = SDL_GetPerformanceCounter();
+            continue;
+        }
         if (p->openSettings) {
             p->openSettings = 0;
             SDL_StopTextInput();

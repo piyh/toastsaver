@@ -28,6 +28,7 @@ typedef struct {
     int w, h, n, quit, hover, edit;     /* edit: the row being typed into, or -1. quit: 1 back, 2 close the app */
     char typed[6];
     float t, rowH, resetArm, scroll, scrollMax;
+    int sc;                             /* text size on the rows */
     int top, bottom;                    /* the rows' area on screen; rows outside it scroll */
     int pressed, dragging, pressX, pressY;
     float pressScroll;
@@ -54,40 +55,74 @@ static void clamp_scroll(Page *p) {
     if (p->scroll < 0) p->scroll = 0;
 }
 
+/* Rows go in one column, or in two side by side when the page is wide and has many rows: whole
+   groups go to each column, split where the two come out most even. A row has its label on the
+   left and a compact cluster on the right: - value +, or a switch and its word. */
 static void page_layout(Page *p) {
     const float headH = 0.6f;
-    int groups = 0;
-    for (int i = 0; i < p->n; i++) groups += row_of(p, i)->group != NULL;
     p->top = (int)(p->h * 0.13f);
     p->bottom = (int)(p->h * 0.83f);
-    float area = (float)(p->bottom - p->top);
-    p->rowH = area / (p->n + groups * headH + 0.001f);
+    float area = (float)(p->bottom - p->top), units[ROW_MAX], total = 0;
+    for (int i = 0; i < p->n; i++) total += units[i] = 1 + (row_of(p, i)->group ? headH : 0);
+    int split = p->n;                                     /* the first row of the second column */
+    float colUnits = total;
+    if (p->n > 8 && p->w >= p->h * 1.2f) {
+        float a = 0;
+        for (int i = 0; i < p->n; i++) {
+            if (i > 0 && row_of(p, i)->group && (a > total - a ? a : total - a) < colUnits) {
+                colUnits = a > total - a ? a : total - a;
+                split = i;
+            }
+            a += units[i];
+        }
+    }
+    p->rowH = area / (colUnits + 0.001f);
     if (p->rowH < p->h * 0.058f) p->rowH = p->h * 0.058f;    /* any smaller is hard to tap: scroll instead */
-    if (p->rowH > p->h * 0.1f) p->rowH = p->h * 0.1f;
-    int pad = (int)(p->rowH * 0.1f), btn = (int)(p->rowH * 0.62f), x = p->w / 20, rw = p->w - p->w / 10;
-    float y = (float)p->top;
+    if (p->rowH > p->h * 0.09f) p->rowH = p->h * 0.09f;
+    int cols = split < p->n ? 2 : 1, gap = p->w / 30, x0 = p->w / 20, fullW = p->w - p->w / 10;
+    int cw = cols == 2 ? (fullW - gap) / 2 : fullW;
+    int pad = (int)(p->rowH * 0.1f), btn = (int)(p->rowH * 0.62f);
+
+    /* the text size, and the controls' width at that size; smaller text until every label fits */
+    int sc = (int)(p->rowH * 0.3f / FONT_H), ctrlW = 0;
+    if (sc < 1) sc = 1;
+    for (;; sc--) {
+        int fw = text_width("9999 WPM", sc) + 2 * pad, word = text_width("24 HOUR", sc);
+        if (fw < btn * 2) fw = btn * 2;
+        ctrlW = 2 * btn + fw + 2 * pad;
+        if (btn * 2 + pad * 2 + word > ctrlW) ctrlW = btn * 2 + pad * 2 + word;
+        int fits = 1;
+        for (int i = 0; i < p->n; i++)
+            if (text_width(row_of(p, i)->label, sc) > cw - ctrlW - (int)p->rowH) fits = 0;
+        if (fits || sc == 1) break;
+    }
+    p->sc = sc;
+
+    float y[2] = { (float)p->top, (float)p->top };
     for (int i = 0; i < p->n; i++) {
-        p->head[i] = (SDL_Rect){ x, (int)y, rw, 0 };
+        int c = i >= split, x = x0 + c * (cw + gap);
+        p->head[i] = (SDL_Rect){ x, (int)y[c], cw, 0 };
         if (row_of(p, i)->group) {
             p->head[i].h = (int)(p->rowH * headH);
-            y += p->rowH * headH;
+            y[c] += p->rowH * headH;
         }
-        SDL_Rect r = { x, (int)y + pad / 2, rw, (int)p->rowH - pad };
-        y += p->rowH;
+        SDL_Rect r = { x, (int)y[c] + pad / 2, cw, (int)p->rowH - pad };
+        y[c] += p->rowH;
         p->row[i] = r;
-        int cy = r.y + (r.h - btn) / 2, right = r.x + r.w - pad * 2;
+        int cy = r.y + (r.h - btn) / 2, right = r.x + r.w - pad * 2, cx = right - ctrlW;
+        p->minus[i] = (SDL_Rect){ cx, cy, btn, btn };
         p->plus[i] = (SDL_Rect){ right - btn, cy, btn, btn };
-        p->minus[i] = (SDL_Rect){ (int)(p->w * 0.56f), cy, btn, btn };
-        p->field[i] = (SDL_Rect){ p->minus[i].x + btn + pad, r.y, p->plus[i].x - p->minus[i].x - btn - 2 * pad, r.h };
-        p->toggle[i] = (SDL_Rect){ (int)(p->w * 0.56f), cy, btn * 2, btn };
+        p->field[i] = (SDL_Rect){ cx + btn + pad, r.y, ctrlW - 2 * btn - 2 * pad, r.h };
+        p->toggle[i] = (SDL_Rect){ cx, cy, btn * 2, btn };
     }
-    p->scrollMax = y - p->bottom > 0 ? y - p->bottom : 0;
+    float end = y[0] > y[1] ? y[0] : y[1];
+    p->scrollMax = end - p->bottom > 0 ? end - p->bottom : 0;
     clamp_scroll(p);
-    int bh = (int)(p->h * 0.11f), bw = p->w * 26 / 100, gap = p->w / 40, by = (int)(p->h * 0.855f);
-    int x0 = (p->w - 3 * bw - 2 * gap) / 2;
-    p->test = (SDL_Rect){ x0, by, bw, bh };
-    p->reset = (SDL_Rect){ x0 + bw + gap, by, bw, bh };
-    p->done = (SDL_Rect){ p->spec->buttons == 1 ? (p->w - bw) / 2 : x0 + 2 * (bw + gap), by, bw, bh };
+    int bh = (int)(p->h * 0.11f), bw = p->w * 26 / 100, bgap = p->w / 40, by = (int)(p->h * 0.855f);
+    int bx = (p->w - 3 * bw - 2 * bgap) / 2;
+    p->test = (SDL_Rect){ bx, by, bw, bh };
+    p->reset = (SDL_Rect){ bx + bw + bgap, by, bw, bh };
+    p->done = (SDL_Rect){ p->spec->buttons == 1 ? (p->w - bw) / 2 : bx + 2 * (bw + bgap), by, bw, bh };
 }
 
 static Page *page_new(SDL_Renderer *r, int w, int h) {
@@ -211,10 +246,7 @@ void page_draw(void *pp, SDL_Renderer *r) {
     while (tsc > 1 && text_width(sp->title, tsc) > p->w * 0.9f) tsc--;
     ui_text_at(r, sp->title, (p->w - text_width(sp->title, tsc)) / 2, (int)(p->h * 0.065f), tsc, hexcol(0xFFE45C));
 
-    int sc = (int)(p->rowH * 0.3f / FONT_H);
-    if (sc < 1) sc = 1;
-    for (int i = 0; i < p->n; i++)                               /* every label fits left of the controls */
-        while (sc > 1 && text_width(row_of(p, i)->label, sc) > p->w * 0.46f) sc--;
+    int sc = p->sc;
     SDL_Rect clip = { 0, p->top, p->w, p->bottom - p->top };
     SDL_RenderSetClipRect(r, &clip);
     for (int i = 0; i < p->n; i++) {

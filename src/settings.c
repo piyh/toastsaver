@@ -1,8 +1,8 @@
 /* The settings page, reached from the gear in the picker's corner. It is a table of rows
    (SaverOption, drawn by the page in options.c) in groups: when it starts, taking turns,
-   what's on screen, saver options and this computer, then a test run and a reset to the
-   defaults. SAVER OPTIONS opens the savers' own settings, which each saver declares in its
-   own table, on pages drawn the same way.
+   what's on screen and this computer, then a test run and a reset to the
+   defaults. Only settings for the whole screensaver live here: a saver's own settings
+   (declared in its own table) are on its own page, opened from its tile in the picker.
    Every change is saved at once; timing changes restart the idle watcher when the page
    closes so they apply without logging out. The rows that need the idle watcher are
    greyed out where it isn't installed (the Mac preview), instead of doing nothing.
@@ -75,7 +75,6 @@ static const SaverOption ROWS[] = {
       .live = live_enabled },
     { .label = "CLOCK STYLE", .value = &g_config.clock24, .hi = 1, .flags = OPT_TOGGLE, .off = "12 HOUR", .on = "24 HOUR",
       .live = live_clock24 },
-    { .label = "EACH SAVER", .group = "SAVER OPTIONS", .flags = OPT_LINK },
     { .label = "SAVE POWER", .group = "THIS COMPUTER", .value = &g_config.fps, .def = 30, .hi = 1000, .flags = OPT_TOGGLE,
       .onValue = 30, .on = "30 FPS" },
     { 0 },
