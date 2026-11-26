@@ -1,3 +1,17 @@
+toastsaver (1.13.0) stable; urgency=medium
+
+  * Four new savers: KPOP (HUNTR/X concert stage with Derpy and Sussie),
+    HORSE (meadow horses that gallop, linger, and graze), BUTT (bouncing
+    cartoon animal butts), and COZYCAT (sleeping cat by a hearth and
+    Thanksgiving table).
+  * AQUARIUM: shadowy background Blue Whale and krill swarm, scuba divers,
+    and an extra-rare SpongeBob visitor.
+  * DICE: 100-sided faceted D100 ball on the E easter egg.
+  * STARFIELD: 3D rocket ships with tapered warp star streaks.
+  * CITY, BIRDS, RAINBOW, and GERMS polish and bug fixes.
+
+ -- piyh <10518137+piyh@users.noreply.github.com>  Thu, 26 Nov 2026 05:56:14 +0000
+
 toastsaver (1.12.0) stable; urgency=medium
 
   * GERMS: the white blood cells' soap bubbles burst with a little splash
