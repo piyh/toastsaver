@@ -351,7 +351,8 @@ typedef struct {
     int *nearTop;
     SDL_Texture *sky, *hill[3], *sun, *rays[3];
     SDL_Texture *bird[KINDS][FLAP + 1], *gull[FLAP], *cloud[CLOUD_SHAPES], *fly[6][3];
-    SDL_Texture *flower[FLOWER_KINDS][2][3], *sunflower[3];
+    SDL_Texture *flower[FLOWER_KINDS][2][3], *sunflower[3], *farmTex[4];
+    int farmW[4], farmH[4];
     int cloudW[CLOUD_SHAPES], cloudH[CLOUD_SHAPES];
     Bird b[MAX_BIRDS];
     Cloud c[MAX_CLOUDS];
@@ -539,10 +540,49 @@ static void *create(SDL_Renderer *r, int w, int h) {
                 put(&c, x, y, y == top[x] ? rgb(rim[k])
                               : dither_mix(hiC[k], loC[k], (float)(y - top[x]) / (lh * 0.22f), x, y, 1.0f));
         }
-        if (k < 2) {                                      /* lollipop trees */
+        if (k == 1) {                                      /* background farm: red barn, silo, and pasture fence */
+            int bx = (int)(lw * 0.26f), by = top[bx] + 2;
+            int bw = 20, bh = 13;
+            /* Silo */
+            fill_rect(&c, bx - 7, by - 14, bx - 2, by, rgb(0xD8D4CC));
+            fill_rect(&c, bx - 7, by - 14, bx - 6, by, rgb(0xB8B4AC));
+            fill_ellipse(&c, bx - 4.5f, by - 14, 2.8f, 2.5f, rgb(0xA8B0B8));
+            /* Barn body & roof */
+            fill_rect(&c, bx, by - bh, bx + bw, by, rgb(0xC83228));
+            fill_rect(&c, bx, by - bh, bx + bw, by - bh + 1, rgb(0x9E221A));
+            fill_poly(&c, (float[]){ bx - 2, bx + bw * 0.5f, bx + bw + 2 },
+                      (float[]){ (float)(by - bh), (float)(by - bh - 7), (float)(by - bh) }, 3, rgb(0x7A2218));
+            fill_rect(&c, bx + bw / 2 - 2, by - bh - 4, bx + bw / 2 + 2, by - bh - 1, rgb(0xFFF6D6)); /* loft */
+            /* White X barn door */
+            fill_rect(&c, bx + bw / 2 - 4, by - 7, bx + bw / 2 + 4, by, rgb(0xA6241C));
+            for (int d = -4; d <= 4; d++) {
+                put(&c, bx + bw / 2 + d, by - 7, rgb(0xFFFFFF));
+                put(&c, bx + bw / 2 - 4, by - 3 + d / 2, rgb(0xFFFFFF));
+                put(&c, bx + bw / 2 + 4, by - 3 + d / 2, rgb(0xFFFFFF));
+                put(&c, bx + bw / 2 + d, by - 3 - d / 2, rgb(0xFFFFFF));
+                put(&c, bx + bw / 2 + d, by - 3 + d / 2, rgb(0xFFFFFF));
+            }
+            /* White pasture fence along the farm hill */
+            int fx0 = bx + bw + 6, fx1 = (int)(lw * 0.78f);
+            for (int x = fx0; x < fx1 && x < lw; x += 7) {
+                int fy = top[x] + 1;
+                fill_rect(&c, x, fy - 4, x, fy, rgb(0xF4EFE6));
+                if (x + 7 < fx1 && x + 7 < lw) {
+                    int fy2 = top[x + 7] + 1;
+                    for (int xx = 1; xx < 7; xx++) {
+                        int ry = fy + (fy2 - fy) * xx / 7;
+                        put(&c, x + xx, ry - 3, rgb(0xEAE4D8));
+                        put(&c, x + xx, ry - 1, rgb(0xEAE4D8));
+                    }
+                }
+            }
+        }
+        if (k < 2) {                                      /* lollipop trees (keep clear of barn on hill 1) */
+            int barnX0 = (int)(lw * 0.26f) - 12, barnX1 = (int)(lw * 0.26f) + 26;
             int trees = lw / (k ? 26 : 34) + 2;
             for (int i = 0; i < trees; i++) {
                 int x = irand(lw), base = top[x] + 1 + irand(3);
+                if (k == 1 && x >= barnX0 && x <= barnX1) continue;
                 float rr = k ? frand(2.6f, 3.8f) : frand(1.6f, 2.4f);
                 uint32_t dark = k ? 0x3E8E44 : 0x79B894, lite = k ? 0x5FB85A : 0x93CFA8;
                 if (k) fill_rect(&c, x, base - 2, x, base, rgb(0x7A5230));
@@ -631,6 +671,44 @@ static void *create(SDL_Renderer *r, int w, int h) {
     }
     Canvas sun = make_sun();
     s->sun = canvas_texture(r, &sun);
+    /* Outlined pixel-art farm animal sprites (cow, sheep, pig, chicken) */
+    {
+        Canvas cow = canvas_new(16, 11);
+        fill_rect(&cow, 2, 3, 10, 7, rgb(0xFFFDF8));
+        fill_rect(&cow, 4, 3, 6, 5, rgb(0x2A2420));
+        fill_rect(&cow, 8, 5, 9, 6, rgb(0x2A2420));
+        fill_rect(&cow, 3, 8, 4, 9, rgb(0xE8E2D8));
+        fill_rect(&cow, 8, 8, 9, 9, rgb(0xE8E2D8));
+        fill_rect(&cow, 10, 2, 13, 5, rgb(0xFFFDF8));
+        fill_rect(&cow, 13, 4, 14, 5, rgb(0xF5B8C0));
+        put(&cow, 12, 3, rgb(0x181818));
+        outline(&cow, rgb(0x241C16));
+        s->farmW[0] = cow.w; s->farmH[0] = cow.h; s->farmTex[0] = canvas_texture(r, &cow);
+
+        Canvas sheep = canvas_new(11, 9);
+        fill_ellipse(&sheep, 4.5f, 4.0f, 3.2f, 2.4f, rgb(0xF8F8F4));
+        fill_rect(&sheep, 3, 6, 3, 7, rgb(0x2C2826));
+        fill_rect(&sheep, 6, 6, 6, 7, rgb(0x2C2826));
+        fill_rect(&sheep, 7, 3, 9, 5, rgb(0x2C2826));
+        outline(&sheep, rgb(0x2C2826));
+        s->farmW[1] = sheep.w; s->farmH[1] = sheep.h; s->farmTex[1] = canvas_texture(r, &sheep);
+
+        Canvas pig = canvas_new(11, 8);
+        fill_rect(&pig, 2, 2, 7, 5, rgb(0xFFA8B8));
+        fill_rect(&pig, 3, 6, 3, 6, rgb(0xE88296));
+        fill_rect(&pig, 6, 6, 6, 6, rgb(0xE88296));
+        fill_rect(&pig, 8, 3, 9, 4, rgb(0xF07890));
+        outline(&pig, rgb(0x6E2C3A));
+        s->farmW[2] = pig.w; s->farmH[2] = pig.h; s->farmTex[2] = canvas_texture(r, &pig);
+
+        Canvas ch = canvas_new(7, 7);
+        fill_rect(&ch, 1, 3, 3, 4, rgb(0xFFF6D6));
+        fill_rect(&ch, 3, 1, 4, 3, rgb(0xFFFFFF));
+        put(&ch, 5, 2, rgb(0xFF9A2E));
+        put(&ch, 2, 5, rgb(0xFF9A2E));
+        outline(&ch, rgb(0x4A3818));
+        s->farmW[3] = ch.w; s->farmH[3] = ch.h; s->farmTex[3] = canvas_texture(r, &ch);
+    }
     for (int i = 0; i < CLOUD_SHAPES; i++) {
         Canvas c = make_cloud(22 + i * 4 + irand(4));
         s->cloudW[i] = c.w;
@@ -931,6 +1009,38 @@ static void draw(void *p, SDL_Renderer *r) {
     SDL_RenderCopy(r, s->hill[0], NULL, &full);
     draw_birds(s, r, 0, 0);
     SDL_RenderCopy(r, s->hill[1], NULL, &full);
+    /* Outlined pixel-art farm animals grazing in the background pasture */
+    {
+        int baseY = (int)(s->lh * 0.73f) * u;
+        for (int i = 0; i < 2; i++) {
+            int cx = (int)(s->w * (0.42f + i * 0.16f) + sinf(s->t * 0.18f + i * 2.1f) * 14 * u);
+            int cy = baseY + i * 4 * u;
+            int dir = cosf(s->t * 0.18f + i * 2.1f) >= 0 ? 1 : -1;
+            int graze = sinf(s->t * 1.4f + i * 1.7f) > 0.3f ? u : 0;
+            SDL_Rect d = { cx - s->farmW[0] * u / 2, cy - s->farmH[0] * u + graze, s->farmW[0] * u, s->farmH[0] * u };
+            SDL_RenderCopyEx(r, s->farmTex[0], NULL, &d, 0, NULL, dir < 0 ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE);
+        }
+        for (int i = 0; i < 2; i++) {
+            int sx = (int)(s->w * (0.50f + i * 0.21f) + cosf(s->t * 0.22f + i) * 10 * u);
+            int sy = baseY + (2 - i) * 3 * u;
+            int dir = -sinf(s->t * 0.22f + i) >= 0 ? 1 : -1;
+            SDL_Rect d = { sx - s->farmW[1] * u / 2, sy - s->farmH[1] * u, s->farmW[1] * u, s->farmH[1] * u };
+            SDL_RenderCopyEx(r, s->farmTex[1], NULL, &d, 0, NULL, dir < 0 ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE);
+        }
+        {
+            int px = (int)(s->w * 0.34f + sinf(s->t * 0.3f) * 8 * u), py = baseY + 3 * u;
+            int dir = cosf(s->t * 0.3f) >= 0 ? 1 : -1;
+            SDL_Rect d = { px - s->farmW[2] * u / 2, py - s->farmH[2] * u, s->farmW[2] * u, s->farmH[2] * u };
+            SDL_RenderCopyEx(r, s->farmTex[2], NULL, &d, 0, NULL, dir < 0 ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE);
+        }
+        for (int i = 0; i < 2; i++) {
+            int kx = (int)(s->w * (0.29f + i * 0.03f) + sinf(s->t * 0.9f + i * 2) * 3 * u);
+            int ky = baseY + 4 * u;
+            int peck = sinf(s->t * 5.0f + i) > 0.6f ? u : 0;
+            SDL_Rect d = { kx - s->farmW[3] * u / 2, ky - s->farmH[3] * u + peck, s->farmW[3] * u, s->farmH[3] * u };
+            SDL_RenderCopyEx(r, s->farmTex[3], NULL, &d, 0, NULL, i % 2 ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE);
+        }
+    }
     draw_birds(s, r, 1, 0);
     SDL_RenderCopy(r, s->hill[2], NULL, &full);
 
@@ -981,6 +1091,7 @@ static void destroy(void *p) {
         for (int t = 0; t < 2; t++)
             for (int fr = 0; fr < 3; fr++) SDL_DestroyTexture(s->flower[k][t][fr]);
     for (int i = 0; i < CLOUD_SHAPES; i++) SDL_DestroyTexture(s->cloud[i]);
+    for (int i = 0; i < 4; i++) SDL_DestroyTexture(s->farmTex[i]);
     free(s->nearTop);
     free(s);
 }

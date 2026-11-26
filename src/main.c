@@ -19,6 +19,7 @@ static const Saver *const ALL_SAVERS[] = {
     &saver_toasters, &saver_rainbow, &saver_pipes, &saver_books, &saver_dice, &saver_aquarium,
     &saver_birds, &saver_starfield, &saver_mystify, &saver_matrix, &saver_lava, &saver_name,
     &saver_volcano, &saver_city, &saver_germs,
+    &saver_kpop, &saver_horse, &saver_butt, &saver_cozycat,
     &saver_water, &saver_butterfly, &saver_word,
 };
 #define ALL_COUNT ((int)(sizeof ALL_SAVERS / sizeof ALL_SAVERS[0]))
@@ -144,7 +145,6 @@ static void draw_speed_ui(SDL_Renderer *r, int w, int h, float lg, int paused, c
     snprintf(keys, sizeof keys, "[ ] SPEED   1 NORMAL SPEED   R RESTART   SPACE PAUSE   S SHOT%s%s%s",
              option_count(sv) ? "   O SETTINGS" : "", sv->keys ? "   " : "", sv->keys ? sv->keys : "");
     draw_text_shadow(r, keys, t.x + t.w / 2 - text_width(keys, 1) / 2, t.y + t.h + 8, 1, (SDL_Color){ 220, 220, 220, 255 });
-    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
 
 /* Saves what is on screen (call after drawing, before presenting) to ~/Pictures if it exists,
@@ -203,14 +203,13 @@ static void draw_crossfade(SDL_Renderer *r, SDL_Texture *old, float left) {
 int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, int cycle) {
     int w, h;
     SDL_GetRendererOutputSize(r, &w, &h);
+    g_force_egg = getenv("TOASTSAVER_EGG") != NULL;
+    g_force_boom = 0;
+    g_rush = 0;
     void *st = sv->create(r, w, h);
     if (!st) return 1;
     if (!windowed) SDL_ShowCursor(SDL_DISABLE);
     clock_reset(w, h);
-
-    g_force_egg = 0;
-    g_force_boom = 0;
-    g_rush = 0;
     const Uint64 freq = SDL_GetPerformanceFrequency();
     Uint64 last = SDL_GetPerformanceCounter();
     const Uint32 started = SDL_GetTicks();
@@ -373,6 +372,7 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, i
             }
         }
         SDL_RenderSetViewport(r, NULL);
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
         sv->draw(st, r);
         if (windowed && panel.open && sv->explain && option_count(sv))   /* what the picked setting does */
             sv->explain(st, r, &sv->options[panel.sel]);
@@ -400,7 +400,6 @@ int run_saver(SDL_Window *win, SDL_Renderer *r, const Saver *sv, int windowed, i
             SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
             SDL_SetRenderDrawColor(r, 255, 255, 255, (Uint8)(flash / 0.25f * 160));
             SDL_RenderFillRect(r, NULL);
-            SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
             flash -= dt;
         }
         SDL_RenderPresent(r);

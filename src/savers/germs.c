@@ -61,7 +61,7 @@ typedef struct {
     Event ev[MAXEV];
     int nextEv;
     float t, noGerms, noCells, wave;
-    int startCells, startHelpers;
+    int startCells, startHelpers, waveReset;
     Cell c[MAXP];
     int n;
     Shot shot[MAXSHOT];
@@ -81,9 +81,9 @@ static float helper_drift(const Germs *g) { return 2.4f * o_helperSpeed * g->u; 
 static float helper_chase(const Germs *g) { return 3.36f * o_helperSpeed * g->u; }
 static float helper_dash(const Germs *g) { return 5.2f * o_helperSpeed * g->u; }
 /* How far each kind notices the other side, in units (a cell is about 10 across). GERM_SIGHT 5:
-   germs 100, helpers 70, cells 60; the setting scales all three together. */
+   germs 100, helpers 140, cells 60; the setting scales all three together. */
 static float sight(const Germs *g, int kind) {
-    return (kind == K_GERM ? 100.0f : kind == K_HELPER ? 70.0f : 60.0f) * o_sight / 5.0f * g->u;
+    return (kind == K_GERM ? 100.0f : kind == K_HELPER ? 140.0f : 60.0f) * o_sight / 5.0f * g->u;
 }
 static float trail_life(void) { return 1.2f * o_trail; }   /* seconds a trail dot lasts: 6 at GERM_TRAIL 5 */
 static float germ_speed(const Germs *g) { return 5.1f * o_speed * g->u; }
@@ -153,6 +153,33 @@ static void spawn_inside(Germs *g, int kind) {
     spawn(g, kind, frand(0.04f * g->w, 0.96f * g->w), frand(0.06f * g->h, 0.96f * g->h));
 }
 
+/* Spawn a new germ entering from an outer edge of the slide. */
+static void spawn_from_edge(Germs *g) {
+    if (g->n >= MAXP) return;
+    int edge = irand(4);
+    float pad = o_wrap ? 2.0f * g->u : -6.0f * g->u;
+    float x = 0, y = 0, vx = 0, vy = 0;
+    float sp = germ_speed(g) * 0.8f;
+    if (edge == 0) { x = pad; y = frand(0.06f * g->h, 0.94f * g->h); vx = sp; vy = frand(-0.3f, 0.3f) * sp; }
+    else if (edge == 1) { x = g->w - pad; y = frand(0.06f * g->h, 0.94f * g->h); vx = -sp; vy = frand(-0.3f, 0.3f) * sp; }
+    else if (edge == 2) { x = frand(0.06f * g->w, 0.94f * g->w); y = pad; vx = frand(-0.3f, 0.3f) * sp; vy = sp; }
+    else { x = frand(0.06f * g->w, 0.94f * g->w); y = g->h - pad; vx = frand(-0.3f, 0.3f) * sp; vy = -sp; }
+    Cell *q = &g->c[g->n++];
+    memset(q, 0, sizeof *q);
+    q->kind = q->home = K_GERM;
+    q->x = x;
+    q->y = y;
+    q->vx = vx;
+    q->vy = vy;
+    q->ph = frand(0, 6);
+    q->spin = frand(-1, 1);
+    q->think = frand(0, 2);
+    q->tx = g->w * 0.5f;
+    q->ty = g->h * 0.5f;
+    q->cool = frand(0, 1);
+    q->age = 10;
+}
+
 static void infect(Cell *q) {
     q->kind = K_GERM;
     q->flash = 1;
@@ -217,7 +244,8 @@ static void fire(Germs *g, Cell *from, const Cell *to) {
         Shot *s = &g->shot[i];
         if (s->life > 0) continue;
         float sp = bubble_speed(g);
-        float dx = to->x - from->x, dy = to->y - from->y, d = sqrtf(dx * dx + dy * dy) + 0.001f;
+        float dx = wrapd(to->x - from->x, (float)g->w), dy = wrapd(to->y - from->y, (float)g->h);
+        float d = sqrtf(dx * dx + dy * dy) + 0.001f;
         float lead = d / sp, a = atan2f(dy + to->vy * lead, dx + to->vx * lead);
         if (irand(100) < 45) a += frand(-0.35f, 0.35f);   /* sometimes it just misses */
         s->x = from->x + cosf(a) * 7 * g->u;
@@ -310,6 +338,30 @@ static void steer(Germs *g, Cell *q, const Cell *near, float ndx, float ndy, flo
             *speed = q->kind == K_GERM ? germ_speed(g) * 0.45f : q->kind == K_HELPER ? helper_drift(g) : cell_drift(g);
         }
     }
+    /* Keep helpers spaced smoothly apart while hunting/firing so they flank instead of bobbing */
+    if (q->kind == K_HELPER) {
+        float sx = 0, sy = 0;
+        int tooClose = 0;
+        for (int j = 0; j < g->n; j++) {
+            const Cell *o = &g->c[j];
+            if (o == q || o->kind != K_HELPER) continue;
+            float ox = wrapd(q->x - o->x, w), oy = wrapd(q->y - o->y, h), d2 = ox * ox + oy * oy;
+            float sepR = 22.0f * u;
+            if (d2 < sepR * sepR && d2 > 0.001f) {
+                float d = sqrtf(d2), k = (sepR - d) / sepR;
+                sx += (ox / d) * k;
+                sy += (oy / d) * k;
+                if (d < 14.0f * u) tooClose = 1;
+            }
+        }
+        if (sx != 0 || sy != 0) {
+            float l0 = sqrtf(*dx * *dx + *dy * *dy);
+            if (l0 > 0.001f) { *dx /= l0; *dy /= l0; }
+            *dx += sx * 1.6f;
+            *dy += sy * 1.6f;
+            if (tooClose && *speed < helper_drift(g)) *speed = helper_drift(g);
+        }
+    }
     /* stay on the slide: lean away from the edges, unless they wrap around */
     float m = 10 * u;
     float len = sqrtf(*dx * *dx + *dy * *dy);
@@ -363,15 +415,28 @@ static void step(void *pp, float dt) {
         /* a catch: a germ touching a cell that wasn't just washed */
         if (q->kind == K_GERM && near && best < 8 * u && near->immune <= 0 && q->flash <= 0) infect(near);
     }
-    /* keep cells from piling on top of each other */
+    /* keep cells from piling on top of each other without springy oscillation */
     for (int i = 0; i < g->n; i++)
         for (int j = i + 1; j < g->n; j++) {
             Cell *a = &g->c[i], *b = &g->c[j];
-            float dx = wrapd(b->x - a->x, (float)g->w), dy = wrapd(b->y - a->y, (float)g->h), d2 = dx * dx + dy * dy, m = 9 * u;
-            if (d2 < m * m && d2 > 0.001f && (a->kind == K_GERM) == (b->kind == K_GERM)) {
-                float d = sqrtf(d2), push = (m - d) / m * 90 * u * dt;
-                a->vx -= dx / d * push; a->vy -= dy / d * push;
-                b->vx += dx / d * push; b->vy += dy / d * push;
+            if ((a->kind == K_GERM) != (b->kind == K_GERM)) continue;
+            float dx = wrapd(b->x - a->x, (float)g->w), dy = wrapd(b->y - a->y, (float)g->h), d2 = dx * dx + dy * dy;
+            float m = (a->kind == K_HELPER && b->kind == K_HELPER) ? 13 * u : 9 * u;
+            if (d2 < m * m && d2 > 0.001f) {
+                float d = sqrtf(d2), nx = dx / d, ny = dy / d, overlap = m - d;
+                /* Gently separate positions directly so cells don't bounce in place */
+                float sep = overlap * fminf(0.5f, 6.0f * dt);
+                a->x = wrapp(a->x - nx * sep, (float)g->w);
+                a->y = wrapp(a->y - ny * sep, (float)g->h);
+                b->x = wrapp(b->x + nx * sep, (float)g->w);
+                b->y = wrapp(b->y + ny * sep, (float)g->h);
+                /* Cancel inward relative velocity */
+                float rvn = (b->vx - a->vx) * nx + (b->vy - a->vy) * ny;
+                if (rvn < 0) {
+                    float imp = -0.5f * rvn;
+                    a->vx -= nx * imp; a->vy -= ny * imp;
+                    b->vx += nx * imp; b->vy += ny * imp;
+                }
             }
         }
     /* soap bubbles */
@@ -423,23 +488,36 @@ static void step(void *pp, float dt) {
     int seeds = g->demo ? 2 : o_seeds;
     float wait = g->demo ? 1.5f : 4;         /* the preview keeps something happening */
     if (g->noGerms > wait && seeds > 0) {
-        for (int i = 0; i < seeds && healthy > 0; i++) {   /* a few healthy cells catch the germs again */
-            Cell *q = &g->c[irand(g->n)];
-            if (q->kind != K_CELL || q->dead) { i--; continue; }
-            infect(q);
-            healthy--;
-        }
+        for (int i = 0; i < seeds; i++) spawn_from_edge(g);   /* new germs enter from outside */
         g->noGerms = 0;
-        g->cellWins++;
+        if (!g->waveReset) g->cellWins++;
+        g->waveReset = 0;
     } else if (g->noGerms > wait) {
         g->noGerms = 0;   /* zero seeds means the germs are not coming back */
+        g->waveReset = 0;
     }
     if (g->noCells > (g->demo ? 2 : 5) && g->wave <= 0) { g->wave = 1; g->germWins++; }   /* all germs: a wave of bubbles */
     if (g->wave > 0) {
         g->wave += g->w * 0.22f * dt;
         for (int i = 0; i < g->n; i++)
             if (g->c[i].kind == K_GERM && g->c[i].x < g->wave) cure(g, &g->c[i]);
-        if (g->wave > g->w + 40 * u) { g->wave = 0; g->noCells = 0; }
+        if (g->wave > g->w + 40 * u) {
+            g->wave = 0;
+            g->noCells = 0;
+            g->waveReset = 1;
+            /* Restore starting populations of helpers and healthy cells when the board resets */
+            int curHelpers = 0, curCells = 0;
+            for (int i = 0; i < g->n; i++) {
+                if (g->c[i].kind == K_HELPER) curHelpers++;
+                else if (g->c[i].kind == K_CELL) curCells++;
+            }
+            for (int i = curHelpers; i < g->startHelpers; i++) spawn_inside(g, K_HELPER);
+            for (int i = curCells; i < g->startCells; i++) {
+                int prevN = g->n;
+                spawn_inside(g, K_CELL);
+                if (g->n > prevN) g->c[g->n - 1].age = 0;
+            }
+        }
     }
 }
 

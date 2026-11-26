@@ -244,7 +244,7 @@ static void unicorn_tick(Rainbow *r, float dt) {
             r->uniT = 0;
             r->uniX = r->w + uni_w(r);
             r->uniY = r->baseY > r->h * 0.42f ? r->h * 0.12f : r->h * 0.7f;   /* keep clear of the cat */
-            r->eggT = frand(150, 240);
+            r->eggT = frand(14, 24);
             g_force_egg = 0;
         }
         return;
@@ -323,7 +323,7 @@ static void *create(SDL_Renderer *ren, int w, int h) {
         r->pugTex[i] = canvas_texture(ren, &g);
     }
     for (int i = 0; i < PUGS; i++) spawn_pug(r, &r->pug[i], 1);
-    r->eggT = frand(90, 150);
+    r->eggT = frand(6, 12);
     for (int i = 0; i < STARS; i++) {
         r->star[i][0] = frand(0, (float)w);
         r->star[i][1] = frand(0, (float)h);

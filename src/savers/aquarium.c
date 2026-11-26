@@ -11,6 +11,8 @@ enum { CLOWN, TANG, PUFFER, ANGEL, SMALL_SPECIES, SHARK = SMALL_SPECIES, TURTLE,
 #define PEBBLES 70
 #define JELLIES 2
 #define SNOW 40
+#define MAX_DIVERS 2
+#define MAX_KRILL 56
 
 static uint32_t rgba(uint32_t hex, uint32_t a) { return (hex << 8) | a; }
 
@@ -264,6 +266,110 @@ static Canvas make_chest(void) {
     return c;
 }
 
+/* Scuba diver facing right: wetsuit, air tank, mask, flippers. */
+static Canvas make_diver(int frame) {
+    Canvas c = canvas_new(34, 16);
+    int kick = frame ? 2 : -2;
+    /* Flippers */
+    fill_poly(&c, (float[]){ 0, 6, 6 }, (float[]){ 6 + kick, 5, 8 }, 3, rgb(0xFFD23F));
+    fill_poly(&c, (float[]){ 1, 7, 7 }, (float[]){ 11 - kick, 9, 12 }, 3, rgb(0xE0A81E));
+    /* Legs & wetsuit body */
+    fill_rect(&c, 6, 6, 12, 8, rgb(0x2A3244));
+    fill_rect(&c, 7, 9, 12, 11, rgb(0x1E2534));
+    fill_ellipse(&c, 17, 8, 6.5f, 3.8f, rgb(0x2A3244));
+    fill_rect(&c, 14, 7, 20, 8, rgb(0xFF7A28)); /* wetsuit stripe */
+    /* Air tank */
+    fill_round_rect(&c, 12, 2, 21, 5, 1, rgb(0xF5B82E));
+    fill_rect(&c, 21, 3, 22, 4, rgb(0x9098A8));
+    /* Arm reaching forward */
+    fill_rect(&c, 19, 10, 26, 11, rgb(0x2A3244));
+    fill_rect(&c, 26, 10, 27, 11, rgb(0xF2C29B));
+    /* Head & diving mask */
+    fill_ellipse(&c, 26, 6.5f, 4, 3.6f, rgb(0xF2C29B));
+    fill_ellipse(&c, 25, 5, 3.5f, 2.2f, rgb(0x2A3244)); /* hood */
+    fill_rect(&c, 27, 5, 30, 7, rgb(0x7EE8FF));        /* mask glass */
+    fill_rect(&c, 27, 4, 30, 4, rgb(0x181C24));        /* mask rim */
+    fill_rect(&c, 29, 8, 31, 9, rgb(0x3A4254));        /* regulator */
+    outline(&c, rgb(0x10141C));
+    return c;
+}
+
+/* SpongeBob facing right: yellow porous sponge, big eyes, buck teeth, red tie, brown square pants. */
+static Canvas make_spongebob(int frame) {
+    Canvas c = canvas_new(22, 26);
+    int step = frame ? 1 : -1;
+    /* Little legs & shoes */
+    fill_rect(&c, 7 + step, 20, 8 + step, 23, rgb(0xF7E33B));
+    fill_rect(&c, 13 - step, 20, 14 - step, 23, rgb(0xF7E33B));
+    fill_rect(&c, 6 + step, 23, 9 + step, 24, rgb(0x181818));
+    fill_rect(&c, 13 - step, 23, 16 - step, 24, rgb(0x181818));
+    /* Brown square pants & white shirt */
+    fill_rect(&c, 5, 17, 16, 20, rgb(0x8B5A2B));
+    fill_rect(&c, 6, 17, 7, 17, rgb(0x181818)); fill_rect(&c, 10, 17, 11, 17, rgb(0x181818)); fill_rect(&c, 14, 17, 15, 17, rgb(0x181818));
+    fill_rect(&c, 5, 14, 16, 16, rgb(0xFFFFFF));
+    /* Red tie */
+    fill_rect(&c, 10, 15, 11, 18, rgb(0xE03030));
+    /* Yellow sponge body */
+    fill_round_rect(&c, 4, 2, 17, 14, 2, rgb(0xFCE83A));
+    put(&c, 6, 4, rgb(0xD4B81C)); put(&c, 15, 5, rgb(0xD4B81C)); put(&c, 6, 11, rgb(0xD4B81C));
+    /* Big blue eyes + rosy cheeks */
+    fill_ellipse(&c, 8.5f, 7, 2.3f, 2.5f, rgb(0xFFFFFF));
+    fill_ellipse(&c, 13.5f, 7, 2.3f, 2.5f, rgb(0xFFFFFF));
+    put(&c, 8, 7, rgb(0x3898FF)); put(&c, 13, 7, rgb(0x3898FF));
+    put(&c, 9, 7, rgb(0x111111)); put(&c, 14, 7, rgb(0x111111));
+    put(&c, 6, 10, rgb(0xFF7A8A)); put(&c, 15, 10, rgb(0xFF7A8A));
+    /* Smile & buck teeth */
+    fill_rect(&c, 8, 11, 13, 11, rgb(0x3A1A08));
+    put(&c, 9, 12, rgb(0xFFFFFF)); put(&c, 12, 12, rgb(0xFFFFFF));
+    /* Arms */
+    fill_rect(&c, 2, 12 - step, 4, 14 - step, rgb(0xFCE83A));
+    fill_rect(&c, 17, 12 + step, 19, 14 + step, rgb(0xFCE83A));
+    outline(&c, rgb(0x4A3A08));
+    return c;
+}
+
+/* Colossal 224x60 pixel-art Blue Whale facing right (mouth_open = 0 or 1). */
+static Canvas make_whale(int mouth_open) {
+    Canvas c = canvas_new(224, 60);
+    /* Tail fluke + tapered caudal peduncle */
+    fill_poly(&c, (float[]){ 26, 4, 10, 28 }, (float[]){ 26, 8, 26, 30 }, 4, rgb(0x285B8E));
+    fill_poly(&c, (float[]){ 26, 4, 10, 28 }, (float[]){ 30, 50, 31, 28 }, 4, rgb(0x1E4670));
+    fill_poly(&c, (float[]){ 22, 60, 60, 22 }, (float[]){ 26, 18, 39, 32 }, 4, rgb(0x285B8E));
+    /* Small characteristic dorsal fin set far back */
+    fill_poly(&c, (float[]){ 74, 59, 56 }, (float[]){ 15, 4, 17 }, 3, rgb(0x245380));
+    /* Streamlined gigantic body + subtle mottled skin patches */
+    fill_ellipse(&c, 118, 28, 86, 18, rgb(0x2F6CA6));
+    fill_ellipse(&c, 82, 22, 12, 4.5f, rgb(0x4482BA));
+    fill_ellipse(&c, 116, 20, 15, 5.0f, rgb(0x4482BA));
+    fill_ellipse(&c, 146, 24, 10, 3.8f, rgb(0x4482BA));
+    /* Lighter pleated ventral throat grooves */
+    fill_ellipse(&c, 134, 38, 66, 8.2f, rgb(0x7FB0D8));
+    for (int x = 86; x <= 184; x += 5) fill_rect(&c, x, 35, x + 3, 36, rgb(0x4E86B8));
+    /* Friendly mouth strictly inside snout outline */
+    if (mouth_open) {
+        /* Gentle rounded lower-jaw gulp: smooth navy interior, soft baleen rim, and cute tongue */
+        fill_ellipse(&c, 178, 35, 22, 6.0f, rgb(0x1B385C));
+        fill_ellipse(&c, 179, 42.0f, 22, 4.0f, rgb(0x7FB0D8));
+        fill_ellipse(&c, 179, 37.5f, 11, 2.0f, rgb(0xC86E88));
+        fill_ellipse(&c, 181, 30.0f, 19, 1.5f, rgb(0x9BBBD4));
+        fill_ellipse(&c, 179, 28.5f, 23, 2.5f, rgb(0x2F6CA6));
+    } else {
+        fill_rect(&c, 162, 32, 200, 33, rgb(0x142438));
+        put(&c, 161, 31, rgb(0x142438));
+    }
+    /* Small eye relative to colossal body + sweeping pectoral flipper */
+    fill_rect(&c, 168, 23, 170, 25, rgb(0x111111));
+    put(&c, 168, 23, rgb(0xFFFFFF));
+    fill_poly(&c, (float[]){ 140, 114, 108, 128 }, (float[]){ 34, 54, 56, 38 }, 4, rgb(0x245380));
+    shade(&c);
+    outline(&c, rgb(0x0A1A30));
+    return c;
+}
+
+typedef struct { float x, y, vx, phase, bubT; int frame; } Diver;
+typedef struct { float x, y, vx, ph; int alive; } Krill;
+typedef struct { int on, dir; float x, y, vx, wait, mouth; } BlueWhale;
+
 typedef struct { int species, frame, far; float x, baseY, vx, bobAmp, bobF, phase, flick, scare, dodge; } Fish;
 typedef struct { float x, y, vy, phase; int alive; } Bubble;
 typedef struct { float x, y, vx, phase; } Jelly;
@@ -271,13 +377,20 @@ typedef struct { float x, y, vx, phase; } Jelly;
 typedef struct {
     int w, h, sc, farSc, sandY, nfish, nfar;
     float t, chestTimer, sandTimer;
-    SDL_Texture *fish[SPECIES][2], *jelly[2], *crab[2], *bubble, *chest, *star, *coral, *brain;
+    SDL_Texture *fish[SPECIES][2], *jelly[2], *crab[2], *diver[2], *sponge[2], *whaleTex[2], *bubble, *chest, *star, *coral, *brain;
     int fw[SPECIES], fh[SPECIES];
     Fish f[MAX_FISH];
     Fish vis[2];                       /* the shark and the turtle, each now and then */
     int visOn[2];
     float visWait[2];
     Jelly j[JELLIES];
+    Diver divers[MAX_DIVERS];
+    Krill krill[MAX_KRILL];
+    int krillDir;
+    float krillWait;
+    BlueWhale whale;
+    int spongeOn;
+    float spongeX, spongeVx, spongeStep, spongeWait;
     float crabX, crabVx, crabWait, crabStep;
     Bubble b[MAX_BUBBLES];
     float weedX[WEEDS], weedH[WEEDS], weedP[WEEDS];
@@ -350,10 +463,24 @@ static void *create(SDL_Renderer *r, int w, int h) {
             a->fish[s][fr] = canvas_texture(r, &c);
         }
     for (int fr = 0; fr < 2; fr++) {
-        Canvas jc = make_jelly(fr), cc = make_crab(fr);
+        Canvas jc = make_jelly(fr), cc = make_crab(fr), dc = make_diver(fr), sc2 = make_spongebob(fr), wc = make_whale(fr);
         a->jelly[fr] = canvas_texture(r, &jc);
         a->crab[fr] = canvas_texture(r, &cc);
+        a->diver[fr] = canvas_texture(r, &dc);
+        a->sponge[fr] = canvas_texture(r, &sc2);
+        a->whaleTex[fr] = canvas_texture(r, &wc);
     }
+    for (int i = 0; i < MAX_DIVERS; i++) {
+        int dir = i % 2 ? -1 : 1;
+        a->divers[i].vx = dir * frand(0.045f, 0.07f) * w;
+        a->divers[i].x = dir > 0 ? -40.0f * a->sc - i * w * 0.4f : w + 40.0f * a->sc;
+        a->divers[i].y = frand(0.18f, 0.65f) * a->sandY;
+        a->divers[i].phase = frand(0, 6.28f);
+    }
+    a->krillWait = 2.0f;
+    a->whale.wait = 5.0f;
+    a->spongeOn = 0;
+    a->spongeWait = frand(300, 720);
     Canvas bc = make_bubble(), cc = make_chest(), sc = make_starfish(), co = make_coral(), br = make_brain_coral();
     a->bubble = canvas_texture(r, &bc);
     a->chest = canvas_texture(r, &cc);
@@ -488,6 +615,114 @@ static void step(void *p, float dt) {
         b->phase += dt * 3;
         if (b->y < -10) b->alive = 0;
     }
+    /* Divers swimming through */
+    for (int i = 0; i < MAX_DIVERS; i++) {
+        Diver *dv = &a->divers[i];
+        dv->x += dv->vx * dt;
+        dv->phase += dt * 3.2f;
+        dv->frame = (int)(dv->phase * 1.5f) % 2;
+        dv->bubT -= dt;
+        if (dv->bubT <= 0) {
+            dv->bubT = frand(0.18f, 0.45f);
+            float bx = dv->vx > 0 ? dv->x + 28 * a->sc : dv->x + 6 * a->sc;
+            add_bubble(a, bx, dv->y + 6 * a->sc + sinf(dv->phase) * 3 * a->sc);
+        }
+        float dw = 34.0f * a->sc;
+        if (dv->x < -dw - 20 || dv->x > a->w + 20) {
+            int dir = irand(2) ? 1 : -1;
+            dv->vx = dir * frand(0.045f, 0.07f) * a->w;
+            dv->x = dir > 0 ? -dw : (float)a->w + 10;
+            dv->y = frand(0.15f, 0.68f) * a->sandY;
+        }
+    }
+    /* SpongeBob strolling rarely across the sand */
+    float sw = 22.0f * a->sc;
+    if (!a->spongeOn) {
+        if ((a->spongeWait -= dt) <= 0) {
+            int dir = irand(2) ? 1 : -1;
+            a->spongeOn = 1;
+            a->spongeVx = dir * 0.028f * a->w;
+            a->spongeX = dir > 0 ? -sw : (float)a->w;
+            a->spongeStep = 0;
+        }
+    } else {
+        a->spongeX += a->spongeVx * dt;
+        a->spongeStep += dt * 5.0f;
+        if ((a->spongeVx > 0 && a->spongeX > a->w + 10) || (a->spongeVx < 0 && a->spongeX < -sw - 10)) {
+            a->spongeOn = 0;
+            a->spongeWait = frand(480, 1080);
+        }
+    }
+    /* Shadowy background krill swarm & Blue Whale following behind to gulp them */
+    int anyKrill = 0;
+    for (int i = 0; i < MAX_KRILL; i++) {
+        Krill *kr = &a->krill[i];
+        if (!kr->alive) continue;
+        kr->x += kr->vx * dt;
+        kr->ph += dt * 8.0f;
+        if ((kr->vx > 0 && kr->x < a->w + 20) || (kr->vx < 0 && kr->x > -20)) anyKrill = 1;
+        else kr->alive = 0;
+    }
+    if (g_force_egg) {
+        a->krillWait = 0;
+        a->whale.on = 0;
+        for (int i = 0; i < MAX_KRILL; i++) a->krill[i].alive = 0;
+        anyKrill = 0;
+        g_force_egg = 0;
+    }
+    if (!anyKrill && !a->whale.on) {
+        a->krillWait -= dt;
+        if (a->krillWait <= 0) {
+            int dir = irand(2) ? 1 : -1;
+            a->krillDir = dir;
+            float baseY = frand(0.32f, 0.50f) * a->sandY;
+            float sp = 0.045f * a->w * dir;
+            for (int i = 0; i < MAX_KRILL; i++) {
+                a->krill[i].alive = 1;
+                a->krill[i].x = dir > 0 ? frand(-0.22f, -0.02f) * a->w : frand(1.02f, 1.22f) * a->w;
+                a->krill[i].y = baseY + frand(-0.07f, 0.07f) * a->sandY;
+                a->krill[i].vx = sp * frand(0.92f, 1.08f);
+                a->krill[i].ph = frand(0, 6.28f);
+            }
+            a->whale.on = 1;
+            a->whale.dir = dir;
+            float ww = a->w * 0.56f;
+            a->whale.x = dir > 0 ? -ww - a->w * 0.28f : a->w + a->w * 0.28f;
+            a->whale.y = baseY;
+            a->whale.vx = dir * a->w * 0.11f;
+            a->whale.mouth = 0;
+            a->krillWait = frand(14, 24);
+        }
+    }
+    if (a->whale.on) {
+        BlueWhale *wh = &a->whale;
+        wh->x += wh->vx * dt;
+        float ww = a->w * 0.56f, wht = ww * (60.0f / 224.0f);
+        float mouthX = wh->dir > 0 ? wh->x + ww * 0.80f : wh->x + ww * 0.20f;
+        float mouthY = wh->y + wht * 0.08f;
+        int nearKrill = 0;
+        for (int i = 0; i < MAX_KRILL; i++) {
+            Krill *kr = &a->krill[i];
+            if (!kr->alive) continue;
+            float dx = kr->x - mouthX, dy = kr->y - mouthY;
+            float ahead = wh->dir > 0 ? dx : -dx;
+            if (ahead > -ww * 0.04f && ahead < ww * 0.24f && fabsf(dy) < wht * 0.70f) {
+                nearKrill = 1;
+                /* Funnel krill smoothly into the open mouth instead of vanishing out front */
+                if (ahead < ww * 0.16f && fabsf(dy) < wht * 0.45f) {
+                    kr->x += (mouthX - kr->x) * fminf(1.0f, dt * 6.5f);
+                    kr->y += (mouthY - kr->y) * fminf(1.0f, dt * 6.5f);
+                }
+            }
+            if (fabsf(dx) < ww * 0.03f && fabsf(dy) < wht * 0.16f && wh->mouth > 0.35f) {
+                kr->alive = 0;
+                if (irand(3) == 0) add_bubble(a, mouthX, mouthY);
+            }
+        }
+        float targetMouth = nearKrill ? 1.0f : 0.0f;
+        wh->mouth += (targetMouth - wh->mouth) * fminf(1.0f, dt * 8.0f);
+        if ((wh->dir > 0 && wh->x > a->w + 40) || (wh->dir < 0 && wh->x + ww < -40)) wh->on = 0;
+    }
 }
 
 static void draw_fish(Aquarium *a, SDL_Renderer *r, const Fish *f) {
@@ -500,11 +735,6 @@ static void draw_fish(Aquarium *a, SDL_Renderer *r, const Fish *f) {
 static void draw(void *p, SDL_Renderer *r) {
     Aquarium *a = p;
     vgradient(r, a->w, a->h, hexcol(0x1B6CA8), hexcol(0x0B2E59));
-    for (int i = 0; i < 4; i++) {                       /* light rays */
-        float x = a->w * (0.15f + 0.25f * i) + sinf(a->t * 0.3f + i) * a->w * 0.05f;
-        SDL_Color c = { 255, 255, 255, 16 };
-        fill_triangle(r, x - a->w * 0.03f, 0, x + a->w * 0.03f, 0, x + a->w * 0.12f, (float)a->sandY, c);
-    }
     for (int i = 0; i < a->nfar; i++) {                 /* faraway fish, hazy blue */
         SDL_Texture *t = a->fish[a->f[i].species][a->f[i].frame];
         SDL_SetTextureColorMod(t, 80, 130, 175);
@@ -512,6 +742,33 @@ static void draw(void *p, SDL_Renderer *r) {
         draw_fish(a, r, &a->f[i]);
         SDL_SetTextureColorMod(t, 255, 255, 255);
         SDL_SetTextureAlphaMod(t, 255);
+    }
+    /* Shadowy background Blue Whale & krill swarm */
+    if (a->whale.on) {
+        const BlueWhale *wh = &a->whale;
+        SDL_Texture *wt = a->whaleTex[wh->mouth > 0.35f];
+        float ww = a->w * 0.56f, wht = ww * (60.0f / 224.0f);
+        float cy = wh->y + sinf(a->t * 1.4f) * a->h * 0.015f;
+        SDL_Rect wd = { (int)wh->x, (int)(cy - wht * 0.5f), (int)ww, (int)wht };
+        SDL_SetTextureColorMod(wt, 55, 100, 150);
+        SDL_SetTextureAlphaMod(wt, 155);
+        SDL_RenderCopyEx(r, wt, NULL, &wd, 0, NULL, wh->dir < 0 ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE);
+        SDL_SetTextureColorMod(wt, 255, 255, 255);
+        SDL_SetTextureAlphaMod(wt, 255);
+    }
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    for (int i = 0; i < MAX_KRILL; i++) {
+        const Krill *kr = &a->krill[i];
+        if (!kr->alive) continue;
+        int ky = (int)(kr->y + sinf(kr->ph) * 2.0f * a->sc);
+        int ks = a->sc;
+        int kd = kr->vx > 0 ? 1 : -1;
+        set_color(r, (SDL_Color){ 85, 95, 130, 150 });
+        SDL_RenderFillRect(r, &(SDL_Rect){ (int)kr->x - 2 * ks, ky - ks / 2, 4 * ks, ks });
+        set_color(r, (SDL_Color){ 105, 115, 150, 150 });
+        SDL_RenderFillRect(r, &(SDL_Rect){ (int)kr->x - kd * 3 * ks, ky, 2 * ks, ks });
+        set_color(r, (SDL_Color){ 20, 40, 75, 150 });
+        SDL_RenderFillRect(r, &(SDL_Rect){ (int)kr->x + kd * 2 * ks, ky - ks / 2, ks, ks });
     }
     for (int i = 0; i < WEEDS; i++) {                   /* seaweed */
         float x = a->weedX[i], y = (float)a->sandY + a->sc * 2, seg = a->weedH[i] / 8;
@@ -550,6 +807,18 @@ static void draw(void *p, SDL_Renderer *r) {
     }
     if (a->visOn[1]) draw_fish(a, r, &a->vis[1]);
     for (int i = a->nfar; i < a->nfish; i++) draw_fish(a, r, &a->f[i]);
+    /* Divers */
+    for (int i = 0; i < MAX_DIVERS; i++) {
+        const Diver *dv = &a->divers[i];
+        SDL_Rect d = { (int)dv->x, (int)(dv->y + sinf(dv->phase) * 4 * a->sc), 34 * a->sc, 16 * a->sc };
+        SDL_RenderCopyEx(r, a->diver[dv->frame], NULL, &d, 0, NULL, dv->vx < 0 ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE);
+    }
+    /* SpongeBob on the ocean floor (extra rare visitor) */
+    if (a->spongeOn) {
+        SDL_Rect sb = { (int)a->spongeX, a->sandY - 22 * a->sc, 22 * a->sc, 26 * a->sc };
+        SDL_RenderCopyEx(r, a->sponge[(int)a->spongeStep % 2], NULL, &sb, 0, NULL,
+                         a->spongeVx < 0 ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE);
+    }
     if (a->visOn[0]) draw_fish(a, r, &a->vis[0]);
     for (int i = 0; i < MAX_BUBBLES; i++) {
         Bubble *b = &a->b[i];
@@ -573,6 +842,9 @@ static void destroy(void *p) {
     for (int fr = 0; fr < 2; fr++) {
         SDL_DestroyTexture(a->jelly[fr]);
         SDL_DestroyTexture(a->crab[fr]);
+        SDL_DestroyTexture(a->diver[fr]);
+        SDL_DestroyTexture(a->sponge[fr]);
+        SDL_DestroyTexture(a->whaleTex[fr]);
     }
     SDL_DestroyTexture(a->bubble);
     SDL_DestroyTexture(a->chest);
@@ -582,4 +854,4 @@ static void destroy(void *p) {
     free(a);
 }
 
-const Saver saver_aquarium = { "aquarium", "FISH", create, step, draw, destroy, NULL, NULL, NULL, NULL, NULL, NULL };
+const Saver saver_aquarium = { "aquarium", "FISH", create, step, draw, destroy, NULL, NULL, "E WHALE", NULL, NULL, NULL };

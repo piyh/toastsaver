@@ -791,17 +791,6 @@ static void *create(SDL_Renderer *ren, int w, int h) {
     s->stopX = (int)(s->W * 0.24f);
 
     Canvas c = canvas_new(s->W, s->H);
-    for (int y = 0; y < s->H; y++) {
-        float k = (float)y / s->back;
-        rect(&c, 0, y, s->W, 1, mix(0x5FA8E8, 0xCFEAFA, k > 1 ? 1 : k));
-    }
-    float sx = s->W * 0.84f, sy = s->H * 0.14f;
-    fill_ellipse(&c, sx, sy, 24, 24, rgb(0xE8F2D8));
-    fill_ellipse(&c, sx, sy, 19, 19, rgb(0xFFF6C8));
-    fill_ellipse(&c, sx, sy, 15, 15, rgb(0xFFE680));
-    fill_ellipse(&c, sx - 4, sy - 4, 6, 5, rgb(0xFFF4B8));
-    s->sky = canvas_texture(ren, &c);
-    c = canvas_new(s->W, s->H);
     build_far(s, &c);
     s->far = canvas_texture(ren, &c);
     c = canvas_new(s->W, s->H);
@@ -852,7 +841,7 @@ static void *create(SDL_Renderer *ren, int w, int h) {
 
 static void destroy(void *p) {
     City *s = p;
-    SDL_DestroyTexture(s->sky);
+    if (s->sky) SDL_DestroyTexture(s->sky);
     SDL_DestroyTexture(s->far);
     SDL_DestroyTexture(s->near);
     SDL_DestroyTexture(s->front);
@@ -1520,11 +1509,31 @@ static void draw_bird(const City *s, SDL_Renderer *r, const Bird *b) {
 static void draw_scene(City *s, SDL_Renderer *r) {
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
     SDL_Rect full = { 0, 0, s->W * s->px, s->H * s->px };
-    SDL_RenderCopy(r, s->sky, NULL, &full);
+    /* Cyclical sunset/sunrise: sun moves down to the horizon, then back up, repeating. */
+    float sunCycle = 0.5f - 0.5f * cosf(s->t * 2.0f * PI_F / 48.0f);   /* 0 = high noon, 1 = sunset/horizon */
+    uint32_t skyTop = mix(0x5FA8E8, 0x2B366B, sunCycle);
+    uint32_t skyBot = mix(0xCFEAFA, 0xFF8C5A, sunCycle);
+    for (int y = 0; y < s->back; y += 2) {
+        float k = (float)y / s->back;
+        uint32_t rowCol = mix(skyTop, skyBot, k > 1 ? 1 : k);
+        box(s, r, 0, y, s->W, 2, rowCol, 255);
+    }
+    box(s, r, 0, s->back, s->W, s->H - s->back, skyBot, 255);
+    float sunX = s->W * 0.84f;
+    float sunY = s->H * (0.12f + 0.52f * sunCycle);
+    uint32_t glowCol = mix(0xE8F2D8, 0xFF7043, sunCycle);
+    uint32_t midCol = mix(0xFFF6C8, 0xFFAB40, sunCycle);
+    uint32_t coreCol = mix(0xFFE680, 0xFFD54F, sunCycle);
+    ell(s, r, sunX, sunY, 24, 24, glowCol, 110);
+    ell(s, r, sunX, sunY, 19, 19, midCol, 180);
+    ell(s, r, sunX, sunY, 15, 15, coreCol, 255);
+    ell(s, r, sunX - 4, sunY - 4, 6, 5, 0xFFF4B8, 255);
     for (int i = 0; i < MAXCLOUD; i++) {
         const Cloud *c = &s->cloud[i];
         SDL_Rect d = { (int)c->x * s->px, (int)c->y * s->px, s->cloudW[c->k] * s->px, s->cloudH[c->k] * s->px };
+        SDL_SetTextureColorMod(s->cloudTex[c->k], 255, (Uint8)(255 - 50 * sunCycle), (Uint8)(255 - 85 * sunCycle));
         SDL_RenderCopy(r, s->cloudTex[c->k], NULL, &d);
+        SDL_SetTextureColorMod(s->cloudTex[c->k], 255, 255, 255);
     }
     for (int i = 0; i < s->nb; i++) draw_bird(s, r, &s->bird[i]);
     SDL_RenderCopy(r, s->far, NULL, &full);

@@ -173,7 +173,8 @@ typedef struct Saver {
 extern const Saver saver_toasters, saver_pipes, saver_starfield, saver_mystify,
                    saver_matrix, saver_aquarium, saver_lava, saver_name,
                    saver_rainbow, saver_books, saver_birds,
-                   saver_dice, saver_volcano, saver_city, saver_germs;
+                   saver_dice, saver_volcano, saver_city, saver_germs,
+                   saver_kpop, saver_horse, saver_butt, saver_cozycat;
 extern const Saver saver_water, saver_butterfly, saver_word;
 extern const Saver *SAVERS[];      /* the savers on show: see saver_list_init */
 extern int SAVER_COUNT;

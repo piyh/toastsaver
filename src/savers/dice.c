@@ -10,7 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 
-enum { D4, D6, D8, D10, D12, D20, KINDS };
+enum { D4, D6, D8, D10, D12, D20, D100, KINDS };
 enum { ROLL, TALLY_WAIT, TALLY_FLY, SUM_HOLD, EXIT, GAP };
 enum { CALM, CRIT, FAIL };
 enum { P_SPARK, P_CONFETTI, P_DUST, P_RAIN, P_CHALK };
@@ -22,9 +22,9 @@ enum { P_SPARK, P_CONFETTI, P_DUST, P_RAIN, P_CHALK };
 #define WOMP_COL 0xD4DCEA
 #define FINE 2   /* the dice get a pixel grid this much finer than the tray, so their numbers have room */
 
-static const int SIDES[KINDS] = { 4, 6, 8, 10, 12, 20 };
-static const char *const NAMES[KINDS] = { "D4", "D6", "D8", "D10", "D12", "D20" };
-static const uint32_t BODY[KINDS] = { 0xF0464E, 0xFF9230, 0xFFD23C, 0x26C6BE, 0x4F86F7, 0xA862F0 };
+static const int SIDES[KINDS] = { 4, 6, 8, 10, 12, 20, 100 };
+static const char *const NAMES[KINDS] = { "D4", "D6", "D8", "D10", "D12", "D20", "D100" };
+static const uint32_t BODY[KINDS] = { 0xF0464E, 0xFF9230, 0xFFD23C, 0x26C6BE, 0x4F86F7, 0xA862F0, 0xE85D90 };
 static const uint32_t CONFETTI[6] = { 0xFF5A6E, 0xFFD23C, 0x5BD46B, 0x4DA6FF, 0xC98BFF, 0xFFFFFF };
 static const float BOUNCE[NB] = { 0.28f, 0.52f, 0.70f, 0.83f, 0.93f };
 
@@ -32,10 +32,10 @@ static const float BOUNCE[NB] = { 0.28f, 0.52f, 0.70f, 0.83f, 0.93f };
    sits out: a real d4 prints three numbers per face, two of them sideways or upside
    down, and at this pixel size those read as squiggles. */
 static const int SETS[][MAXDICE + 1] = {
-    { 2, D6, D8 }, { 1, D20 }, { 2, D6, D6 }, { 3, D6, D8, D10 },
-    { 1, D6 }, { 2, D8, D8 }, { 2, D8, D12 }, { 1, D12 },
+    { 2, D6, D8 }, { 1, D100 }, { 1, D20 }, { 2, D6, D6 }, { 3, D6, D8, D10 },
+    { 1, D6 }, { 2, D100, D20 }, { 2, D8, D8 }, { 2, D8, D12 }, { 1, D12 },
     { 2, D10, D10 }, { 1, D20 }, { 2, D6, D20 }, { 1, D10 },
-    { 3, D6, D6, D6 }, { 3, D6, D8, D20 }, { 2, D20, D20 },
+    { 1, D100 }, { 3, D6, D6, D6 }, { 3, D6, D8, D20 }, { 2, D20, D20 },
     { 5, D6, D8, D10, D12, D20 }
 };
 #define NSETS ((int)(sizeof SETS / sizeof SETS[0]))
@@ -144,9 +144,9 @@ static Quat orient_face_to(Vec3 src, Vec3 target) {
 
 /* ---------- polyhedral 3D mesh definitions ---------- */
 
-#define MAX_POLY_VERTS 24
-#define MAX_POLY_FACES 20
-#define MAX_FACE_VERTS 5
+#define MAX_POLY_VERTS 128
+#define MAX_POLY_FACES 100
+#define MAX_FACE_VERTS 16
 
 typedef struct {
     int nverts;
@@ -311,6 +311,54 @@ static PolyMesh build_d10(void) {
     }
     init_poly_mesh(&m);
     number_opposites(&m);
+    return m;
+}
+
+static PolyMesh build_d100(void) {
+    /* 100-faced faceted ball: 8 latitude rings of 14 vertices each (112 verts), giving
+       1 north polar 14-gon, 7x14=98 flat trapezoid faces, and 1 south polar 14-gon = 100 faces.
+       Because top/bottom edges of each trapezoid are parallel in XY, every face is flat. */
+    static const float TH[8] = { 21, 40, 59, 79, 101, 121, 140, 159 };
+    PolyMesh m = {0};
+    m.nverts = 112;
+    for (int k = 0; k < 8; k++) {
+        float th = TH[k] * PI_F / 180.0f;
+        float r = sinf(th), z = cosf(th);
+        for (int j = 0; j < 14; j++) {
+            float a = j * 2.0f * PI_F / 14.0f;
+            m.verts[k * 14 + j] = vec3(r * cosf(a), r * sinf(a), z);
+        }
+    }
+    m.nfaces = 100;
+    int f = 0;
+    m.faces[f].nverts = 14;
+    for (int j = 0; j < 14; j++) m.faces[f].idx[j] = j;
+    f++;
+    for (int k = 0; k < 7; k++) {
+        int r0 = k * 14, r1 = (k + 1) * 14;
+        for (int j = 0; j < 14; j++) {
+            int j1 = (j + 1) % 14;
+            m.faces[f].nverts = 4;
+            m.faces[f].idx[0] = r0 + j;
+            m.faces[f].idx[1] = r1 + j;
+            m.faces[f].idx[2] = r1 + j1;
+            m.faces[f].idx[3] = r0 + j1;
+            f++;
+        }
+    }
+    m.faces[f].nverts = 14;
+    for (int j = 0; j < 14; j++) m.faces[f].idx[j] = 7 * 14 + (13 - j);
+    f++;
+    init_poly_mesh(&m);
+    number_opposites(&m);
+    /* Square quad text axes to the parallel top/bottom edges so numbers sit cleanly upright. */
+    for (int i = 0; i < m.nfaces; i++) {
+        PolyFace *fc = &m.faces[i];
+        if (fc->nverts != 4) continue;
+        Vec3 mid = v_scale(v_add(m.verts[fc->idx[0]], m.verts[fc->idx[3]]), 0.5f);
+        fc->up = v_norm(v_sub(mid, fc->c));
+        fc->right = v_cross(fc->normal, fc->up);
+    }
     return m;
 }
 
@@ -666,10 +714,14 @@ static void face_pip(Dice *d, const Die *e, float ox, float oy, const PolyFace *
         }
 }
 
+static float die_rad(const Dice *d, const Die *e) {
+    return d->R * (e->kind == D100 ? 1.45f : 1.0f);
+}
+
 /* Draws a die centred on tray position (cx, cy) into the FINE layer. */
 static void draw_3d_die(Dice *d, const Die *e, float cx, float cy) {
     const PolyMesh *m = &d->mesh[e->kind];
-    float R = (float)(d->R * FINE), z = e->z * FINE;
+    float R = die_rad(d, e) * FINE, z = e->z * FINE;
     cx *= FINE;
     cy *= FINE;
     Vec3 center = vec3(cx, cy, z);
@@ -731,6 +783,7 @@ static void draw_3d_die(Dice *d, const Die *e, float cx, float cy) {
         float diff = v_dot(nrot, light);
         float lfactor = 0.68f + 0.36f * diff;
         uint32_t col = lit(base, lfactor);
+        if (e->kind == D100 && e->settled && f == topf) col = lit(col, 1.18f);
         if (e->tint > 0.01f) col = mixc(col, e->tintCol, e->tint);
 
         float fx[MAX_FACE_VERTS], fy[MAX_FACE_VERTS];
@@ -768,8 +821,11 @@ static void draw_3d_die(Dice *d, const Die *e, float cx, float cy) {
         } else {
             char s[4];
             snprintf(s, sizeof s, "%d", fc->value);
-            float tw = (float)glyphs_w(s, 1), px = fminf(1.3f * fc->ri / FONT_H, 1.75f * fc->ri / tw);
-            uint32_t ink = (e->kind == D20 && fc->value == 20 && e->settled && f == topf) ? 0xFFE04A : 0xFFFFFF;
+            float tw = (float)glyphs_w(s, 1);
+            float px = e->kind == D100 ? fminf(1.45f * fc->ri / FONT_H, 1.85f * fc->ri / tw)
+                                       : fminf(1.3f * fc->ri / FONT_H, 1.75f * fc->ri / tw);
+            uint32_t ink = ((e->kind == D20 && fc->value == 20) || e->kind == D100) && e->settled && f == topf
+                           ? 0xFFE04A : 0xFFFFFF;
             face_number(d, e, fcx, fcy, fc->right, fc->up, px, fc->value, col, ink);
         }
     }
@@ -887,7 +943,12 @@ static Quat compute_target_orientation(const PolyMesh *m, int kind, int value) {
 }
 
 static void new_roll(Dice *d) {
-    d->set = d->t < 0.5f ? 0 : 1 + irand(NSETS - 1);
+    if (g_force_egg) {
+        d->set = 1;   /* { 1, D100 } */
+        g_force_egg = 0;
+    } else {
+        d->set = d->t < 0.5f ? 0 : 1 + irand(NSETS - 1);
+    }
     const int *set = SETS[d->set];
     int n = set[0], R = d->R;
     d->n = n;
@@ -1082,6 +1143,7 @@ static void step(void *p, float dt) {
     if (dt > 0.1f) dt = 0.1f;
     d->t += dt;
     d->stateT += dt;
+    if (g_force_egg && d->state != ROLL) new_roll(d);
 
     switch (d->state) {
     case ROLL: {
@@ -1279,7 +1341,7 @@ static int dice_unchanged(Dice *d, int active) {
 
 /* The part of the dice layer a die can touch this frame, outline included. */
 static SDL_Rect die_rect(const Dice *d, const Die *e) {
-    float r = 1.1f * d->R * FINE + FINE + 2, cx = e->x * FINE, cy = (e->y - e->z * 0.85f) * FINE;
+    float r = 1.15f * die_rad(d, e) * FINE + FINE + 2, cx = e->x * FINE, cy = (e->y - e->z * 0.85f) * FINE;
     return (SDL_Rect){ (int)floorf(cx - r), (int)floorf(cy - r), (int)ceilf(2 * r) + 1, (int)ceilf(2 * r) + 1 };
 }
 
@@ -1388,8 +1450,9 @@ static void draw(void *p, SDL_Renderer *r) {
             }
 
             /* Felt shadow */
+            float dr = die_rad(d, e);
             float zf = clampf(1 - e->z / (d->H * 0.5f), 0.3f, 1);
-            fill_ellipse(un, e->x + 2 + e->z * 0.15f, e->y + R * 0.42f + e->z * 0.1f, R * 0.98f * zf, R * 0.7f * zf,
+            fill_ellipse(un, e->x + 2 + e->z * 0.15f, e->y + dr * 0.42f + e->z * 0.1f, dr * 0.98f * zf, dr * 0.7f * zf,
                          rgba(0x06180C, (int)(110 * zf)));
 
             /* Render the true 3D die */
@@ -1399,7 +1462,7 @@ static void draw(void *p, SDL_Renderer *r) {
             if (e->settled && d->state != EXIT && !d->small && d->rows == 1) {
                 const char *nm = NAMES[e->kind];
                 int a = (int)(140 * clampf(e->st * 3, 0, 1));
-                glyphs(un, nm, (int)(e->tx - glyphs_w(nm, 1) / 2.0f + 0.5f), (int)(e->ty + R * 1.25f + 2), 1, rgba(0xBFE6C8, a));
+                glyphs(un, nm, (int)(e->tx - glyphs_w(nm, 1) / 2.0f + 0.5f), (int)(e->ty + dr * 1.25f + 2), 1, rgba(0xBFE6C8, a));
             }
 
             /* Natural 1 raincloud */
@@ -1503,13 +1566,14 @@ static void *create(SDL_Renderer *r, int w, int h) {
     d->by = d->F / 2 - 1 > 1 ? d->F / 2 - 1 : 1;
 
     build_digits();
-    /* Build the 3D meshes for all 6 dice kinds */
-    d->mesh[D4]  = build_d4();
-    d->mesh[D6]  = build_d6();
-    d->mesh[D8]  = build_d8();
-    d->mesh[D10] = build_d10();
-    d->mesh[D12] = build_d12();
-    d->mesh[D20] = build_d20();
+    /* Build the 3D meshes for all dice kinds */
+    d->mesh[D4]   = build_d4();
+    d->mesh[D6]   = build_d6();
+    d->mesh[D8]   = build_d8();
+    d->mesh[D10]  = build_d10();
+    d->mesh[D12]  = build_d12();
+    d->mesh[D20]  = build_d20();
+    d->mesh[D100] = build_d100();
 
     Canvas tray = canvas_new(d->W, d->H);
     build_tray(d, &tray);
@@ -1556,7 +1620,7 @@ static int keep_clear(void *p, SDL_Rect *out, int max) {
     ADD(d->bx, d->by, d->bw, d->bh);
     for (int i = 0; i < d->n; i++) {
         const Die *e = &d->die[i];
-        float r = 1.2f * d->R;
+        float r = 1.2f * die_rad(d, e);
         ADD(e->x - r, e->y - e->z * 0.85f - r * 1.8f, 2 * r, 3.6f * r);   /* popups above, its name below */
         const Fly *f = &d->fly[i];
         if (f->on) {                       /* the whole way from the die to the board */
@@ -1576,4 +1640,4 @@ static int at_rest(void *p) {
     return s->state == GAP;
 }
 
-const Saver saver_dice = { "dice", "DICE", create, step, draw, destroy, at_rest, keep_clear, NULL, NULL, NULL, NULL };
+const Saver saver_dice = { "dice", "DICE", create, step, draw, destroy, at_rest, keep_clear, "E D100", NULL, NULL, NULL };

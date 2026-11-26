@@ -8,6 +8,7 @@
 /* engine.c refers to the saver registry, which lives in main.c. */
 const Saver *SAVERS[1] = { 0 };
 int SAVER_COUNT = 0;
+int g_force_egg = 0;
 const Saver *const *saver_all(int *count) { *count = 0; return NULL; }
 
 static int bad;
@@ -40,9 +41,10 @@ static void check_flat(const PolyMesh *m, const char *nm) {
         }
 }
 
-/* Each value once, and opposite faces add up to sides + 1 (7 on a d6, 21 on a d20). */
-static void check_values(const PolyMesh *m, const char *nm, int sides) {
-    int seen[21] = { 0 };
+/* Each value once, and opposite faces add up to sides + 1 (7 on a d6, 21 on a d20, 101 on a d100). */
+static void check_values(const PolyMesh *m, const char *nm, int sides, int kind) {
+    (void)kind;
+    int seen[101] = { 0 };
     for (int f = 0; f < m->nfaces; f++) {
         int v = m->faces[f].value;
         if (v < 1 || v > sides) fail(nm, "value out of range", f, v);
@@ -60,7 +62,7 @@ static void check_values(const PolyMesh *m, const char *nm, int sides) {
    try each roll a few times. */
 static void check_rest(const PolyMesh *m, int kind) {
     const char *nm = NAMES[kind];
-    for (int v = 1; v <= SIDES[kind]; v++)
+    for (int v = 1; v <= SIDES[kind]; v++) {
         for (int t = 0; t < 20; t++) {
             Die e = { 0 };
             e.kind = kind;
@@ -89,15 +91,16 @@ static void check_rest(const PolyMesh *m, int kind) {
             to_screen(&e, 1, v_scale(fc->up, -1), &dx, &dy);
             if (rx < 0.7f * fabsf(ry) || dy < 0.7f * fabsf(dx)) fail(nm, "number not upright", v, t);
         }
+    }
 }
 
 int main(void) {
-    static PolyMesh (*const build[KINDS])(void) = { build_d4, build_d6, build_d8, build_d10, build_d12, build_d20 };
+    static PolyMesh (*const build[KINDS])(void) = { build_d4, build_d6, build_d8, build_d10, build_d12, build_d20, build_d100 };
     for (int k = 0; k < KINDS; k++) {
         PolyMesh m = build[k]();
         check_closed(&m, NAMES[k]);
         check_flat(&m, NAMES[k]);
-        if (k != D4) check_values(&m, NAMES[k], SIDES[k]);   /* a d4 is read at its corners */
+        if (k != D4) check_values(&m, NAMES[k], SIDES[k], k);   /* a d4 is read at its corners */
         check_rest(&m, k);
     }
     if (bad) printf("FAIL: %d dice problems\n", bad);
