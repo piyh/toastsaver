@@ -246,6 +246,37 @@ Description: retro screensavers for Wayland desktops
 
 Package: toastsaver
 Architecture: amd64
+Version: 1.13.2
+Priority: optional
+Section: x11
+Maintainer: piyh <10518137+piyh@users.noreply.github.com>
+Installed-Size: 936
+Depends: libc6 (>= 2.35), libsdl2-2.0-0 (>= 2.0.18), swayidle, procps, libegl1, libgl1
+Recommends: wlopm, libegl-mesa0, libgl1-mesa-dri
+Filename: pool/main/t/toastsaver/toastsaver_1.13.2_amd64.deb
+Size: 406908
+MD5sum: 8448d13564c24ee6e8659576d3eeaa13
+SHA1: d9eac5d6367be69b615548e6347a1415f01db42c
+SHA256: dc060f0d36e5a8827eec713aeaeefc498f245a247484b32497415eab28c00fe3
+SHA512: 613eeaa81864e9412cad6b8acb51eba7320c3429ea0832bce57d87413742771ac5e1f9868fd84ec34916607b1f323b1c5ed2b8aefa266a3e80d51dba301c54ad
+Homepage: https://github.com/piyh/toastsaver
+Description: retro screensavers for Wayland desktops
+ A collection of screensavers with original pixel art: flying toasters,
+ a cat on a rainbow, 3D pipes, a cozy bookshelf, 3D dice, an aquarium,
+ birds in a summer sky, a starfield, mystify, matrix rain, a lava lamp and
+ a bouncing name banner.
+ .
+ The screensaver starts after a period without input and goes away on any
+ key, click, touch or mouse movement. It never blocks screen blanking, and
+ apps that inhibit idle (such as video players) keep it from starting.
+ .
+ Includes a fullscreen picker with big tiles that young children can use,
+ with a settings page behind its gear for timings, an optional
+ drifting clock, power saving and an on/off switch. Works with labwc
+ (Raspberry Pi OS), Wayfire, sway and other wlroots-based compositors.
+
+Package: toastsaver
+Architecture: amd64
 Version: 1.2.0
 Priority: optional
 Section: x11
