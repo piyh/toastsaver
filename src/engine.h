@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 #define PI_F 3.14159265f
-#define VERSION "1.13.1"
+#define VERSION "1.13.2"
 
 /* Install locations, passed in by the Makefile. */
 #ifndef TOASTSAVER_BINDIR

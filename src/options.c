@@ -398,6 +398,19 @@ static void relayout(Page *p) {
     page_layout(p);
 }
 
+static void sync_page_size(Page *p, SDL_Window *win, float *sx, float *sy) {
+    int w, h, ww, wh;
+    SDL_GetRendererOutputSize(p->r, &w, &h);
+    if (w != p->w || h != p->h) {
+        p->w = w;
+        p->h = h;
+        page_layout(p);
+    }
+    SDL_GetWindowSize(win, &ww, &wh);
+    *sx = (float)p->w / ww;
+    *sy = (float)p->h / wh;
+}
+
 static void click(Page *p, int x, int y) {
     if (p->edit >= 0) {
         int same = hit_row(p, p->field[p->edit], x, y);
@@ -507,9 +520,7 @@ static int page_run(SDL_Window *win, Page *p) {
             } else if (e.type == SDL_MOUSEBUTTONUP && e.button.button == SDL_BUTTON_LEFT) {
                 if (p->pressed && !p->dragging) {
                     click(p, p->pressX, p->pressY);
-                    SDL_GetWindowSize(win, &ww, &wh);       /* a page opened from here may have seen a resize */
-                    sx = (float)p->w / ww;
-                    sy = (float)p->h / wh;
+                    sync_page_size(p, win, &sx, &sy);       /* a page opened from here may have seen a resize */
                     last = SDL_GetPerformanceCounter();
                 }
                 p->pressed = 0;
@@ -523,10 +534,7 @@ static int page_run(SDL_Window *win, Page *p) {
                 p->hover = -1;
                 for (int i = 0; i < p->n; i++) if (hit_row(p, p->row[i], x, y)) p->hover = i;
             } else if (e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
-                relayout(p);
-                SDL_GetWindowSize(win, &ww, &wh);
-                sx = (float)p->w / ww;
-                sy = (float)p->h / wh;
+                sync_page_size(p, win, &sx, &sy);
             }
         }
         Uint64 now = SDL_GetPerformanceCounter();

@@ -376,6 +376,19 @@ static void click(Picker *p, SDL_Window *win, int x, int y) {
     if (i >= 0) { p->sel = i; watch(p, win, i); }
 }
 
+static void sync_size(Picker *p, SDL_Window *win, float *sx, float *sy) {
+    int w, h, ww, wh;
+    SDL_GetRendererOutputSize(p->r, &w, &h);
+    if (w != p->w || h != p->h) {
+        p->w = w;
+        p->h = h;
+        layout(p);
+    }
+    SDL_GetWindowSize(win, &ww, &wh);
+    *sx = (float)p->w / ww;
+    *sy = (float)p->h / wh;
+}
+
 static void move_cursor(Picker *p, int i) {
     if (i >= 0 && i < TILES) p->sel = i;
     p->keys = 1;
@@ -432,13 +445,7 @@ int run_picker(SDL_Window *win, SDL_Renderer *r) {
                 break;
             }
             case SDL_WINDOWEVENT:
-                if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
-                    SDL_GetRendererOutputSize(r, &p->w, &p->h);
-                    SDL_GetWindowSize(win, &ww, &wh);
-                    sx = (float)p->w / ww;
-                    sy = (float)p->h / wh;
-                    layout(p);
-                }
+                if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) sync_size(p, win, &sx, &sy);
                 break;
             }
         }
@@ -453,6 +460,7 @@ int run_picker(SDL_Window *win, SDL_Renderer *r) {
             SDL_StopTextInput();
             if (run_saver_options(win, r, t->sv) == 1) p->quit = 1;
             SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
+            sync_size(p, win, &sx, &sy);
             t->sv->destroy(t->st);                    /* start its preview over with the new settings */
             t->st = t->sv->create(r, t->preview.w, t->preview.h);
             p->hover = p->hoverHeart = p->hoverOpts = -1;
@@ -463,8 +471,10 @@ int run_picker(SDL_Window *win, SDL_Renderer *r) {
         if (p->openSettings) {
             p->openSettings = 0;
             SDL_StopTextInput();
-            run_settings(win, r);
+            if (run_settings(win, r) == 1) p->quit = 1;
             SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
+            sync_size(p, win, &sx, &sy);
+            p->hover = p->hoverHeart = p->hoverOpts = -1;
             if (name_kept()) SDL_StartTextInput();
             last = SDL_GetPerformanceCounter();
             continue;

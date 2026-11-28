@@ -1,3 +1,11 @@
+toastsaver (1.13.2) stable; urgency=medium
+
+  * Picker: quit when closing the window from Settings, reset hover state on
+    return, and re-sync layout and mouse scaling after window resizes in
+    child views.
+
+ -- piyh <10518137+piyh@users.noreply.github.com>  Fri, 27 Nov 2026 21:27:36 -0600
+
 toastsaver (1.13.1) stable; urgency=medium
 
   * Fix crash when opening Settings on Linux/Raspberry Pi (NULL footer note
