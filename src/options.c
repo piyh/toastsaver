@@ -362,9 +362,10 @@ void page_draw(void *pp, SDL_Renderer *r) {
         else ui_button(r, p->reset, "RESET", 0x78909C, 0x455A64);
     }
     ui_button(r, p->done, "BACK", 0x1E88E5, 0x0D4C8C);
+    const char *custom = sp->note ? sp->note() : NULL;
     const char *note = p->edit >= 0 ? "TYPE A NUMBER AND PRESS ENTER"
                      : p->resetArm > 0 && sp->resetNote ? sp->resetNote
-                     : sp->note ? sp->note()
+                     : custom ? custom
                      : sp->buttons == 1 ? "TAP ONE TO CHANGE ITS SETTINGS"
                      : p->scrollMax > 0 ? "SCROLL FOR MORE. TAP A NUMBER TO TYPE ONE IN. CHANGES ARE SAVED RIGHT AWAY"
                      : "TAP A NUMBER TO TYPE ONE IN. CHANGES ARE SAVED RIGHT AWAY";

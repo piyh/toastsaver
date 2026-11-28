@@ -1,3 +1,10 @@
+toastsaver (1.13.1) stable; urgency=medium
+
+  * Fix crash when opening Settings on Linux/Raspberry Pi (NULL footer note
+    when the idle watcher is installed).
+
+ -- piyh <10518137+piyh@users.noreply.github.com>  Fri, 27 Nov 2026 19:12:06 -0600
+
 toastsaver (1.13.0) stable; urgency=medium
 
   * Four new savers: KPOP (HUNTR/X concert stage with Derpy and Sussie),
